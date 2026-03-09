@@ -1,6 +1,12 @@
 use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
+#[derive(Serialize, Deserialize)]
+pub enum Meta {
+    RootUid([u8; 16]),
+    Vendor(String),
+}
+
 #[derive(Serialize, Deserialize, Default)]
 pub struct Variable {
     #[serde(rename = "d")]

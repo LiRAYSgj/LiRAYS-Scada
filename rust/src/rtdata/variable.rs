@@ -2,15 +2,16 @@ use std::collections::{HashMap, HashSet};
 
 use log::warn;
 use uuid::Uuid;
-use heed::{Database, Env, EnvOpenOptions, RoTxn, RwTxn, types::{SerdeJson, Str}};
+use heed::{Database, Env, EnvOpenOptions, RoTxn, RwTxn, types::{SerdeBincode, SerdeJson, Str}};
 use crate::rtdata::namespace::{
-    AddResponse, Command, DelResponse, GetResponse, ListResponse, Response, SetResponse, Value, Variable
+    AddResponse, Command, DelResponse, GetResponse, ListResponse, Meta, Response, SetResponse, Value, Variable
 };
 
 pub struct VariableManager {
     pub env: Env,
     pub vars_db: Database<Str, SerdeJson<Variable>>,
-    pub root: Option<String>,
+    pub meta_db: Database<Str, SerdeBincode<Meta>>,
+    pub root: [u8; 16],
 }
 
 impl VariableManager {
@@ -18,23 +19,28 @@ impl VariableManager {
     pub fn new(files_dir: &str) -> Self {
         let env = unsafe { EnvOpenOptions::new().max_dbs(2).open(files_dir).unwrap() };
         let mut rw_txn = env.write_txn().unwrap();
+        let root_key = "root-id";
+        let root_name = "root".to_string();
         let vars_db = env.create_database(&mut rw_txn, Some("Variables")).unwrap();
-        rw_txn.commit().unwrap();
-        let mut instance = Self { env, vars_db, root: None };
-        instance.initialize_root();
-        instance
-    }
+        let meta_db = env.create_database(&mut rw_txn, Some("Metadata")).unwrap();
 
-    fn initialize_root(&mut self) {
-        let ro_txn = self.env.read_txn().unwrap();
-        if self.vars_db.is_empty(&ro_txn).unwrap() {
-            let uid_string = Uuid::new_v4().to_string();
-            let uid_ = uid_string.as_str();
-            let mut rw_txn = self.env.write_txn().unwrap();
-            self.vars_db.put(&mut rw_txn, uid_, &Variable { name: "root".to_string(), ..Default::default()}).unwrap();
-            rw_txn.commit().unwrap();
-            self.root = Some(uid_string);
-        }
+        let root: [u8; 16] = match meta_db.get(&rw_txn, root_key).unwrap() {
+            Some(Meta::RootUid(r_uid)) => r_uid,
+            _ => {
+                let uid_bytes = *Uuid::new_v4().as_bytes();
+                let root_var = Variable {
+                    id: Uuid::from_bytes(uid_bytes).to_string(),
+                    name: root_name,
+                    ..Default::default()
+                };
+                let uid = root_var.id.clone();
+                vars_db.put(&mut rw_txn, uid.as_str(), &root_var).unwrap();
+                meta_db.put(&mut rw_txn, root_key, &Meta::RootUid(uid_bytes)).unwrap();
+                uid_bytes
+            }
+        };
+        rw_txn.commit().unwrap();
+        Self { env, vars_db, meta_db, root }
     }
 
     fn get_var(&self, id: &str, ro_txn: &RoTxn) -> Result<Variable, String> {
@@ -222,14 +228,10 @@ impl VariableManager {
                         Ok(Response::LIST(ListResponse { cmd_id: list_cmd.cmd_id, children: var.children_vars }))
                     }
                     None => {
-                        match self.root.clone() {
-                            Some(root) => {
-                                let mut children = HashMap::new();
-                                children.insert("root".to_string(), root);
-                                Ok(Response::LIST(ListResponse { cmd_id: list_cmd.cmd_id, children }))
-                            }
-                            None => Err(format!("No root found. This error should not happen."))
-                        }
+                        let mut children = HashMap::new();
+                        let root_id = Uuid::from_bytes(self.root).to_string();
+                        children.insert("root".to_string(), root_id);
+                        Ok(Response::LIST(ListResponse { cmd_id: list_cmd.cmd_id, children }))
                     }
                 }
             }
