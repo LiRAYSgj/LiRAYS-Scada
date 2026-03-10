@@ -30,83 +30,83 @@ pub fn parse_args(input: &mut &str) -> std::result::Result<Vec<String>, String> 
     Ok(list)
 }
 
-pub fn parse_command<'s>(input: &mut &'s str) -> Result<Command, String> {
-    multispace0.parse_next(input).map_err(|e: ContextError| {e.to_string()})?;
-    let cmd_id = take_while(0.., AsChar::is_alphanum)
-        .parse_next(input)
-        .map_err(|e: winnow::error::ErrMode<InputError<&str>>| e.to_string())?
-        .to_string();
-    multispace0.parse_next(input).map_err(|e: ContextError| {e.to_string()})?;
-    let cmd = take_while(0.., AsChar::is_alphanum)
-        .parse_next(input)
-        .map_err(|e: winnow::error::ErrMode<InputError<&str>>| e.to_string())?
-        .to_uppercase();
-    match cmd.as_str() {
-        "ADD" => {
-            let args = parse_args(input)?;
-            let mut it = args.into_iter();
+// pub fn parse_command<'s>(input: &mut &'s str) -> Result<Command, String> {
+//     multispace0.parse_next(input).map_err(|e: ContextError| {e.to_string()})?;
+//     let cmd_id = take_while(0.., AsChar::is_alphanum)
+//         .parse_next(input)
+//         .map_err(|e: winnow::error::ErrMode<InputError<&str>>| e.to_string())?
+//         .to_string();
+//     multispace0.parse_next(input).map_err(|e: ContextError| {e.to_string()})?;
+//     let cmd = take_while(0.., AsChar::is_alphanum)
+//         .parse_next(input)
+//         .map_err(|e: winnow::error::ErrMode<InputError<&str>>| e.to_string())?
+//         .to_uppercase();
+//     match cmd.as_str() {
+//         "ADD" => {
+//             let args = parse_args(input)?;
+//             let mut it = args.into_iter();
 
-            let parent_id = it.next().ok_or("Missing parent id")?;
-            let var_names: Vec<String> = it.collect();
-            if var_names.len() > 0 {
-                Ok(Command::ADD(AddCommand { cmd_id, parent_id, var_names }))
-            } else {
-                Err(format!("Missing var names"))
-            }
-        }
-        "LS" => {
-            let args = parse_args(input)?;
-            let mut it = args.into_iter();
+//             let parent_id = it.next().ok_or("Missing parent id")?;
+//             let var_names: Vec<String> = it.collect();
+//             if var_names.len() > 0 {
+//                 Ok(Command::ADD(AddCommand { cmd_id, parent_id, var_names }))
+//             } else {
+//                 Err(format!("Missing var names"))
+//             }
+//         }
+//         "LS" => {
+//             let args = parse_args(input)?;
+//             let mut it = args.into_iter();
 
-            let var_id = it.next();
-            Ok(Command::LIST(ListCommand { cmd_id, var_id }))
-        }
-        "SET" => {
-            let args = parse_args(input)?;
+//             let var_id = it.next();
+//             Ok(Command::LIST(ListCommand { cmd_id, var_id }))
+//         }
+//         "SET" => {
+//             let args = parse_args(input)?;
 
-            let mut var_ids_values = vec![];
-            for batch in args.chunks_exact(3) {
-                let var_id = &batch[0];
-                let var_type = &batch[1];
-                let val = &batch[2];
-                match var_type.to_lowercase().as_str() {
-                    "i" => {
-                        match val.parse::<i128>() {
-                            Ok(v) => var_ids_values.push((var_id.to_owned(), Value::Integer(v))),
-                            Err(e) => return Err(format!("Invalid int value: {e}"))
-                        }
-                    }
-                    "f" => {
-                        match val.parse::<f64>() {
-                            Ok(v) => var_ids_values.push((var_id.to_owned(), Value::Float(v))),
-                            Err(e) => return Err(format!("Invalid float value: {e}"))
-                        }
-                    }
-                    "t" => {
-                        var_ids_values.push((var_id.to_owned(), Value::Text(val.to_owned())));
-                    }
-                    "b" => {
-                        if val == "false" {
-                            var_ids_values.push((var_id.to_owned(), Value::Boolean(false)));
-                        } else if val == "true" {
-                            var_ids_values.push((var_id.to_owned(), Value::Boolean(true)));
-                        } else {
-                            return Err(format!("Invalid bool value: {val}. Must be true/false"));
-                        }
-                    }
-                    _ => return Err(format!("Invalid type specifier: {var_type}. Must be i/f/t/b"))
-                }
-            }
-            Ok(Command::SET(SetCommand { cmd_id, var_ids_values }))
-        }
-        "GET" => {
-            let var_ids = parse_args(input)?;
-            Ok(Command::GET(GetCommand { cmd_id, var_ids }))
-        }
-        "DEL" => {
-            let var_ids = parse_args(input)?;
-            Ok(Command::DEL(DelCommand { cmd_id, var_ids }))
-        }
-        _ => Err(format!("Invalid command {cmd}"))
-    }
-}
+//             let mut var_ids_values = vec![];
+//             for batch in args.chunks_exact(3) {
+//                 let var_id = &batch[0];
+//                 let var_type = &batch[1];
+//                 let val = &batch[2];
+//                 match var_type.to_lowercase().as_str() {
+//                     "i" => {
+//                         match val.parse::<i128>() {
+//                             Ok(v) => var_ids_values.push((var_id.to_owned(), Value::Integer(v))),
+//                             Err(e) => return Err(format!("Invalid int value: {e}"))
+//                         }
+//                     }
+//                     "f" => {
+//                         match val.parse::<f64>() {
+//                             Ok(v) => var_ids_values.push((var_id.to_owned(), Value::Float(v))),
+//                             Err(e) => return Err(format!("Invalid float value: {e}"))
+//                         }
+//                     }
+//                     "t" => {
+//                         var_ids_values.push((var_id.to_owned(), Value::Text(val.to_owned())));
+//                     }
+//                     "b" => {
+//                         if val == "false" {
+//                             var_ids_values.push((var_id.to_owned(), Value::Boolean(false)));
+//                         } else if val == "true" {
+//                             var_ids_values.push((var_id.to_owned(), Value::Boolean(true)));
+//                         } else {
+//                             return Err(format!("Invalid bool value: {val}. Must be true/false"));
+//                         }
+//                     }
+//                     _ => return Err(format!("Invalid type specifier: {var_type}. Must be i/f/t/b"))
+//                 }
+//             }
+//             Ok(Command::SET(SetCommand { cmd_id, var_ids_values }))
+//         }
+//         "GET" => {
+//             let var_ids = parse_args(input)?;
+//             Ok(Command::GET(GetCommand { cmd_id, var_ids }))
+//         }
+//         "DEL" => {
+//             let var_ids = parse_args(input)?;
+//             Ok(Command::DEL(DelCommand { cmd_id, var_ids }))
+//         }
+//         _ => Err(format!("Invalid command {cmd}"))
+//     }
+// }

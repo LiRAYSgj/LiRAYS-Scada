@@ -1,8 +1,10 @@
 use log::{debug, error, info};
-use tokio::{runtime::Runtime, io::{AsyncReadExt, AsyncWriteExt}, sync::Mutex, net::TcpListener};
+use tokio::{runtime::Runtime, sync::Mutex, net::TcpListener};
+use tokio_tungstenite::{accept_async, tungstenite::Message};
+use futures_util::{StreamExt, SinkExt};
 use std::{sync::Arc, thread};
 use pyo3::prelude::*;
-use crate::rtdata::{variable::VariableManager, parser::parse_command};
+use crate::rtdata::{namespace::Command, variable::VariableManager};
 
 
 async fn run_server(host: &str, port: u16, db_dir: &str) {
@@ -12,51 +14,49 @@ async fn run_server(host: &str, port: u16, db_dir: &str) {
             info!("LiRAYS server listening on {}:{}", host, port);
             loop {
                 match listener.accept().await {
-                    Ok((mut socket, addr)) => {
-                        debug!("Accepting client from {}", addr);
+                    Ok((stream, addr)) => {
+                        debug!("Accepting client from {addr}");
                         let var_manager = Arc::clone(&var_manager);
                         tokio::spawn(async move {
-                            let mut buffer: [u8; 1024] = [0; 1024];
-                            loop {
-                                let n = match socket.read(&mut buffer).await {
-                                    Ok(0) => {
-                                        info!("Client from {} disconnected", addr);
-                                        return;
-                                    }
-                                    Ok(n) => n,
-                                    Err(e) => {
-                                        info!("Client from {} disconnected with error reading: {}", addr, e);
-                                        return;
-                                    }
-                                };
-
-                                let response = match std::str::from_utf8(&buffer[..n]) {
-                                    Ok(mut cmd) => {
-                                        let vm = var_manager.lock().await;
-                                        match parse_command(&mut cmd) {
-                                            Ok(command) => {
-                                                match vm.exec_cmd(command) {
-                                                    Ok(resp) => {
-                                                        match serde_json::to_string(&resp) {
-                                                            Ok(s) => s,
-                                                            Err(e) => format!("ER {e}")
-                                                        }
-                                                    },
-                                                    Err(e) => format!("ER {e}")
+                            match accept_async(stream).await {
+                                Ok(mut ws_stream) => {
+                                    loop {
+                                        match ws_stream.next().await {
+                                            Some(Ok(msg)) => {
+                                                match msg {
+                                                    Message::Text(text) => {
+                                                        let resp = match serde_json::from_slice::<Command>(text.as_bytes()) {
+                                                            Ok(command) => {
+                                                                let vm = var_manager.lock().await;
+                                                                match vm.exec_cmd(command) {
+                                                                    Ok(resp) => {
+                                                                        match serde_json::to_string(&resp) {
+                                                                            Ok(s) => s,
+                                                                            Err(e) => format!("{e}")
+                                                                        }
+                                                                    },
+                                                                    Err(e) => format!("{e}")
+                                                                }
+                                                            },
+                                                            Err(e) => format!("{e}")
+                                                        };
+                                                        ws_stream.send(resp.into()).await.unwrap();
+                                                    }
+                                                    _ => ()
                                                 }
                                             }
-                                            Err(e) => format!("ER {e}")
+                                            Some(Err(e)) => {
+                                                error!("Error reading next message from {addr}, Disconnecting. {e}");
+                                                break;
+                                            },
+                                            None => {
+                                                info!("Client from {addr} disconnected");
+                                                break;
+                                            }
                                         }
                                     }
-                                    Err(e) => format!("ER {e}")
-                                };
-                                match socket.write_all(response.as_bytes()).await {
-                                    Ok(()) => (),
-                                    Err(e) => {
-                                        let msg = format!("Error sending response: {e}");
-                                        error!("{}", msg);
-                                    }
-                                };
+                                }
+                                Err(e) => error!("Error accepting client connection: {e}")
                             }
                         });
                     },
