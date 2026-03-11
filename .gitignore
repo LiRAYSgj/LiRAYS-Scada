@@ -208,3 +208,9 @@ __marimo__/
 # Service
 demo_data
 *.dSYM
+
+# Frontend
+
+data_dir/
+.svelte-kit/
+node_modules/

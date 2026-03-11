@@ -1,0 +1,106 @@
+import { derived, writable } from "svelte/store";
+import { tagStreamClient } from "$lib/core/ws/tag-stream-client";
+import type { Readable } from "svelte/store";
+import type {
+  BackendItemType,
+  BackendVarDataType,
+  TagScalarValue,
+  WebSocketConnectionStatus,
+} from "$lib/core/ws/types";
+
+function uniqueIds(ids: string[]): string[] {
+  const seen: Record<string, true> = {};
+  const result: string[] = [];
+  for (const id of ids) {
+    if (!id || seen[id]) {
+      continue;
+    }
+    seen[id] = true;
+    result.push(id);
+  }
+  return result;
+}
+
+function hasSameIdSet(current: string[], next: string[]): boolean {
+  if (current.length !== next.length) {
+    return false;
+  }
+  const nextSet = new Set(next);
+  for (const id of current) {
+    if (!nextSet.has(id)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+export interface TagRealtimeClient {
+  status: Readable<WebSocketConnectionStatus>;
+  values: Readable<Record<string, TagScalarValue>>;
+  start: (endpoint: string) => void;
+  stop: () => void;
+  setTrackedIds: (ids: string[]) => void;
+  sendWriteValue: (id: string, value: TagScalarValue) => void;
+  addItem: (
+    parentId: string,
+    name: string,
+    itemType: BackendItemType,
+    varType: BackendVarDataType | null,
+    endpoint?: string,
+  ) => Promise<string[]>;
+  removeItems: (itemIds: string[], endpoint?: string) => Promise<void>;
+}
+
+export function createPageTagRealtimeProvider(
+  endpoint: string,
+  client: TagRealtimeClient = tagStreamClient,
+) {
+  const active = writable(false);
+  const desiredIds = writable<string[]>([]);
+  let lastEffectiveIds: string[] | null = null;
+
+  const effectiveIds = derived(
+    [active, desiredIds],
+    ([$active, $desiredIds]) => ($active ? uniqueIds($desiredIds) : []),
+  );
+
+  const unsubscribeEffectiveIds = effectiveIds.subscribe((ids) => {
+    if (lastEffectiveIds && hasSameIdSet(lastEffectiveIds, ids)) {
+      return;
+    }
+    lastEffectiveIds = [...ids];
+    client.setTrackedIds(ids);
+  });
+
+  return {
+    status: client.status,
+    values: client.values,
+    start: () => {
+      client.start(endpoint);
+    },
+    stop: () => {
+      unsubscribeEffectiveIds();
+      client.stop();
+    },
+    setActive: (next: boolean) => {
+      active.set(next);
+    },
+    setDesiredIds: (ids: string[]) => {
+      desiredIds.set(ids);
+    },
+    sendWriteValue: (id: string, value: TagScalarValue) => {
+      client.sendWriteValue(id, value);
+    },
+    addItem: (
+      parentId: string,
+      name: string,
+      itemType: BackendItemType,
+      varType: BackendVarDataType | null,
+    ) => {
+      return client.addItem(parentId, name, itemType, varType, endpoint);
+    },
+    removeItems: (itemIds: string[]) => {
+      return client.removeItems(itemIds, endpoint);
+    },
+  };
+}
