@@ -11,6 +11,11 @@ requires-python = ">=3.13"
 dependencies = [
     "pydantic",
     "lmdb",
+    "aiosqlite",
+    "sqlmodel",
+    "fastapi",
+    "uvicorn",
+    "greenlet",
 ]
 
 [project.scripts]
