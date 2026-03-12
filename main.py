@@ -1,6 +1,9 @@
+import atexit
 import logging
 import os
+import signal
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Optional
@@ -11,7 +14,6 @@ from scada.rustmod import serve
 
 
 # Configure Python's logging to show DEBUG level
-#
 class ShortLevelFormatter(logging.Formatter):
     def format(self, record):
         record.levelname = record.levelname[:3]
@@ -33,14 +35,20 @@ logging.basicConfig()
 
 
 REPO_ROOT = Path(__file__).resolve().parent
-FRONTEND_DIR = Path(os.getenv("SCADA_FRONTEND_DIR", str(REPO_ROOT / "frontend"))).resolve()
+FRONTEND_DIR = Path(
+    os.getenv("SCADA_FRONTEND_DIR", str(REPO_ROOT / "frontend"))
+).resolve()
 DEMO_DATA_DIR = os.getenv("SCADA_DEMO_DATA_DIR", rt_dir)
 RUST_HOST = os.getenv("SCADA_RUST_HOST", "0.0.0.0")
 RUST_PORT = int(os.getenv("SCADA_RUST_PORT", "1236"))
 FRONTEND_MODE = os.getenv("SCADA_FRONTEND_MODE", "production").strip().lower()
 FRONTEND_PORT = os.getenv("SCADA_FRONTEND_PORT", "3000")
 FRONTEND_HOST = os.getenv("SCADA_FRONTEND_HOST", "0.0.0.0")
-FORCE_FRONTEND_BUILD = os.getenv("SCADA_FRONTEND_FORCE_BUILD", "").lower() in {"1", "true", "yes"}
+FORCE_FRONTEND_BUILD = os.getenv("SCADA_FRONTEND_FORCE_BUILD", "").lower() in {
+    "1",
+    "true",
+    "yes",
+}
 
 
 def build_frontend_if_needed(frontend_dir: Path) -> None:
@@ -72,7 +80,16 @@ def run_svelte_server() -> subprocess.Popen[str]:
         raise FileNotFoundError(f"Frontend directory not found: {frontend_dir}")
 
     if FRONTEND_MODE in {"dev", "development"}:
-        command = ["npm", "run", "dev", "--", "--host", FRONTEND_HOST, "--port", FRONTEND_PORT]
+        command = [
+            "npm",
+            "run",
+            "dev",
+            "--",
+            "--host",
+            FRONTEND_HOST,
+            "--port",
+            FRONTEND_PORT,
+        ]
         logger.info(
             "Starting Svelte frontend in dev mode at http://%s:%s",
             FRONTEND_HOST,
@@ -81,7 +98,9 @@ def run_svelte_server() -> subprocess.Popen[str]:
     else:
         build_frontend_if_needed(frontend_dir)
         command = ["npm", "run", "start"]
-        logger.info("Starting Svelte frontend in production mode on port %s", FRONTEND_PORT)
+        logger.info(
+            "Starting Svelte frontend in production mode on port %s", FRONTEND_PORT
+        )
 
     process_env = os.environ.copy()
     process_env["HOST"] = FRONTEND_HOST
@@ -110,7 +129,10 @@ def stop_process(process: Optional[subprocess.Popen[str]], name: str) -> None:
         logger.info("%s process stopped cleanly", name)
     except subprocess.TimeoutExpired:
         logger.warning("%s did not stop in time, forcing kill", name)
-        os.killpg(process.pid, signal.SIGKILL)
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
     except ProcessLookupError:
         logger.info("%s process already terminated", name)
 
@@ -118,6 +140,22 @@ def stop_process(process: Optional[subprocess.Popen[str]], name: str) -> None:
 if __name__ == "__main__":
     frontend_process: Optional[subprocess.Popen[str]] = None
     api_thread: Optional[ApiServer] = None
+
+    def cleanup() -> None:
+        if api_thread:
+            logger.info("Stopping HTTP API")
+            api_thread.stop()
+            api_thread.join(timeout=10)
+        stop_process(frontend_process, "Svelte")
+
+    atexit.register(cleanup)
+
+    def signal_handler(signum, frame):  # type: ignore
+        logger.info("Received signal %s, shutting down", signum)
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
 
     try:
         frontend_process = run_svelte_server()
@@ -132,9 +170,3 @@ if __name__ == "__main__":
             time.sleep(1)
     except KeyboardInterrupt:
         logger.info("Received KeyboardInterrupt, shutting down")
-    finally:
-        if api_thread:
-            logger.info("Stopping HTTP API")
-            api_thread.stop()
-            api_thread.join(timeout=10)
-        stop_process(frontend_process, "Svelte")
