@@ -19,7 +19,8 @@
     "test:unit": "vitest",
     "test": "npm run test:unit -- --run",
     "test:coverage": "npm run test:unit -- --run --coverage",
-    "demo:ws": "tsx demo/api-server/src/server.ts"
+    "demo:ws": "tsx demo/api-server/src/server.ts",
+    "generate:proto": "mkdir -p ./src/lib/proto && protoc --plugin=protoc-gen-ts_proto=./node_modules/.bin/protoc-gen-ts_proto --ts_proto_out=./src/lib/proto --ts_proto_opt=esModuleInterop=true -I=../rust/proto ../rust/proto/namespace/*.proto"
   },
   "devDependencies": {
     "@eslint/compat": "^2.0.2",
@@ -44,6 +45,7 @@
     "svelte": "^5.51.0",
     "svelte-check": "^4.4.2",
     "tailwindcss": "^4.1.18",
+    "ts-proto": "^2.11.5",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.54.0",
@@ -51,6 +53,7 @@
     "vitest": "^4.0.18"
   },
   "dependencies": {
+    "@bufbuild/protobuf": "^2.11.0",
     "@xyflow/svelte": "^1.5.1",
     "dotenv": "^17.3.1",
     "lucide-svelte": "^0.577.0",

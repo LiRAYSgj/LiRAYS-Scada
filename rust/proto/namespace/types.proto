@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+package namespace;
+
+import "namespace/enums.proto";
+
+message Meta {
+    string root_uid = 1; // 16 bytes
+    string vendor = 2;
+}
+
+message Value {
+    oneof typed {
+        int64 integer_value = 1;
+        double float_value = 2;
+        string text_value = 3;
+        bool boolean_value = 4;
+    }
+}
+
+// Protobuf repeated fields cannot directly contain optional messages
+// without a wrapper.
+message OptionalValue {
+  Value value = 1; // If this field is not set, it implies None
+}
+
+message ChildInfo {
+  string child_id = 1;
+  ItemType i_type = 2;
+  optional VarDataType var_d_type = 3;
+}
+
+message Item {
+    string id = 1;
+    string name = 2;
+    optional string parent = 3;
+    map<string, ChildInfo> children = 4;
+    ItemType i_type = 5;
+    optional VarDataType var_d_type = 6;
+    optional Value value = 7;
+}

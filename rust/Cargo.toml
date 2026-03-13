@@ -12,6 +12,7 @@ bytes = "1.11.1"
 futures-util = "0.3.32"
 heed = { version = "0.22.0", features = ["serde"] }
 log = "0.4.29"
+prost = "0.14.3"
 pyo3 = { version = "0.27.0", features = ["extension-module"] }
 pyo3-log = "0.13.3"
 serde = { version = "1.0.228", features = ["derive"] }
@@ -20,3 +21,6 @@ tokio = { version = "1.50.0", features = ["full"]}
 tokio-tungstenite = "0.28.0"
 uuid = { version = "1.21.0", features = ["v4"]}
 winnow = "0.7.15"
+
+[build-dependencies]
+prost-build = "0.14.3"

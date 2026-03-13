@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package namespace;
+
+// ItemType
+enum ItemType {
+    ITEM_TYPE_INVALID = 0;
+    ITEM_TYPE_FOLDER = 1;
+    ITEM_TYPE_VARIABLE = 2;
+}
+
+// VarDataType
+enum VarDataType {
+    VAR_DATA_TYPE_INVALID = 0;
+    VAR_DATA_TYPE_INTEGER = 1;
+    VAR_DATA_TYPE_FLOAT = 2;
+    VAR_DATA_TYPE_TEXT = 3;
+    VAR_DATA_TYPE_BOOLEAN = 4;
+}
+
+// OperationStatus
+enum OperationStatus {
+    OPERATION_STATUS_OK = 0;
+    OPERATION_STATUS_ERR = 1;
+}

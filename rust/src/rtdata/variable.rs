@@ -2,34 +2,45 @@ use std::collections::{HashMap, HashSet};
 
 use log::warn;
 use uuid::Uuid;
-use heed::{Database, Env, EnvOpenOptions, RoTxn, RwTxn, types::{SerdeBincode, SerdeJson, Str}};
-use crate::rtdata::namespace::VarDataType;
+use heed::{Database, Env, EnvOpenOptions, RoTxn, RwTxn, types::Str};
 
+use super::proto::Proto;
 use super::namespace::{
-    ItemType,
     Item,
-    Value,
-    AddResponse,
-    DelResponse,
-    GetResponse,
-    ListResponse,
+    ItemType,
+    ItemMeta,
     Meta,
+    Value,
+    VarIdValue,
+    VarDataType,
     Command,
     Response,
+    ChildInfo,
+    VarInfo,
+    AddResponse,
+    ListResponse,
     SetResponse,
+    GetResponse,
+    DelResponse,
+    InvalidCmdResponse,
+    OperationStatus,
+    OptionalValue,
+    value::Typed,
+    command::CommandType,
+    response::ResponseType,
 };
-
 
 pub struct VariableManager {
     pub env: Env,
-    pub items_db: Database<Str, SerdeJson<Item>>,
-    pub meta_db: Database<Str, SerdeBincode<Meta>>,
-    pub root: [u8; 16],
+    pub items_db: Database<Str, Proto<Item>>,
+    pub meta_db: Database<Str, Proto<Meta>>,
+    pub root: String,
 }
 
 impl VariableManager {
 
     pub fn new(files_dir: &str) -> Self {
+
         let env = unsafe { EnvOpenOptions::new().max_dbs(2).open(files_dir).unwrap() };
         let mut rw_txn = env.write_txn().unwrap();
         let root_key = "root-id";
@@ -37,24 +48,50 @@ impl VariableManager {
         let vars_db = env.create_database(&mut rw_txn, Some("Variables")).unwrap();
         let meta_db = env.create_database(&mut rw_txn, Some("Metadata")).unwrap();
 
-        let root: [u8; 16] = match meta_db.get(&rw_txn, root_key).unwrap() {
-            Some(Meta::RootUid(r_uid)) => r_uid,
+        let root_item: Option<Meta> = meta_db.get(&rw_txn, root_key).unwrap();
+
+        let root: String = match root_item {
+            Some(meta_) => meta_.root_uid,
             _ => {
-                let uid_bytes = *Uuid::new_v4().as_bytes();
+                let uid = Uuid::new_v4().to_string();
                 let root_folder = Item {
-                    id: Uuid::from_bytes(uid_bytes).to_string(),
+                    id: uid.clone(),
                     name: root_name,
-                    i_type: ItemType::Folder,
+                    i_type: ItemType::Folder as i32,
                     ..Default::default()
                 };
-                let uid = root_folder.id.clone();
+
+                let app_meta = Meta {
+                    root_uid: uid.clone(),
+                    vendor: "LiRAYS LLC".to_string()
+                };
+
                 vars_db.put(&mut rw_txn, uid.as_str(), &root_folder).unwrap();
-                meta_db.put(&mut rw_txn, root_key, &Meta::RootUid(uid_bytes)).unwrap();
-                uid_bytes
+                meta_db.put(&mut rw_txn, root_key, &app_meta).unwrap();
+                uid
             }
         };
         rw_txn.commit().unwrap();
         Self { env, items_db: vars_db, meta_db, root }
+    }
+
+    fn cast_item_type(value: i32) -> ItemType {
+        match ItemType::try_from(value) {
+            Ok(it) => it,
+            Err(_) => ItemType::Invalid
+        }
+    }
+
+    fn cast_var_data_type(value: Option<i32>) -> VarDataType {
+        match value {
+            Some(v) => {
+                match VarDataType::try_from(v) {
+                    Ok(dt) => dt,
+                    Err(_) => VarDataType::Invalid
+                }
+            }
+            None => VarDataType::Invalid
+        }
     }
 
     fn get_item(&self, id: &str, ro_txn: &RoTxn) -> Result<Item, String> {
@@ -71,34 +108,28 @@ impl VariableManager {
         }
     }
 
-    fn add_items(&self, parent_id: &str, items_meta: Vec<(String, ItemType, Option<VarDataType>)>, rw_txn: &mut RwTxn) -> Result<Vec<String>, String> {
+    fn add_items(&self, parent_id: &str, items_meta: Vec<ItemMeta>, rw_txn: &mut RwTxn) -> Result<usize, String> {
         let base_err = format!("Error creating items.");
-        let mut ids = vec![];
         let mut parent_item = self.get_item(parent_id, rw_txn)?;
         let mut do_put_parent = false;
-        for (name, i_type, v_dtype) in items_meta {
-            match parent_item.children.get_mut(&name) {
-                Some((id, _, _)) => {
-                    ids.push(self.get_item(&id, rw_txn)?.id);
-                }
-                None => {
-                    let uid_string = Uuid::new_v4().to_string();
-                    do_put_parent = true;
-                    let item = Item {
-                        id: uid_string,
-                        name: name.clone(),
-                        parent: Some(parent_id.to_string()),
-                        i_type: i_type,
-                        var_d_type: v_dtype,
-                        ..Default::default()
-                    };
-                    parent_item.children.insert(item.name.clone(), (item.id.clone(), item.i_type.clone(), item.var_d_type.clone()));
-                    ids.push(item.id.clone());
-                    match self.items_db.put(rw_txn, &item.id, &item) {
-                        Ok(()) => (),
-                        Err(e) => return Err(format!("{base_err} Put parent error: {e}"))
-                    };
-                }
+        let mut count = 0;
+        for i_meta in items_meta {
+            if !parent_item.children.contains_key(&i_meta.name) {
+                let uid = Uuid::new_v4().to_string();
+                do_put_parent = true;
+                let item = Item {
+                    id: uid,
+                    name: i_meta.name,
+                    parent: Some(parent_id.to_string()),
+                    i_type: i_meta.i_type,
+                    var_d_type: i_meta.var_d_type,
+                    ..Default::default()
+                };
+                parent_item.children.insert(item.name.clone(), ChildInfo { child_id: item.id.clone(), i_type: item.i_type, var_d_type: item.var_d_type});
+                match self.items_db.put(rw_txn, &item.id, &item) {
+                    Ok(()) => count += 1,
+                    Err(e) => return Err(format!("{base_err} Put parent error: {e}"))
+                };
             }
         }
         if do_put_parent {
@@ -107,42 +138,48 @@ impl VariableManager {
                 Err(e) => return Err(format!("{base_err} Put parent error: {e}"))
             };
         }
-        Ok(ids)
+        Ok(count)
     }
 
-    fn set_vals(&self, var_id_vals: Vec<(String, Value)>, rw_txn: &mut RwTxn) -> Result<bool, String> {
+    fn set_vals(&self, var_id_vals: Vec<VarIdValue>, rw_txn: &mut RwTxn) -> Result<bool, String> {
         let base_err = format!("Error setting variable values.");
         let mut do_commit = false;
-        for (var_id, value) in var_id_vals {
-            match self.items_db.get(&rw_txn, &var_id) {
-                Ok(Some(mut var)) => {
-                    match (var.i_type.clone(), var.var_d_type.clone(), value) {
-                        (ItemType::Variable, Some(VarDataType::Integer), Value::Integer(v)) => var.value = Some(Value::Integer(v)),
-                        (ItemType::Variable, Some(VarDataType::Float), Value::Float(v)) => var.value = Some(Value::Float(v)),
-                        (ItemType::Variable, Some(VarDataType::Text), Value::Text(v)) => var.value = Some(Value::Text(v)),
-                        (ItemType::Variable, Some(VarDataType::Boolean), Value::Boolean(v)) => var.value = Some(Value::Boolean(v)),
-                        (ItemType::Variable, _, _) => return Err(format!("Mismatch on var data type and value: {var_id}")),
-                        (ItemType::Folder, _, _) => return Err(format!("Can't set value to an item folder"))
+        for var_id_val in var_id_vals {
+            match (self.items_db.get(&rw_txn, &var_id_val.var_id), var_id_val.value) {
+                (Ok(Some(mut var)), Some(value)) => {
+                    let i_type = VariableManager::cast_item_type(var.i_type);
+                    let v_dtype = VariableManager::cast_var_data_type(var.var_d_type);
+                    let val = value.typed.ok_or_else(|| format!("None value"))?;
+                    match (i_type, v_dtype, val) {
+                        (ItemType::Variable, VarDataType::Integer, Typed::IntegerValue(v)) => var.value = Some(Value {typed: Some(Typed::IntegerValue(v))}),
+                        (ItemType::Variable, VarDataType::Float, Typed::FloatValue(v)) => var.value = Some(Value {typed: Some(Typed::FloatValue(v))}),
+                        (ItemType::Variable, VarDataType::Text, Typed::TextValue(v)) => var.value = Some(Value {typed: Some(Typed::TextValue(v))}),
+                        (ItemType::Variable, VarDataType::Boolean, Typed::BooleanValue(v)) => var.value = Some(Value {typed: Some(Typed::BooleanValue(v))}),
+                        (ItemType::Variable, VarDataType::Invalid, _) => return Err(format!("Invalid var data type.")),
+                        (ItemType::Variable, _, _) => return Err(format!("Mismatch data type.")),
+                        (ItemType::Folder, _, _) => return Err(format!("Can't write value to a folder.")),
+                        (ItemType::Invalid, _, _) => return Err(format!("Invalid item type.")),
                     }
-                    match self.items_db.put(rw_txn, &var_id, &var) {
+                    match self.items_db.put(rw_txn, &var_id_val.var_id, &var) {
                         Ok(_) => do_commit = true,
                         Err(e) => return Err(format!("{base_err} Putting var: {e}"))
                     }
                 }
-                Ok(None) => return Err(format!("{base_err} Variable {var_id} not found")),
-                Err(e) => return Err(format!("{base_err} Getting variable: {e}"))
+                (Ok(Some(_)), None) => return Err(format!("{base_err} Can't set a null value")),
+                (Ok(None), _) => return Err(format!("{base_err} Variable not found")),
+                (Err(e), _) => return Err(format!("{base_err} Getting variable: {e}"))
             }
         }
         Ok(do_commit)
     }
 
-    fn get_vals(&self, var_ids: Vec<String>, ro_txn: &RoTxn) -> Result<Vec<Option<Value>>, String> {
+    fn get_vals(&self, var_ids: Vec<String>, ro_txn: &RoTxn) -> Result<Vec<OptionalValue>, String> {
         let base_err = format!("Error getting variable values.");
         let mut values = vec![];
         for var_id in var_ids {
             match self.items_db.get(&ro_txn, &var_id) {
                 Ok(Some(var)) => {
-                    values.push(var.value);
+                    values.push(OptionalValue { value: var.value });
                 }
                 Ok(None) => return Err(format!("{base_err} Variable {var_id} not found")),
                 Err(e) => return Err(format!("{base_err} Getting variable: {e}"))
@@ -160,10 +197,11 @@ impl VariableManager {
                 Some(curr_id) => {
                     match self.items_db.get(&ro_txn, &curr_id) {
                         Ok(Some(var)) => {
-                            for (id_, i_type, _) in var.children.values() {
-                                descendants.push(id_.clone());
-                                match i_type {
-                                    ItemType::Folder => stack.push(id_.to_owned()),
+                            for child in var.children.values() {
+                                descendants.push(child.child_id.clone());
+                                let ch_i_type = ItemType::try_from(child.i_type).map_err(|e| format!("Casting Item Type: {e}"))?;
+                                match ch_i_type {
+                                    ItemType::Folder => stack.push(child.child_id.to_owned()),
                                     _ => ()
                                 }
                             }
@@ -210,61 +248,138 @@ impl VariableManager {
         Ok(do_commit)
     }
 
-    pub fn exec_cmd(&self, cmd: Command) -> Result<Response, String> {
-        match cmd {
-            Command::ADD(add_cmd) => {
-                let mut rw_txn = self.env.write_txn().map_err(|e| format!("Creating transaction error: {e}"))?;
-                let item_ids = self.add_items(&add_cmd.parent_id, add_cmd.items_meta, &mut rw_txn)?;
-                if item_ids.len() > 0 {
-                    rw_txn.commit().map_err(|e| format!("On commit: {e}"))?;
-                }
-                Ok(Response::ADD(AddResponse { cmd_id: add_cmd.cmd_id, item_ids }))
-            }
-            Command::LIST(list_cmd) => {
-                match list_cmd.item_id {
-                    Some(folder_id) => {
-                        let ro_txn = self.env.read_txn().map_err(|e| format!("Creating transaction error: {e}"))?;
-                        let var = self.get_item(&folder_id, &ro_txn)?;
-                        let mut children_folders = HashMap::new();
-                        let mut children_vars = HashMap::new();
-                        for (name, (item_id, i_type, v_type)) in var.children {
-                            match (i_type, v_type) {
-                                (ItemType::Folder, _) => {children_folders.insert(name, item_id);},
-                                (ItemType::Variable, Some(d_t)) => {children_vars.insert(name, (item_id, d_t));},
-                                (ItemType::Variable, None) => warn!("Invalid Data Found. Variables must have a data type"),
+    pub fn exec_cmd(&self, cmd: Command) -> Response {
+        match cmd.command_type {
+            Some(CommandType::Add(add_cmd)) => {
+                let (status, error_msg) = match self.env.write_txn() {
+                    Ok(mut rw_txn) => {
+                        match self.add_items(&add_cmd.parent_id, add_cmd.items_meta, &mut rw_txn) {
+                            Ok(inserted) => {
+                                if inserted > 0 {
+                                    match rw_txn.commit() {
+                                        Ok(_) => (OperationStatus::Ok as i32, None),
+                                        Err(e) => (OperationStatus::Err as i32, Some(format!("On commit: {e}")))
+                                    }
+                                } else {
+                                    (OperationStatus::Ok as i32, None)
+                                }
                             }
+                            Err(e) => (OperationStatus::Err as i32, Some(format!("Inserting error: {e}")))
                         }
-                        Ok(Response::LIST(ListResponse { cmd_id: list_cmd.cmd_id, children_folders, children_vars }))
+                    }
+                    Err(e) => (OperationStatus::Err as i32, Some(format!("Creating transaction error: {e}")))
+                };
+                Response { response_type: Some(ResponseType::Add(AddResponse { cmd_id: add_cmd.cmd_id, status, error_msg })) }
+            }
+            Some(CommandType::List(list_cmd)) => {
+                let mut children_folders: HashMap<String, String> = HashMap::new();
+                let mut children_vars: HashMap<String, VarInfo> = HashMap::new();
+                let (status, error_msg) = match list_cmd.folder_id {
+                    Some(folder_id) => {
+                        match self.env.read_txn() {
+                            Ok(ro_txn) => {
+                                match self.get_item(&folder_id, &ro_txn) {
+                                    Ok(var) => {
+                                        for (name, child) in var.children {
+                                            let i_type = VariableManager::cast_item_type(child.i_type);
+                                            let v_dtype = VariableManager::cast_var_data_type(child.var_d_type);
+                                            match (i_type, v_dtype) {
+                                                (ItemType::Variable, VarDataType::Invalid) => warn!("Invalid variable type"),
+                                                (ItemType::Variable, _) => {
+                                                    children_vars.insert(name, VarInfo {
+                                                        var_id: child.child_id, var_d_type: v_dtype as i32
+                                                    });
+                                                }
+                                                (ItemType::Folder, _) => {
+                                                    children_folders.insert(name, child.child_id);
+                                                }
+                                                (ItemType::Invalid, _) => warn!("Invalid item type")
+                                            };
+                                        }
+                                        (OperationStatus::Ok as i32, None)
+                                    }
+                                    Err(e) => (OperationStatus::Err as i32, Some(e))
+                                }
+                            }
+                            Err(e) => (OperationStatus::Err as i32, Some(format!("Creating transaction error: {e}")))
+                        }
                     }
                     None => {
-                        let mut children_folders = HashMap::new();
-                        let children_vars = HashMap::new();
-                        let root_id = Uuid::from_bytes(self.root).to_string();
-                        children_folders.insert("root".to_string(), root_id);
-                        Ok(Response::LIST(ListResponse { cmd_id: list_cmd.cmd_id, children_folders, children_vars }))
+                        children_folders.insert("root".to_string(), self.root.clone());
+                        (OperationStatus::Ok as i32, None)
                     }
-                }
+                };
+                Response { response_type: Some(ResponseType::List(ListResponse {
+                    cmd_id: list_cmd.cmd_id,
+                    status: status,
+                    children_folders,
+                    children_vars,
+                    error_msg
+                })) }
             }
-            Command::SET(set_cmd) => {
-                let mut rw_txn = self.env.write_txn().map_err(|e| format!("Creating transaction error: {e}"))?;
-                let do_commit = self.set_vals(set_cmd.var_ids_values, &mut rw_txn)?;
-                if do_commit {
-                    rw_txn.commit().map_err(|e| format!("On commit: {e}"))?;
-                }
-                Ok(Response::SET(SetResponse { cmd_id: set_cmd.cmd_id }))
+            Some(CommandType::Set(set_cmd)) => {
+                let (status, error_msg) = match self.env.write_txn() {
+                    Ok(mut rw_txn) => {
+                        match self.set_vals(set_cmd.var_ids_values, &mut rw_txn) {
+                            Ok(do_commit) => {
+                                if do_commit {
+                                    match rw_txn.commit() {
+                                        Ok(_) => (OperationStatus::Ok as i32, None),
+                                        Err(e) => (OperationStatus::Err as i32, Some(format!("On commit: {e}")))
+                                    }
+                                } else {
+                                    (OperationStatus::Ok as i32, None)
+                                }
+                            }
+                            Err(e) => (OperationStatus::Err as i32, Some(e))
+                        }
+                    }
+                    Err(e) => (OperationStatus::Err as i32, Some(format!("Creating transaction error: {e}")))
+                };
+                Response { response_type: Some(ResponseType::Set(SetResponse { cmd_id: set_cmd.cmd_id, status, error_msg })) }
             }
-            Command::GET(get_cmd) => {
-                let ro_txn = self.env.read_txn().map_err(|e| format!("Creating transaction error: {e}"))?;
-                let vals = self.get_vals(get_cmd.var_ids, &ro_txn)?;
-                Ok(Response::GET(GetResponse { cmd_id: get_cmd.cmd_id, var_values: vals }))
+            Some(CommandType::Get(get_cmd)) => {
+                let (status, error_msg, var_values) = match self.env.read_txn() {
+                    Ok(ro_txn) => {
+                        match self.get_vals(get_cmd.var_ids, &ro_txn) {
+                            Ok(vals) => {
+                                (OperationStatus::Ok as i32, None, vals)
+                            }
+                            Err(e) => (OperationStatus::Err as i32, Some(e), vec![])
+                        }
+                    }
+                    Err(e) => (OperationStatus::Err as i32, Some(format!("Creating transaction error: {e}")), vec![])
+                };
+                Response { response_type: Some(ResponseType::Get(GetResponse { cmd_id: get_cmd.cmd_id, status, var_values, error_msg })) }
             }
-            Command::DEL(del_cmd) => {
-                let mut rw_txn = self.env.write_txn().map_err(|e| format!("Creating transaction error: {e}"))?;
-                let do_commit = self.del_items(del_cmd.item_ids, &mut rw_txn)?;
-                if do_commit {
-                    rw_txn.commit().map_err(|e| format!("On commit: {e}"))?;
-                }
-                Ok(Response::DEL(DelResponse { cmd_id: del_cmd.cmd_id }))
+            Some(CommandType::Del(del_cmd)) => {
+                let (status, error_msg) = match self.env.write_txn() {
+                    Ok(mut rw_txn) => {
+                        match self.del_items(del_cmd.item_ids, &mut rw_txn) {
+                            Ok(do_commit) => {
+                                if do_commit {
+                                    match rw_txn.commit() {
+                                        Ok(_) => (OperationStatus::Ok as i32, None),
+                                        Err(e) => (OperationStatus::Err as i32, Some(format!("On commit: {e}")))
+                                    }
+                                } else {
+                                    (OperationStatus::Ok as i32, None)
+                                }
+                            }
+                            Err(e) => (OperationStatus::Err as i32, Some(e))
+                        }
+                    }
+                    Err(e) => (OperationStatus::Err as i32, Some(format!("Creating transaction error: {e}")))
+                };
+                Response { response_type: Some(ResponseType::Del(DelResponse { cmd_id: del_cmd.cmd_id, status, error_msg })) }
+            }
+            None => {
+                let uid = Uuid::new_v4().to_string();
+                Response { response_type: Some(ResponseType::Inv(InvalidCmdResponse {
+                    cmd_id: uid,
+                    status: OperationStatus::Err as i32,
+                    error_msg: Some("No valid command received".to_string())
+                })) }
             }
         }
     }

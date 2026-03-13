@@ -1,0 +1,109 @@
+syntax = "proto3";
+
+package namespace;
+
+import "namespace/enums.proto";
+import "namespace/types.proto";
+
+message ItemMeta {
+  string name = 1;
+  ItemType i_type = 2;
+  optional VarDataType var_d_type = 3;
+}
+
+message VarInfo {
+  string var_id = 1;
+  VarDataType var_d_type = 2;
+}
+
+message VarIdValue {
+  string var_id = 1;
+  Value value = 2;
+}
+
+message AddCommand {
+  string cmd_id = 1;
+  string parent_id = 2;
+  repeated ItemMeta items_meta = 3;
+}
+
+message AddResponse {
+  string cmd_id = 1;
+  OperationStatus status = 2;
+  optional string error_msg = 3;
+}
+
+message ListCommand {
+  string cmd_id = 1;
+  optional string folder_id = 2;
+}
+
+message ListResponse {
+  string cmd_id = 1;
+  OperationStatus status = 2;
+  map<string, string> children_folders = 3;
+  map<string, VarInfo> children_vars = 4;
+  optional string error_msg = 5;
+}
+
+message SetCommand {
+  string cmd_id = 1;
+  repeated VarIdValue var_ids_values = 2;
+}
+
+message SetResponse {
+  string cmd_id = 1;
+  OperationStatus status = 2;
+  optional string error_msg = 3;
+}
+
+message GetCommand {
+  string cmd_id = 1;
+  repeated string var_ids = 2;
+}
+
+message GetResponse {
+  string cmd_id = 1;
+  OperationStatus status = 2;
+  repeated OptionalValue var_values = 3;
+  optional string error_msg = 4;
+}
+
+message DelCommand {
+  string cmd_id = 1;
+  repeated string item_ids = 2;
+}
+
+message DelResponse {
+  string cmd_id = 1;
+  OperationStatus status = 2;
+  optional string error_msg = 3;
+}
+
+message InvalidCmdResponse {
+  string cmd_id = 1;
+  OperationStatus status = 2;
+  optional string error_msg = 3;
+}
+
+// Envelopes
+message Command {
+  oneof command_type {
+    AddCommand add = 1;
+    ListCommand list = 2;
+    SetCommand set = 3;
+    GetCommand get = 4;
+    DelCommand del = 5;
+  }
+}
+
+message Response {
+  oneof response_type {
+    AddResponse add = 1;
+    ListResponse list = 2;
+    SetResponse set = 3;
+    GetResponse get = 4;
+    DelResponse del = 5;
+    InvalidCmdResponse inv = 6;
+  }
+}
