@@ -19,6 +19,7 @@
 	import VariableTree from '$lib/features/tree/components/VariableTree.svelte';
 	import ContextMenu from '$lib/features/tree/components/ContextMenu.svelte';
 	import PageToolbar from '$lib/features/workspace/components/PageToolbar.svelte';
+	import UnifiedNamespaceBuilder from '$lib/features/namespace-builder/components/UnifiedNamespaceBuilder.svelte';
 	import PlantAssetNode from '$lib/features/graph/components/PlantAssetNode.svelte';
 	import { getRegisteredAssetDefinitions } from '$lib/features/graph/assets/registry';
 	import { PlantAssetKind } from '$lib/features/graph/assets/types';
@@ -74,6 +75,9 @@
 	let graphViewport: Viewport = { x: 0, y: 0, zoom: 1 };
 	let subscribedTagIds: string[] = [];
 	let removeDialog: HTMLDialogElement | null = null;
+	let namespaceBuilderDialog: HTMLDialogElement | null = null;
+	let namespaceBuilderRef: UnifiedNamespaceBuilder | null = null;
+	let namespaceBuilderValid = true;
 	let removeTargetNode: TreeNode | null = null;
 	let removeSubmitting = false;
 	let removeError = '';
@@ -431,11 +435,40 @@
 	}
 
 	function openTreeAddDialog(): void {
-		window.dispatchEvent(
-			new CustomEvent<{ parentId?: string | null }>('tree:open-add-dialog', {
-				detail: { parentId: null }
-			})
-		);
+		namespaceBuilderDialog?.showModal();
+		// Sync Create button state with current YAML validity (event keeps it updated while editing)
+		if (namespaceBuilderRef && typeof namespaceBuilderRef.getValidity === 'function') {
+			namespaceBuilderValid = namespaceBuilderRef.getValidity();
+		}
+	}
+
+	function closeNamespaceBuilderDialog(): void {
+		if (namespaceBuilderRef && typeof namespaceBuilderRef.reset === 'function') {
+			namespaceBuilderRef.reset();
+		}
+		if (namespaceBuilderDialog?.open) {
+			namespaceBuilderDialog.close();
+		}
+	}
+
+	function onNamespaceBuilderCreate(): void {
+		if (!namespaceBuilderRef || typeof namespaceBuilderRef.buildNamespaceJsonFromYaml !== 'function') {
+			console.warn('Namespace builder not ready');
+			return;
+		}
+		try {
+			const json = namespaceBuilderRef.buildNamespaceJsonFromYaml();
+			const text = JSON.stringify(json, null, 2);
+			// Leave result in console and on window for copy/paste or later wiring (e.g. WS ADD).
+			console.log('Namespace JSON (from YAML):\n', text);
+			if (browser) {
+				(window as unknown as { __lastNamespaceJson?: unknown }).__lastNamespaceJson = json;
+			}
+		} catch (e) {
+			const msg = e instanceof Error ? e.message : String(e);
+			console.error('Create failed — fix YAML first:', msg);
+			alert(`Invalid namespace YAML:\n${msg}`);
+		}
 	}
 
 	function isTypingTarget(target: EventTarget | null): boolean {
@@ -528,7 +561,7 @@
 		onToggleCanvasMode={toggleCanvasMode}
 		onToggleTheme={toggleTheme}
 		onOpenAddDialog={openTreeAddDialog}
-		isAddDisabled={$wsStatus !== 'connected'}
+		isAddDisabled={false}
 	/>
 
 	<div class="flex h-[calc(100vh-5rem)] gap-4">
@@ -647,5 +680,40 @@
 				</button>
 			</div>
 		</form>
+	</dialog>
+
+	<dialog
+		bind:this={namespaceBuilderDialog}
+		class="fixed inset-0 m-auto h-[82vh] w-[92vw] max-w-[1400px] rounded-md border border-black/10 bg-(--bg-panel) p-0 text-(--text-primary) shadow-xl backdrop:bg-black/60 dark:border-white/10"
+	>
+		<div class="flex h-full flex-col p-3">
+			<div class="mb-2 flex items-center justify-between">
+				<h2 class="text-sm font-semibold">Unified Namespace Template Builder</h2>
+			</div>
+			<div class="min-h-0 flex-1">
+				<UnifiedNamespaceBuilder
+					bind:this={namespaceBuilderRef}
+					colorMode={$theme}
+					onValidityChange={(v) => (namespaceBuilderValid = v)}
+				/>
+			</div>
+			<div class="mt-2 flex justify-end gap-2 border-t border-black/10 pt-3 dark:border-white/10">
+				<button
+					type="button"
+					class="cursor-pointer rounded border border-black/15 px-3 py-1.5 text-xs hover:bg-(--bg-hover) dark:border-white/10"
+					onclick={closeNamespaceBuilderDialog}
+				>
+					Cancel
+				</button>
+				<button
+					type="button"
+					class="cursor-pointer rounded bg-blue-600 px-3 py-1.5 text-xs text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+					disabled={!namespaceBuilderValid}
+					onclick={onNamespaceBuilderCreate}
+				>
+					Create
+				</button>
+			</div>
+		</div>
 	</dialog>
 </main>

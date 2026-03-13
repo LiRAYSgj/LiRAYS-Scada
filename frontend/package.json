@@ -57,6 +57,7 @@
     "@xyflow/svelte": "^1.5.1",
     "dotenv": "^17.3.1",
     "lucide-svelte": "^0.577.0",
+    "monaco-editor": "^0.55.1",
     "ws": "^8.19.0"
   }
 }
