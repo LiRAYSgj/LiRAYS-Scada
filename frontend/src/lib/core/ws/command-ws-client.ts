@@ -1,6 +1,6 @@
 import type { TagScalarValue } from "./types";
 import type { Command, ItemMeta } from "../../proto/namespace/commands";
-import type { Value } from "../../proto/namespace/types";
+import type { NamespaceFolder, NamespaceNode, UnifiedNamespaceSchema, Value } from "../../proto/namespace/types";
 import type { ItemType, VarDataType } from "../../proto/namespace/enums";
 
 export function createCommandId(prefix: string): string {
@@ -114,6 +114,47 @@ export function createDelCommand(
       del: {
         cmdId,
         itemIds,
+      },
+    },
+  };
+}
+
+/** Builder export JSON: nested objects; leaves are type strings (e.g. "Float"). */
+export function namespaceJsonToUnifiedSchema(
+  json: Record<string, unknown>,
+): UnifiedNamespaceSchema {
+  function nodeFromJson(val: unknown): NamespaceNode {
+    if (typeof val === "string") {
+      return { variableType: val };
+    }
+    if (val !== null && typeof val === "object" && !Array.isArray(val)) {
+      const children: { [key: string]: NamespaceNode } = {};
+      for (const [key, child] of Object.entries(val as Record<string, unknown>)) {
+        children[key] = nodeFromJson(child);
+      }
+      return { folder: { children } as NamespaceFolder };
+    }
+    throw new Error(`Invalid namespace node (expected string or object): ${typeof val}`);
+  }
+  const roots: { [key: string]: NamespaceNode } = {};
+  for (const [key, val] of Object.entries(json)) {
+    roots[key] = nodeFromJson(val);
+  }
+  return { roots };
+}
+
+export function createAddBulkCommand(
+  parentId: string,
+  schema: UnifiedNamespaceSchema,
+  cmdId = createCommandId("add-bulk"),
+): { cmdId: string; command: Command } {
+  return {
+    cmdId,
+    command: {
+      addBulk: {
+        cmdId,
+        parentId,
+        schema,
       },
     },
   };

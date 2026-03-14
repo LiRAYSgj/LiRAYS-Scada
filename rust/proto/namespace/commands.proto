@@ -31,6 +31,16 @@ message AddResponse {
   string cmd_id = 1;
 }
 
+message AddBulkCommand {
+  string cmd_id = 1;
+  string parent_id = 2;
+  UnifiedNamespaceSchema schema = 3;
+}
+
+message AddBulkResponse {
+  string cmd_id = 1;
+}
+
 message ListCommand {
   string cmd_id = 1;
   optional string folder_id = 2;
@@ -82,6 +92,7 @@ message Command {
     SetCommand set = 3;
     GetCommand get = 4;
     DelCommand del = 5;
+    AddBulkCommand add_bulk = 6;
   }
 }
 
@@ -93,7 +104,8 @@ message Response {
     GetResponse get = 4;
     DelResponse del = 5;
     InvalidCmdResponse inv = 6;
+    AddBulkResponse add_bulk = 7;
   }
-  OperationStatus status = 7;
-  optional string error_msg = 8;
+  OperationStatus status = 8;
+  optional string error_msg = 9;
 }

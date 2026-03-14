@@ -2,12 +2,14 @@ import { browser } from "$app/environment";
 import { writable } from "svelte/store";
 import {
   createAddCommand,
+  createAddBulkCommand,
   createGetCommand,
   createSingleItemMeta,
   createDelCommand,
   createListCommand,
   createSetCommand,
   fromBackendValue,
+  namespaceJsonToUnifiedSchema,
 } from "./command-ws-client";
 import { WebSocketConnectionStatus, type TagScalarValue } from "./types";
 import {
@@ -21,6 +23,8 @@ const RETRY_BASE_MS = 2000;
 const RETRY_MAX_MS = 10000;
 const POLL_MS = 2000;
 const REQUEST_TIMEOUT_MS = 5000;
+/** Bulk add may take longer until backend implements processing; UI still waits on cmd_id. */
+const ADD_BULK_TIMEOUT_MS = 120_000;
 
 interface PendingListRequest {
   resolve: (value: ListResponse) => void;
@@ -40,6 +44,12 @@ interface PendingDelRequest {
   timeoutId: ReturnType<typeof setTimeout>;
 }
 
+interface PendingAddBulkRequest {
+  resolve: () => void;
+  reject: (reason?: unknown) => void;
+  timeoutId: ReturnType<typeof setTimeout>;
+}
+
 export class TagStreamClient {
   private socket: WebSocket | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -54,6 +64,7 @@ export class TagStreamClient {
   private inflightListByCmdId = new Map<string, PendingListRequest>();
   private inflightAddByCmdId = new Map<string, PendingAddRequest>();
   private inflightDelByCmdId = new Map<string, PendingDelRequest>();
+  private inflightAddBulkByCmdId = new Map<string, PendingAddBulkRequest>();
   private connectionWaiters: Array<{
     resolve: () => void;
     reject: (reason?: unknown) => void;
@@ -93,6 +104,7 @@ export class TagStreamClient {
     this.rejectAllListRequests(new Error("Stopped"));
     this.rejectAllAddRequests(new Error("Stopped"));
     this.rejectAllDelRequests(new Error("Stopped"));
+    this.rejectAllAddBulkRequests(new Error("Stopped"));
     this.clearReconnect();
     this.stopPolling();
     this.status.set(WebSocketConnectionStatus.DISCONNECTED);
@@ -158,6 +170,29 @@ export class TagStreamClient {
       }, REQUEST_TIMEOUT_MS);
 
       this.inflightAddByCmdId.set(cmdId, { resolve, reject, timeoutId });
+      this.send(command);
+    });
+  }
+
+  /**
+   * Send AddBulkCommand with protobuf schema; resolves when Response.add_bulk matches cmd_id.
+   * @param parentId Root parent for bulk tree (often "").
+   * @param json Nested object from buildNamespaceJsonFromYaml (leaves = type strings).
+   */
+  async addBulkNamespace(
+    parentId: string,
+    json: Record<string, unknown>,
+    endpoint?: string,
+  ): Promise<void> {
+    await this.ensureConnected(endpoint);
+    const schema = namespaceJsonToUnifiedSchema(json);
+    const { cmdId, command } = createAddBulkCommand(parentId, schema);
+    return new Promise<void>((resolve, reject) => {
+      const timeoutId = setTimeout(() => {
+        this.inflightAddBulkByCmdId.delete(cmdId);
+        reject(new Error("ADD_BULK request timed out"));
+      }, ADD_BULK_TIMEOUT_MS);
+      this.inflightAddBulkByCmdId.set(cmdId, { resolve, reject, timeoutId });
       this.send(command);
     });
   }
@@ -235,6 +270,7 @@ export class TagStreamClient {
       this.rejectAllListRequests(new Error("WebSocket connection closed"));
       this.rejectAllAddRequests(new Error("WebSocket connection closed"));
       this.rejectAllDelRequests(new Error("WebSocket connection closed"));
+      this.rejectAllAddBulkRequests(new Error("WebSocket connection closed"));
       if (this.intentionallyClosed || !this.started) {
         if (this.started || this.intentionallyClosed) {
           this.status.set(WebSocketConnectionStatus.DISCONNECTED);
@@ -288,6 +324,7 @@ export class TagStreamClient {
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
       return;
     }
+    console.log("Sending message:", message);
     const bytes = Command.encode(message).finish();
     this.socket.send(bytes);
   }
@@ -341,6 +378,17 @@ export class TagStreamClient {
             return;
           }
           this.inflightDelByCmdId.delete(delPayload.cmdId);
+          clearTimeout(request.timeoutId);
+          request.resolve();
+          return;
+        }
+        const addBulkPayload = payload.addBulk;
+        if (addBulkPayload) {
+          const request = this.inflightAddBulkByCmdId.get(addBulkPayload.cmdId);
+          if (!request) {
+            return;
+          }
+          this.inflightAddBulkByCmdId.delete(addBulkPayload.cmdId);
           clearTimeout(request.timeoutId);
           request.resolve();
           return;
@@ -405,6 +453,14 @@ export class TagStreamClient {
       request.reject(error);
     }
     this.inflightDelByCmdId.clear();
+  }
+
+  private rejectAllAddBulkRequests(error: Error): void {
+    for (const [, request] of this.inflightAddBulkByCmdId) {
+      clearTimeout(request.timeoutId);
+      request.reject(error);
+    }
+    this.inflightAddBulkByCmdId.clear();
   }
 }
 

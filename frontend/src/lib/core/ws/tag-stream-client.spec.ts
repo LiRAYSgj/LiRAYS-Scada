@@ -183,6 +183,28 @@ describe("TagStreamClient", () => {
     expect(FakeWebSocket.instances.length).toBe(1);
   });
 
+  it("resolves addBulkNamespace when Response.add_bulk matches cmd_id", async () => {
+    const client = new TagStreamClient();
+    client.start("ws://localhost:8787");
+    const ws = FakeWebSocket.instances[0];
+    ws.readyState = FakeWebSocket.OPEN;
+    ws.emit("open");
+
+    const bulkPromise = client.addBulkNamespace("", { Area_: { Power: "Float" } });
+    await Promise.resolve();
+    const bulkMsg = ws.sent.find((msg) => Command.decode(msg).addBulk !== undefined);
+    expect(bulkMsg).toBeDefined();
+    const cmdId = Command.decode(bulkMsg!).addBulk!.cmdId;
+
+    const responseBytes = Response.encode({
+      status: OperationStatus.OPERATION_STATUS_OK,
+      addBulk: { cmdId },
+    }).finish();
+    ws.emit("message", { data: responseBytes.slice().buffer });
+
+    await expect(bulkPromise).resolves.toBeUndefined();
+  });
+
   it("enters reconnecting state after unexpected close", () => {
     const client = new TagStreamClient();
     client.start("ws://localhost:8787");

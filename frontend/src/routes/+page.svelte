@@ -30,6 +30,7 @@
   } from "$lib/features/graph/live-utils";
   import { createPageTagRealtimeProvider } from "$lib/features/realtime/page-tag-realtime-provider";
   import { createThemeVars, type ThemeMode } from "$lib/core/theme/theme-utils";
+  import { tagStreamClient } from "$lib/core/ws/tag-stream-client";
   import type { TagScalarValue } from "$lib/core/ws/types";
   import { ItemType, type VarDataType } from "$lib/proto/namespace/enums";
   import type {
@@ -79,6 +80,7 @@
   let namespaceBuilderDialog: HTMLDialogElement | null = null;
   let namespaceBuilderRef: UnifiedNamespaceBuilder | null = null;
   let namespaceBuilderValid = true;
+  let namespaceBuilderCreateLoading = false;
   let removeTargetNode: TreeNode | null = null;
   let removeSubmitting = false;
   let removeError = "";
@@ -485,28 +487,39 @@
     }
   }
 
-  function onNamespaceBuilderCreate(): void {
+  async function onNamespaceBuilderCreate(): Promise<void> {
     if (
       !namespaceBuilderRef ||
-      typeof namespaceBuilderRef.buildNamespaceJsonFromYaml !== "function"
+      typeof namespaceBuilderRef.buildNamespaceJsonFromYaml !== "function" ||
+      namespaceBuilderCreateLoading
     ) {
-      console.warn("Namespace builder not ready");
       return;
     }
+    let json: Record<string, unknown>;
     try {
-      const json = namespaceBuilderRef.buildNamespaceJsonFromYaml();
-      const text = JSON.stringify(json, null, 2);
-      // Leave result in console and on window for copy/paste or later wiring (e.g. WS ADD).
-      console.log("Namespace JSON (from YAML):\n", text);
+      json = namespaceBuilderRef.buildNamespaceJsonFromYaml() as Record<
+        string,
+        unknown
+      >;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      alert(`Invalid namespace YAML:\n${msg}`);
+      return;
+    }
+    namespaceBuilderCreateLoading = true;
+    try {
+      await tagStreamClient.addBulkNamespace("", json, DEMO_WS_ENDPOINT);
       if (browser) {
         (
           window as unknown as { __lastNamespaceJson?: unknown }
         ).__lastNamespaceJson = json;
       }
+      closeNamespaceBuilderDialog();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      console.error("Create failed — fix YAML first:", msg);
-      alert(`Invalid namespace YAML:\n${msg}`);
+      alert(`Create request failed:\n${msg}`);
+    } finally {
+      namespaceBuilderCreateLoading = false;
     }
   }
 
@@ -755,18 +768,27 @@
       >
         <button
           type="button"
-          class="cursor-pointer rounded border border-black/15 px-3 py-1.5 text-xs hover:bg-(--bg-hover) dark:border-white/10"
+          class="cursor-pointer rounded border border-black/15 px-3 py-1.5 text-xs hover:bg-(--bg-hover) disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10"
+          disabled={namespaceBuilderCreateLoading}
           onclick={closeNamespaceBuilderDialog}
         >
           Cancel
         </button>
         <button
           type="button"
-          class="cursor-pointer rounded bg-blue-600 px-3 py-1.5 text-xs text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
-          disabled={!namespaceBuilderValid}
-          onclick={onNamespaceBuilderCreate}
+          class="inline-flex cursor-pointer items-center justify-center gap-2 rounded bg-blue-600 px-3 py-1.5 text-xs text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={!namespaceBuilderValid || namespaceBuilderCreateLoading}
+          onclick={() => void onNamespaceBuilderCreate()}
         >
-          Create
+          {#if namespaceBuilderCreateLoading}
+            <span
+              class="inline-block size-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white"
+              aria-hidden="true"
+            ></span>
+            Creating…
+          {:else}
+            Create
+          {/if}
         </button>
       </div>
     </div>
