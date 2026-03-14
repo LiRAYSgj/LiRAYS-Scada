@@ -2,6 +2,8 @@ import { get } from "svelte/store";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TagStreamClient } from "./tag-stream-client";
 import { WebSocketConnectionStatus } from "./types";
+import { Command, Response } from "../../proto/namespace/commands";
+import { OperationStatus } from "../../proto/namespace/enums";
 
 vi.mock("$app/environment", () => ({
   browser: true,
@@ -15,7 +17,7 @@ class FakeWebSocket {
   static instances: FakeWebSocket[] = [];
 
   public readyState = FakeWebSocket.CONNECTING;
-  public sent: string[] = [];
+  public sent: any[] = [];
   private handlers: Record<string, Handler[]> = {};
 
   constructor(public readonly url: string) {
@@ -27,7 +29,7 @@ class FakeWebSocket {
     this.handlers[type].push(handler);
   }
 
-  send(payload: string): void {
+  send(payload: any): void {
     this.sent.push(payload);
   }
 
@@ -77,9 +79,14 @@ describe("TagStreamClient", () => {
 
     client.setTrackedIds(["tag-a", "tag-b"]);
 
-    expect(ws.sent.some((msg) => msg.includes('"GET"'))).toBe(true);
+    const decodedRequests = ws.sent.map((msg) => Command.decode(msg));
+    expect(decodedRequests.some((req) => req.get !== undefined)).toBe(true);
     expect(
-      ws.sent.some((msg) => msg.includes('"var_ids":["tag-a","tag-b"]')),
+      decodedRequests.some(
+        (req) =>
+          req.get?.varIds.includes("tag-a") &&
+          req.get?.varIds.includes("tag-b"),
+      ),
     ).toBe(true);
   });
 
@@ -90,17 +97,21 @@ describe("TagStreamClient", () => {
     ws.readyState = FakeWebSocket.OPEN;
     ws.emit("open");
     client.setTrackedIds(["tag-a"]);
-    const request = ws.sent.find((msg) => msg.includes('"GET"'));
+
+    const decodedRequests = ws.sent.map((msg) => Command.decode(msg));
+    const request = decodedRequests.find((req) => req.get !== undefined);
     expect(request).toBeDefined();
-    const parsed = JSON.parse(request ?? "{}") as { GET: { cmd_id: string } };
+
+    const responseBytes = Response.encode({
+      status: OperationStatus.OPERATION_STATUS_OK,
+      get: {
+        cmdId: request!.get!.cmdId,
+        varValues: [{ value: { integerValue: 57 } }],
+      },
+    }).finish();
 
     ws.emit("message", {
-      data: JSON.stringify({
-        GET: {
-          cmd_id: parsed.GET.cmd_id,
-          var_values: [{ Integer: 57 }],
-        },
-      }),
+      data: responseBytes.slice().buffer,
     });
 
     expect(get(client.values)).toEqual({ "tag-a": 57 });
@@ -114,8 +125,16 @@ describe("TagStreamClient", () => {
     ws.emit("open");
 
     client.sendWriteValue("tag-cmd", 42);
-    expect(ws.sent.some((msg) => msg.includes('"SET"'))).toBe(true);
-    expect(ws.sent.some((msg) => msg.includes('"Integer":42'))).toBe(true);
+
+    const decodedRequests = ws.sent.map((msg) => Command.decode(msg));
+    expect(decodedRequests.some((req) => req.set !== undefined)).toBe(true);
+    expect(
+      decodedRequests.some((req) =>
+        req.set?.varIdsValues.some(
+          (v) => v.varId === "tag-cmd" && v.value?.integerValue === 42,
+        ),
+      ),
+    ).toBe(true);
   });
 
   it("reuses existing socket when list request happens before start", async () => {
@@ -124,24 +143,32 @@ describe("TagStreamClient", () => {
     const ws = FakeWebSocket.instances[0];
     ws.readyState = FakeWebSocket.OPEN;
     ws.emit("open");
-    let listRequest = ws.sent.find((msg) => msg.includes('"LIST"'));
-    for (let attempt = 0; !listRequest && attempt < 5; attempt += 1) {
+
+    let listRequestMsg = ws.sent.find(
+      (msg) => Command.decode(msg).list !== undefined,
+    );
+    for (let attempt = 0; !listRequestMsg && attempt < 5; attempt += 1) {
       await Promise.resolve();
-      listRequest = ws.sent.find((msg) => msg.includes('"LIST"'));
+      listRequestMsg = ws.sent.find(
+        (msg) => Command.decode(msg).list !== undefined,
+      );
     }
-    expect(listRequest).toBeDefined();
-    const parsed = JSON.parse(listRequest ?? "{}") as {
-      LIST: { cmd_id: string };
-    };
+    expect(listRequestMsg).toBeDefined();
+    const parsed = Command.decode(listRequestMsg!);
+
+    const responseBytes = Response.encode({
+      status: OperationStatus.OPERATION_STATUS_OK,
+      list: {
+        cmdId: parsed.list!.cmdId,
+        childrenFolders: { root: "root-id" },
+        childrenVars: {},
+      },
+    }).finish();
+
     ws.emit("message", {
-      data: JSON.stringify({
-        LIST: {
-          cmd_id: parsed.LIST.cmd_id,
-          children_folders: { root: "root-id" },
-          children_vars: {},
-        },
-      }),
+      data: responseBytes.slice().buffer,
     });
+
     await listPromise;
 
     client.start("ws://localhost:8787");

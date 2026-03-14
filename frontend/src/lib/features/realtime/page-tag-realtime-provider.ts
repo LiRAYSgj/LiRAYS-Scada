@@ -2,11 +2,10 @@ import { derived, writable } from "svelte/store";
 import { tagStreamClient } from "$lib/core/ws/tag-stream-client";
 import type { Readable } from "svelte/store";
 import type {
-  BackendItemType,
-  BackendVarDataType,
   TagScalarValue,
   WebSocketConnectionStatus,
 } from "$lib/core/ws/types";
+import type { ItemType, VarDataType } from "$lib/proto/namespace/enums";
 
 function uniqueIds(ids: string[]): string[] {
   const seen: Record<string, true> = {};
@@ -44,8 +43,8 @@ export interface TagRealtimeClient {
   addItem: (
     parentId: string,
     name: string,
-    itemType: BackendItemType,
-    varType: BackendVarDataType | null,
+    itemType: ItemType,
+    varType: VarDataType | undefined,
     endpoint?: string,
   ) => Promise<string[]>;
   removeItems: (itemIds: string[], endpoint?: string) => Promise<void>;
@@ -94,8 +93,8 @@ export function createPageTagRealtimeProvider(
     addItem: (
       parentId: string,
       name: string,
-      itemType: BackendItemType,
-      varType: BackendVarDataType | null,
+      itemType: ItemType,
+      varType: VarDataType | undefined,
     ) => {
       return client.addItem(parentId, name, itemType, varType, endpoint);
     },

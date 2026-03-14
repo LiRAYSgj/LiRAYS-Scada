@@ -155,6 +155,8 @@ impl VariableManager {
                         (ItemType::Variable, VarDataType::Float, Typed::FloatValue(v)) => var.value = Some(Value {typed: Some(Typed::FloatValue(v))}),
                         (ItemType::Variable, VarDataType::Text, Typed::TextValue(v)) => var.value = Some(Value {typed: Some(Typed::TextValue(v))}),
                         (ItemType::Variable, VarDataType::Boolean, Typed::BooleanValue(v)) => var.value = Some(Value {typed: Some(Typed::BooleanValue(v))}),
+                        (ItemType::Variable, VarDataType::Integer, Typed::FloatValue(v)) => var.value = Some(Value {typed: Some(Typed::IntegerValue(v as i64))}),
+                        (ItemType::Variable, VarDataType::Float, Typed::IntegerValue(v)) => var.value = Some(Value {typed: Some(Typed::FloatValue(v as f64))}),
                         (ItemType::Variable, VarDataType::Invalid, _) => return Err(format!("Invalid var data type.")),
                         (ItemType::Variable, _, _) => return Err(format!("Mismatch data type.")),
                         (ItemType::Folder, _, _) => return Err(format!("Can't write value to a folder.")),

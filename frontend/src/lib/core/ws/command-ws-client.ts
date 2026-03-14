@@ -1,48 +1,42 @@
-import type {
-  AddCommandPayload,
-  BackendItemType,
-  BackendVarDataType,
-  BackendCommandEnvelope,
-  BackendValueEnvelope,
-  DelCommandPayload,
-  ListCommandPayload,
-  TagScalarValue,
-} from "./types";
+import type { TagScalarValue } from "./types";
+import type { Command, ItemMeta } from "../../proto/namespace/commands";
+import type { Value } from "../../proto/namespace/types";
+import type { ItemType, VarDataType } from "../../proto/namespace/enums";
 
 export function createCommandId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-export function toBackendValue(value: TagScalarValue): BackendValueEnvelope {
+export function toBackendValue(value: TagScalarValue): Value {
   if (typeof value === "string") {
-    return { Text: value };
+    return { textValue: value };
   }
   if (typeof value === "boolean") {
-    return { Boolean: value };
+    return { booleanValue: value };
   }
   if (Number.isInteger(value)) {
-    return { Integer: value };
+    return { integerValue: value as number };
   }
-  return { Float: value };
+  return { floatValue: value as number };
 }
 
 export function fromBackendValue(
-  value: BackendValueEnvelope | null,
+  value: Value | null | undefined,
 ): TagScalarValue | undefined {
   if (!value) {
     return undefined;
   }
-  if ("Integer" in value) {
-    return value.Integer;
+  if (value.integerValue !== undefined) {
+    return value.integerValue;
   }
-  if ("Float" in value) {
-    return value.Float;
+  if (value.floatValue !== undefined) {
+    return value.floatValue;
   }
-  if ("Text" in value) {
-    return value.Text;
+  if (value.textValue !== undefined) {
+    return value.textValue;
   }
-  if ("Boolean" in value) {
-    return value.Boolean;
+  if (value.booleanValue !== undefined) {
+    return value.booleanValue;
   }
   return undefined;
 }
@@ -52,14 +46,14 @@ export function createGetCommand(
   cmdId = createCommandId("get"),
 ): {
   cmdId: string;
-  command: BackendCommandEnvelope;
+  command: Command;
 } {
   return {
     cmdId,
     command: {
-      GET: {
-        cmd_id: cmdId,
-        var_ids: varIds,
+      get: {
+        cmdId,
+        varIds,
       },
     },
   };
@@ -69,11 +63,11 @@ export function createSetCommand(
   id: string,
   value: TagScalarValue,
   cmdId = createCommandId("set"),
-): BackendCommandEnvelope {
+): Command {
   return {
-    SET: {
-      cmd_id: cmdId,
-      var_ids_values: [[id, toBackendValue(value)]],
+    set: {
+      cmdId,
+      varIdsValues: [{ varId: id, value: toBackendValue(value) }],
     },
   };
 }
@@ -81,13 +75,13 @@ export function createSetCommand(
 export function createListCommand(
   itemId?: string,
   cmdId = createCommandId("list"),
-): { cmdId: string; command: { LIST: ListCommandPayload } } {
+): { cmdId: string; command: Command } {
   return {
     cmdId,
     command: {
-      LIST: {
-        cmd_id: cmdId,
-        ...(itemId ? { item_id: itemId } : {}),
+      list: {
+        cmdId,
+        folderId: itemId,
       },
     },
   };
@@ -95,16 +89,16 @@ export function createListCommand(
 
 export function createAddCommand(
   parentId: string,
-  itemsMeta: AddCommandPayload["items_meta"],
+  itemsMeta: ItemMeta[],
   cmdId = createCommandId("add"),
-): { cmdId: string; command: { ADD: AddCommandPayload } } {
+): { cmdId: string; command: Command } {
   return {
     cmdId,
     command: {
-      ADD: {
-        cmd_id: cmdId,
-        parent_id: parentId,
-        items_meta: itemsMeta,
+      add: {
+        cmdId,
+        parentId,
+        itemsMeta,
       },
     },
   };
@@ -113,13 +107,13 @@ export function createAddCommand(
 export function createDelCommand(
   itemIds: string[],
   cmdId = createCommandId("del"),
-): { cmdId: string; command: { DEL: DelCommandPayload } } {
+): { cmdId: string; command: Command } {
   return {
     cmdId,
     command: {
-      DEL: {
-        cmd_id: cmdId,
-        item_ids: itemIds,
+      del: {
+        cmdId,
+        itemIds,
       },
     },
   };
@@ -127,8 +121,12 @@ export function createDelCommand(
 
 export function createSingleItemMeta(
   name: string,
-  itemType: BackendItemType,
-  varType: BackendVarDataType | null,
-): [string, BackendItemType, BackendVarDataType | null] {
-  return [name, itemType, varType];
+  itemType: ItemType,
+  varType: VarDataType | undefined,
+): ItemMeta {
+  return {
+    name,
+    iType: itemType,
+    varDType: varType,
+  };
 }

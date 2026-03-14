@@ -9,15 +9,13 @@ import {
   createSetCommand,
   fromBackendValue,
 } from "./command-ws-client";
+import { WebSocketConnectionStatus, type TagScalarValue } from "./types";
 import {
-  type BackendItemType,
-  type BackendVarDataType,
-  type BackendCommandEnvelope,
-  type BackendResponseEnvelope,
-  type ListResponsePayload,
-  WebSocketConnectionStatus,
-  type TagScalarValue,
-} from "./types";
+  Command,
+  Response,
+  type ListResponse,
+} from "../../proto/namespace/commands";
+import { ItemType, type VarDataType } from "../../proto/namespace/enums";
 
 const RETRY_BASE_MS = 2000;
 const RETRY_MAX_MS = 10000;
@@ -25,7 +23,7 @@ const POLL_MS = 2000;
 const REQUEST_TIMEOUT_MS = 5000;
 
 interface PendingListRequest {
-  resolve: (value: ListResponsePayload) => void;
+  resolve: (value: ListResponse) => void;
   reject: (reason?: unknown) => void;
   timeoutId: ReturnType<typeof setTimeout>;
 }
@@ -124,10 +122,10 @@ export class TagStreamClient {
   async listChildren(
     parentId: string | undefined,
     endpoint?: string,
-  ): Promise<ListResponsePayload> {
+  ): Promise<ListResponse> {
     await this.ensureConnected(endpoint);
     const { cmdId, command } = createListCommand(parentId);
-    return new Promise<ListResponsePayload>((resolve, reject) => {
+    return new Promise<ListResponse>((resolve, reject) => {
       const timeoutId = setTimeout(() => {
         this.inflightListByCmdId.delete(cmdId);
         reject(new Error("LIST request timed out"));
@@ -141,8 +139,8 @@ export class TagStreamClient {
   async addItem(
     parentId: string,
     name: string,
-    itemType: BackendItemType,
-    varType: BackendVarDataType | null,
+    itemType: ItemType,
+    varType: VarDataType | undefined,
     endpoint?: string,
   ): Promise<string[]> {
     await this.ensureConnected(endpoint);
@@ -150,7 +148,7 @@ export class TagStreamClient {
       createSingleItemMeta(
         name,
         itemType,
-        itemType === "Folder" ? null : varType,
+        itemType === ItemType.ITEM_TYPE_FOLDER ? undefined : varType,
       ),
     ]);
     return new Promise<string[]>((resolve, reject) => {
@@ -210,6 +208,7 @@ export class TagStreamClient {
     }
 
     this.socket = new WebSocket(this.endpoint);
+    this.socket.binaryType = "arraybuffer";
 
     this.socket.addEventListener("open", () => {
       this.connecting = false;
@@ -285,11 +284,12 @@ export class TagStreamClient {
     }
   }
 
-  private send(message: BackendCommandEnvelope): void {
+  private send(message: Command): void {
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
       return;
     }
-    this.socket.send(JSON.stringify(message));
+    const bytes = Command.encode(message).finish();
+    this.socket.send(bytes);
   }
 
   private pollOnce(): void {
@@ -303,61 +303,61 @@ export class TagStreamClient {
   }
 
   private handleMessage(rawData: unknown): void {
-    if (typeof rawData !== "string") {
+    if (!(rawData instanceof ArrayBuffer)) {
       return;
     }
 
     try {
-      const payload = JSON.parse(rawData) as BackendResponseEnvelope;
-      const listPayload = "LIST" in payload ? payload.LIST : undefined;
+      const payload = Response.decode(new Uint8Array(rawData));
+      const listPayload = payload.list;
       if (listPayload) {
-        const request = this.inflightListByCmdId.get(listPayload.cmd_id);
+        const request = this.inflightListByCmdId.get(listPayload.cmdId);
         if (!request) {
           return;
         }
-        this.inflightListByCmdId.delete(listPayload.cmd_id);
+        this.inflightListByCmdId.delete(listPayload.cmdId);
         clearTimeout(request.timeoutId);
         request.resolve(listPayload);
         return;
       }
-      const getPayload = "GET" in payload ? payload.GET : undefined;
+      const getPayload = payload.get;
       if (!getPayload) {
-        const addPayload = "ADD" in payload ? payload.ADD : undefined;
+        const addPayload = payload.add;
         if (addPayload) {
-          const request = this.inflightAddByCmdId.get(addPayload.cmd_id);
+          const request = this.inflightAddByCmdId.get(addPayload.cmdId);
           if (!request) {
             return;
           }
-          this.inflightAddByCmdId.delete(addPayload.cmd_id);
+          this.inflightAddByCmdId.delete(addPayload.cmdId);
           clearTimeout(request.timeoutId);
-          request.resolve(addPayload.item_ids ?? []);
+          request.resolve([]);
           return;
         }
 
-        const delPayload = "DEL" in payload ? payload.DEL : undefined;
+        const delPayload = payload.del;
         if (delPayload) {
-          const request = this.inflightDelByCmdId.get(delPayload.cmd_id);
+          const request = this.inflightDelByCmdId.get(delPayload.cmdId);
           if (!request) {
             return;
           }
-          this.inflightDelByCmdId.delete(delPayload.cmd_id);
+          this.inflightDelByCmdId.delete(delPayload.cmdId);
           clearTimeout(request.timeoutId);
           request.resolve();
           return;
         }
         return;
       }
-      const ids = this.inflightByCmdId.get(getPayload.cmd_id);
+      const ids = this.inflightByCmdId.get(getPayload.cmdId);
       if (!ids) {
         return;
       }
-      this.inflightByCmdId.delete(getPayload.cmd_id);
+      this.inflightByCmdId.delete(getPayload.cmdId);
       this.values.update((current) => {
         const next = { ...current };
         for (let index = 0; index < ids.length; index += 1) {
           const id = ids[index];
-          const raw = getPayload.var_values[index];
-          const parsed = fromBackendValue(raw);
+          const raw = getPayload.varValues[index];
+          const parsed = fromBackendValue(raw?.value);
           if (parsed !== undefined) {
             next[id] = parsed;
           }

@@ -1,4 +1,5 @@
 import { get, writable } from "svelte/store";
+import { ItemType } from "$lib/proto/namespace/enums";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPageTagRealtimeProvider } from "./page-tag-realtime-provider";
 import {
@@ -105,13 +106,13 @@ describe("createPageTagRealtimeProvider", () => {
       "ws://localhost:8787",
       fakeClient,
     );
-    await provider.addItem("root", "x", "Folder", null);
+    await provider.addItem("root", "x", ItemType.ITEM_TYPE_FOLDER, undefined);
     await provider.removeItems(["a"]);
     expect(addItem).toHaveBeenCalledWith(
       "root",
       "x",
-      "Folder",
-      null,
+      ItemType.ITEM_TYPE_FOLDER,
+      undefined,
       "ws://localhost:8787",
     );
     expect(removeItems).toHaveBeenCalledWith(["a"], "ws://localhost:8787");

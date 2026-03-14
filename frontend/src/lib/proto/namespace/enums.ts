@@ -102,17 +102,21 @@ export function varDataTypeToJSON(object: VarDataType): string {
 
 /** OperationStatus */
 export enum OperationStatus {
-  OPERATION_STATUS_OK = 0,
-  OPERATION_STATUS_ERR = 1,
+  OPERATION_STATUS_INVALID = 0,
+  OPERATION_STATUS_OK = 1,
+  OPERATION_STATUS_ERR = 2,
   UNRECOGNIZED = -1,
 }
 
 export function operationStatusFromJSON(object: any): OperationStatus {
   switch (object) {
     case 0:
+    case "OPERATION_STATUS_INVALID":
+      return OperationStatus.OPERATION_STATUS_INVALID;
+    case 1:
     case "OPERATION_STATUS_OK":
       return OperationStatus.OPERATION_STATUS_OK;
-    case 1:
+    case 2:
     case "OPERATION_STATUS_ERR":
       return OperationStatus.OPERATION_STATUS_ERR;
     case -1:
@@ -124,6 +128,8 @@ export function operationStatusFromJSON(object: any): OperationStatus {
 
 export function operationStatusToJSON(object: OperationStatus): string {
   switch (object) {
+    case OperationStatus.OPERATION_STATUS_INVALID:
+      return "OPERATION_STATUS_INVALID";
     case OperationStatus.OPERATION_STATUS_OK:
       return "OPERATION_STATUS_OK";
     case OperationStatus.OPERATION_STATUS_ERR:

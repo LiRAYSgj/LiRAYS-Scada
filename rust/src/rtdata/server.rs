@@ -33,7 +33,12 @@ async fn run_server(host: &str, port: u16, db_dir: &str) {
                                                             Err(_) => Command { command_type: None }
                                                         };
                                                         let vm = var_manager.lock().await;
+                                                        println!("=============================");
+                                                        debug!("{:?}", command);
                                                         let response = vm.exec_cmd(command);
+
+                                                        debug!("{:?}", response);
+                                                        println!("=============================");
                                                         match Proto::<Response>::bytes_encode(&response) {
                                                             Ok(resp) => {
                                                                 match ws_stream.send(Message::Binary(resp.into_owned().into())).await {

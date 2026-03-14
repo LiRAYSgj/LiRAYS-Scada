@@ -1,6 +1,7 @@
 import type { TreeNode } from "./types";
 import { tagStreamClient } from "$lib/core/ws/tag-stream-client";
-import type { ListResponsePayload } from "$lib/core/ws/types";
+import type { ListResponse } from "$lib/proto/namespace/commands";
+import { varDataTypeToJSON } from "$lib/proto/namespace/enums";
 
 const DEFAULT_WS_ENDPOINT = "ws://127.0.0.1:1236";
 
@@ -13,24 +14,22 @@ function resolveWsEndpoint(): string {
 
 function toTreeNodes(
   parent: TreeNode | null,
-  payload: ListResponsePayload,
+  payload: ListResponse,
 ): TreeNode[] {
   const basePath = parent?.path ?? "";
 
-  const folders = Object.entries(payload.children_folders).map(
-    ([name, id]) => ({
-      id,
-      parentId: parent?.id ?? null,
-      name,
-      path: basePath ? `${basePath}/${name}` : name,
-      kind: "folder" as const,
-      hasChildren: true,
-      childIds: null,
-    }),
-  );
+  const folders = Object.entries(payload.childrenFolders).map(([name, id]) => ({
+    id,
+    parentId: parent?.id ?? null,
+    name,
+    path: basePath ? `${basePath}/${name}` : name,
+    kind: "folder" as const,
+    hasChildren: true,
+    childIds: null,
+  }));
 
-  const vars = Object.entries(payload.children_vars).map(
-    ([name, [id, dataType]]) => ({
+  const vars = Object.entries(payload.childrenVars).map(
+    ([name, { varId: id, varDType: dataType }]) => ({
       id,
       parentId: parent?.id ?? null,
       name,
@@ -38,7 +37,8 @@ function toTreeNodes(
       kind: "tag" as const,
       hasChildren: false,
       childIds: null,
-      dataType,
+      dataType:
+        dataType !== undefined ? varDataTypeToJSON(dataType) : undefined,
     }),
   );
 

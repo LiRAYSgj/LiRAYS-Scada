@@ -45,10 +45,12 @@ class AddCommand(_message.Message):
     def __init__(self, cmd_id: _Optional[str] = ..., parent_id: _Optional[str] = ..., items_meta: _Optional[_Iterable[_Union[ItemMeta, _Mapping]]] = ...) -> None: ...
 
 class AddResponse(_message.Message):
-    __slots__ = ("cmd_id",)
+    __slots__ = ("cmd_id", "item_ids")
     CMD_ID_FIELD_NUMBER: _ClassVar[int]
+    ITEM_IDS_FIELD_NUMBER: _ClassVar[int]
     cmd_id: str
-    def __init__(self, cmd_id: _Optional[str] = ...) -> None: ...
+    item_ids: _containers.RepeatedScalarFieldContainer[str]
+    def __init__(self, cmd_id: _Optional[str] = ..., item_ids: _Optional[_Iterable[str]] = ...) -> None: ...
 
 class ListCommand(_message.Message):
     __slots__ = ("cmd_id", "folder_id")

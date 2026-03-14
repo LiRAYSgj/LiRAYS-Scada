@@ -45,8 +45,7 @@ export interface AddCommand {
 
 export interface AddResponse {
   cmdId: string;
-  status: OperationStatus;
-  errorMsg?: string | undefined;
+  itemIds: string[];
 }
 
 export interface ListCommand {
@@ -56,10 +55,8 @@ export interface ListCommand {
 
 export interface ListResponse {
   cmdId: string;
-  status: OperationStatus;
   childrenFolders: { [key: string]: string };
   childrenVars: { [key: string]: VarInfo };
-  errorMsg?: string | undefined;
 }
 
 export interface ListResponse_ChildrenFoldersEntry {
@@ -79,8 +76,6 @@ export interface SetCommand {
 
 export interface SetResponse {
   cmdId: string;
-  status: OperationStatus;
-  errorMsg?: string | undefined;
 }
 
 export interface GetCommand {
@@ -90,9 +85,7 @@ export interface GetCommand {
 
 export interface GetResponse {
   cmdId: string;
-  status: OperationStatus;
   varValues: OptionalValue[];
-  errorMsg?: string | undefined;
 }
 
 export interface DelCommand {
@@ -102,14 +95,10 @@ export interface DelCommand {
 
 export interface DelResponse {
   cmdId: string;
-  status: OperationStatus;
-  errorMsg?: string | undefined;
 }
 
 export interface InvalidCmdResponse {
   cmdId: string;
-  status: OperationStatus;
-  errorMsg?: string | undefined;
 }
 
 /** Envelopes */
@@ -128,6 +117,8 @@ export interface Response {
   get?: GetResponse | undefined;
   del?: DelResponse | undefined;
   inv?: InvalidCmdResponse | undefined;
+  status: OperationStatus;
+  errorMsg?: string | undefined;
 }
 
 function createBaseItemMeta(): ItemMeta {
@@ -499,7 +490,7 @@ export const AddCommand: MessageFns<AddCommand> = {
 };
 
 function createBaseAddResponse(): AddResponse {
-  return { cmdId: "", status: 0, errorMsg: undefined };
+  return { cmdId: "", itemIds: [] };
 }
 
 export const AddResponse: MessageFns<AddResponse> = {
@@ -507,11 +498,8 @@ export const AddResponse: MessageFns<AddResponse> = {
     if (message.cmdId !== "") {
       writer.uint32(10).string(message.cmdId);
     }
-    if (message.status !== 0) {
-      writer.uint32(16).int32(message.status);
-    }
-    if (message.errorMsg !== undefined) {
-      writer.uint32(26).string(message.errorMsg);
+    for (const v of message.itemIds) {
+      writer.uint32(18).string(v!);
     }
     return writer;
   },
@@ -532,19 +520,11 @@ export const AddResponse: MessageFns<AddResponse> = {
           continue;
         }
         case 2: {
-          if (tag !== 16) {
+          if (tag !== 18) {
             break;
           }
 
-          message.status = reader.int32() as any;
-          continue;
-        }
-        case 3: {
-          if (tag !== 26) {
-            break;
-          }
-
-          message.errorMsg = reader.string();
+          message.itemIds.push(reader.string());
           continue;
         }
       }
@@ -563,12 +543,11 @@ export const AddResponse: MessageFns<AddResponse> = {
         : isSet(object.cmd_id)
         ? globalThis.String(object.cmd_id)
         : "",
-      status: isSet(object.status) ? operationStatusFromJSON(object.status) : 0,
-      errorMsg: isSet(object.errorMsg)
-        ? globalThis.String(object.errorMsg)
-        : isSet(object.error_msg)
-        ? globalThis.String(object.error_msg)
-        : undefined,
+      itemIds: globalThis.Array.isArray(object?.itemIds)
+        ? object.itemIds.map((e: any) => globalThis.String(e))
+        : globalThis.Array.isArray(object?.item_ids)
+        ? object.item_ids.map((e: any) => globalThis.String(e))
+        : [],
     };
   },
 
@@ -577,11 +556,8 @@ export const AddResponse: MessageFns<AddResponse> = {
     if (message.cmdId !== "") {
       obj.cmdId = message.cmdId;
     }
-    if (message.status !== 0) {
-      obj.status = operationStatusToJSON(message.status);
-    }
-    if (message.errorMsg !== undefined) {
-      obj.errorMsg = message.errorMsg;
+    if (message.itemIds?.length) {
+      obj.itemIds = message.itemIds;
     }
     return obj;
   },
@@ -592,8 +568,7 @@ export const AddResponse: MessageFns<AddResponse> = {
   fromPartial<I extends Exact<DeepPartial<AddResponse>, I>>(object: I): AddResponse {
     const message = createBaseAddResponse();
     message.cmdId = object.cmdId ?? "";
-    message.status = object.status ?? 0;
-    message.errorMsg = object.errorMsg ?? undefined;
+    message.itemIds = object.itemIds?.map((e) => e) || [];
     return message;
   },
 };
@@ -683,7 +658,7 @@ export const ListCommand: MessageFns<ListCommand> = {
 };
 
 function createBaseListResponse(): ListResponse {
-  return { cmdId: "", status: 0, childrenFolders: {}, childrenVars: {}, errorMsg: undefined };
+  return { cmdId: "", childrenFolders: {}, childrenVars: {} };
 }
 
 export const ListResponse: MessageFns<ListResponse> = {
@@ -691,18 +666,12 @@ export const ListResponse: MessageFns<ListResponse> = {
     if (message.cmdId !== "") {
       writer.uint32(10).string(message.cmdId);
     }
-    if (message.status !== 0) {
-      writer.uint32(16).int32(message.status);
-    }
     globalThis.Object.entries(message.childrenFolders).forEach(([key, value]: [string, string]) => {
-      ListResponse_ChildrenFoldersEntry.encode({ key: key as any, value }, writer.uint32(26).fork()).join();
+      ListResponse_ChildrenFoldersEntry.encode({ key: key as any, value }, writer.uint32(18).fork()).join();
     });
     globalThis.Object.entries(message.childrenVars).forEach(([key, value]: [string, VarInfo]) => {
-      ListResponse_ChildrenVarsEntry.encode({ key: key as any, value }, writer.uint32(34).fork()).join();
+      ListResponse_ChildrenVarsEntry.encode({ key: key as any, value }, writer.uint32(26).fork()).join();
     });
-    if (message.errorMsg !== undefined) {
-      writer.uint32(42).string(message.errorMsg);
-    }
     return writer;
   },
 
@@ -722,11 +691,14 @@ export const ListResponse: MessageFns<ListResponse> = {
           continue;
         }
         case 2: {
-          if (tag !== 16) {
+          if (tag !== 18) {
             break;
           }
 
-          message.status = reader.int32() as any;
+          const entry2 = ListResponse_ChildrenFoldersEntry.decode(reader, reader.uint32());
+          if (entry2.value !== undefined) {
+            message.childrenFolders[entry2.key] = entry2.value;
+          }
           continue;
         }
         case 3: {
@@ -734,29 +706,10 @@ export const ListResponse: MessageFns<ListResponse> = {
             break;
           }
 
-          const entry3 = ListResponse_ChildrenFoldersEntry.decode(reader, reader.uint32());
+          const entry3 = ListResponse_ChildrenVarsEntry.decode(reader, reader.uint32());
           if (entry3.value !== undefined) {
-            message.childrenFolders[entry3.key] = entry3.value;
+            message.childrenVars[entry3.key] = entry3.value;
           }
-          continue;
-        }
-        case 4: {
-          if (tag !== 34) {
-            break;
-          }
-
-          const entry4 = ListResponse_ChildrenVarsEntry.decode(reader, reader.uint32());
-          if (entry4.value !== undefined) {
-            message.childrenVars[entry4.key] = entry4.value;
-          }
-          continue;
-        }
-        case 5: {
-          if (tag !== 42) {
-            break;
-          }
-
-          message.errorMsg = reader.string();
           continue;
         }
       }
@@ -775,7 +728,6 @@ export const ListResponse: MessageFns<ListResponse> = {
         : isSet(object.cmd_id)
         ? globalThis.String(object.cmd_id)
         : "",
-      status: isSet(object.status) ? operationStatusFromJSON(object.status) : 0,
       childrenFolders: isObject(object.childrenFolders)
         ? (globalThis.Object.entries(object.childrenFolders) as [string, any][]).reduce(
           (acc: { [key: string]: string }, [key, value]: [string, any]) => {
@@ -810,11 +762,6 @@ export const ListResponse: MessageFns<ListResponse> = {
           {},
         )
         : {},
-      errorMsg: isSet(object.errorMsg)
-        ? globalThis.String(object.errorMsg)
-        : isSet(object.error_msg)
-        ? globalThis.String(object.error_msg)
-        : undefined,
     };
   },
 
@@ -822,9 +769,6 @@ export const ListResponse: MessageFns<ListResponse> = {
     const obj: any = {};
     if (message.cmdId !== "") {
       obj.cmdId = message.cmdId;
-    }
-    if (message.status !== 0) {
-      obj.status = operationStatusToJSON(message.status);
     }
     if (message.childrenFolders) {
       const entries = globalThis.Object.entries(message.childrenFolders) as [string, string][];
@@ -844,9 +788,6 @@ export const ListResponse: MessageFns<ListResponse> = {
         });
       }
     }
-    if (message.errorMsg !== undefined) {
-      obj.errorMsg = message.errorMsg;
-    }
     return obj;
   },
 
@@ -856,7 +797,6 @@ export const ListResponse: MessageFns<ListResponse> = {
   fromPartial<I extends Exact<DeepPartial<ListResponse>, I>>(object: I): ListResponse {
     const message = createBaseListResponse();
     message.cmdId = object.cmdId ?? "";
-    message.status = object.status ?? 0;
     message.childrenFolders = (globalThis.Object.entries(object.childrenFolders ?? {}) as [string, string][]).reduce(
       (acc: { [key: string]: string }, [key, value]: [string, string]) => {
         if (value !== undefined) {
@@ -875,7 +815,6 @@ export const ListResponse: MessageFns<ListResponse> = {
       },
       {},
     );
-    message.errorMsg = object.errorMsg ?? undefined;
     return message;
   },
 };
@@ -1125,19 +1064,13 @@ export const SetCommand: MessageFns<SetCommand> = {
 };
 
 function createBaseSetResponse(): SetResponse {
-  return { cmdId: "", status: 0, errorMsg: undefined };
+  return { cmdId: "" };
 }
 
 export const SetResponse: MessageFns<SetResponse> = {
   encode(message: SetResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.cmdId !== "") {
       writer.uint32(10).string(message.cmdId);
-    }
-    if (message.status !== 0) {
-      writer.uint32(16).int32(message.status);
-    }
-    if (message.errorMsg !== undefined) {
-      writer.uint32(26).string(message.errorMsg);
     }
     return writer;
   },
@@ -1157,22 +1090,6 @@ export const SetResponse: MessageFns<SetResponse> = {
           message.cmdId = reader.string();
           continue;
         }
-        case 2: {
-          if (tag !== 16) {
-            break;
-          }
-
-          message.status = reader.int32() as any;
-          continue;
-        }
-        case 3: {
-          if (tag !== 26) {
-            break;
-          }
-
-          message.errorMsg = reader.string();
-          continue;
-        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1189,12 +1106,6 @@ export const SetResponse: MessageFns<SetResponse> = {
         : isSet(object.cmd_id)
         ? globalThis.String(object.cmd_id)
         : "",
-      status: isSet(object.status) ? operationStatusFromJSON(object.status) : 0,
-      errorMsg: isSet(object.errorMsg)
-        ? globalThis.String(object.errorMsg)
-        : isSet(object.error_msg)
-        ? globalThis.String(object.error_msg)
-        : undefined,
     };
   },
 
@@ -1202,12 +1113,6 @@ export const SetResponse: MessageFns<SetResponse> = {
     const obj: any = {};
     if (message.cmdId !== "") {
       obj.cmdId = message.cmdId;
-    }
-    if (message.status !== 0) {
-      obj.status = operationStatusToJSON(message.status);
-    }
-    if (message.errorMsg !== undefined) {
-      obj.errorMsg = message.errorMsg;
     }
     return obj;
   },
@@ -1218,8 +1123,6 @@ export const SetResponse: MessageFns<SetResponse> = {
   fromPartial<I extends Exact<DeepPartial<SetResponse>, I>>(object: I): SetResponse {
     const message = createBaseSetResponse();
     message.cmdId = object.cmdId ?? "";
-    message.status = object.status ?? 0;
-    message.errorMsg = object.errorMsg ?? undefined;
     return message;
   },
 };
@@ -1309,7 +1212,7 @@ export const GetCommand: MessageFns<GetCommand> = {
 };
 
 function createBaseGetResponse(): GetResponse {
-  return { cmdId: "", status: 0, varValues: [], errorMsg: undefined };
+  return { cmdId: "", varValues: [] };
 }
 
 export const GetResponse: MessageFns<GetResponse> = {
@@ -1317,14 +1220,8 @@ export const GetResponse: MessageFns<GetResponse> = {
     if (message.cmdId !== "") {
       writer.uint32(10).string(message.cmdId);
     }
-    if (message.status !== 0) {
-      writer.uint32(16).int32(message.status);
-    }
     for (const v of message.varValues) {
-      OptionalValue.encode(v!, writer.uint32(26).fork()).join();
-    }
-    if (message.errorMsg !== undefined) {
-      writer.uint32(34).string(message.errorMsg);
+      OptionalValue.encode(v!, writer.uint32(18).fork()).join();
     }
     return writer;
   },
@@ -1345,27 +1242,11 @@ export const GetResponse: MessageFns<GetResponse> = {
           continue;
         }
         case 2: {
-          if (tag !== 16) {
-            break;
-          }
-
-          message.status = reader.int32() as any;
-          continue;
-        }
-        case 3: {
-          if (tag !== 26) {
+          if (tag !== 18) {
             break;
           }
 
           message.varValues.push(OptionalValue.decode(reader, reader.uint32()));
-          continue;
-        }
-        case 4: {
-          if (tag !== 34) {
-            break;
-          }
-
-          message.errorMsg = reader.string();
           continue;
         }
       }
@@ -1384,17 +1265,11 @@ export const GetResponse: MessageFns<GetResponse> = {
         : isSet(object.cmd_id)
         ? globalThis.String(object.cmd_id)
         : "",
-      status: isSet(object.status) ? operationStatusFromJSON(object.status) : 0,
       varValues: globalThis.Array.isArray(object?.varValues)
         ? object.varValues.map((e: any) => OptionalValue.fromJSON(e))
         : globalThis.Array.isArray(object?.var_values)
         ? object.var_values.map((e: any) => OptionalValue.fromJSON(e))
         : [],
-      errorMsg: isSet(object.errorMsg)
-        ? globalThis.String(object.errorMsg)
-        : isSet(object.error_msg)
-        ? globalThis.String(object.error_msg)
-        : undefined,
     };
   },
 
@@ -1403,14 +1278,8 @@ export const GetResponse: MessageFns<GetResponse> = {
     if (message.cmdId !== "") {
       obj.cmdId = message.cmdId;
     }
-    if (message.status !== 0) {
-      obj.status = operationStatusToJSON(message.status);
-    }
     if (message.varValues?.length) {
       obj.varValues = message.varValues.map((e) => OptionalValue.toJSON(e));
-    }
-    if (message.errorMsg !== undefined) {
-      obj.errorMsg = message.errorMsg;
     }
     return obj;
   },
@@ -1421,9 +1290,7 @@ export const GetResponse: MessageFns<GetResponse> = {
   fromPartial<I extends Exact<DeepPartial<GetResponse>, I>>(object: I): GetResponse {
     const message = createBaseGetResponse();
     message.cmdId = object.cmdId ?? "";
-    message.status = object.status ?? 0;
     message.varValues = object.varValues?.map((e) => OptionalValue.fromPartial(e)) || [];
-    message.errorMsg = object.errorMsg ?? undefined;
     return message;
   },
 };
@@ -1513,19 +1380,13 @@ export const DelCommand: MessageFns<DelCommand> = {
 };
 
 function createBaseDelResponse(): DelResponse {
-  return { cmdId: "", status: 0, errorMsg: undefined };
+  return { cmdId: "" };
 }
 
 export const DelResponse: MessageFns<DelResponse> = {
   encode(message: DelResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.cmdId !== "") {
       writer.uint32(10).string(message.cmdId);
-    }
-    if (message.status !== 0) {
-      writer.uint32(16).int32(message.status);
-    }
-    if (message.errorMsg !== undefined) {
-      writer.uint32(26).string(message.errorMsg);
     }
     return writer;
   },
@@ -1545,22 +1406,6 @@ export const DelResponse: MessageFns<DelResponse> = {
           message.cmdId = reader.string();
           continue;
         }
-        case 2: {
-          if (tag !== 16) {
-            break;
-          }
-
-          message.status = reader.int32() as any;
-          continue;
-        }
-        case 3: {
-          if (tag !== 26) {
-            break;
-          }
-
-          message.errorMsg = reader.string();
-          continue;
-        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1577,12 +1422,6 @@ export const DelResponse: MessageFns<DelResponse> = {
         : isSet(object.cmd_id)
         ? globalThis.String(object.cmd_id)
         : "",
-      status: isSet(object.status) ? operationStatusFromJSON(object.status) : 0,
-      errorMsg: isSet(object.errorMsg)
-        ? globalThis.String(object.errorMsg)
-        : isSet(object.error_msg)
-        ? globalThis.String(object.error_msg)
-        : undefined,
     };
   },
 
@@ -1590,12 +1429,6 @@ export const DelResponse: MessageFns<DelResponse> = {
     const obj: any = {};
     if (message.cmdId !== "") {
       obj.cmdId = message.cmdId;
-    }
-    if (message.status !== 0) {
-      obj.status = operationStatusToJSON(message.status);
-    }
-    if (message.errorMsg !== undefined) {
-      obj.errorMsg = message.errorMsg;
     }
     return obj;
   },
@@ -1606,26 +1439,18 @@ export const DelResponse: MessageFns<DelResponse> = {
   fromPartial<I extends Exact<DeepPartial<DelResponse>, I>>(object: I): DelResponse {
     const message = createBaseDelResponse();
     message.cmdId = object.cmdId ?? "";
-    message.status = object.status ?? 0;
-    message.errorMsg = object.errorMsg ?? undefined;
     return message;
   },
 };
 
 function createBaseInvalidCmdResponse(): InvalidCmdResponse {
-  return { cmdId: "", status: 0, errorMsg: undefined };
+  return { cmdId: "" };
 }
 
 export const InvalidCmdResponse: MessageFns<InvalidCmdResponse> = {
   encode(message: InvalidCmdResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.cmdId !== "") {
       writer.uint32(10).string(message.cmdId);
-    }
-    if (message.status !== 0) {
-      writer.uint32(16).int32(message.status);
-    }
-    if (message.errorMsg !== undefined) {
-      writer.uint32(26).string(message.errorMsg);
     }
     return writer;
   },
@@ -1645,22 +1470,6 @@ export const InvalidCmdResponse: MessageFns<InvalidCmdResponse> = {
           message.cmdId = reader.string();
           continue;
         }
-        case 2: {
-          if (tag !== 16) {
-            break;
-          }
-
-          message.status = reader.int32() as any;
-          continue;
-        }
-        case 3: {
-          if (tag !== 26) {
-            break;
-          }
-
-          message.errorMsg = reader.string();
-          continue;
-        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1677,12 +1486,6 @@ export const InvalidCmdResponse: MessageFns<InvalidCmdResponse> = {
         : isSet(object.cmd_id)
         ? globalThis.String(object.cmd_id)
         : "",
-      status: isSet(object.status) ? operationStatusFromJSON(object.status) : 0,
-      errorMsg: isSet(object.errorMsg)
-        ? globalThis.String(object.errorMsg)
-        : isSet(object.error_msg)
-        ? globalThis.String(object.error_msg)
-        : undefined,
     };
   },
 
@@ -1690,12 +1493,6 @@ export const InvalidCmdResponse: MessageFns<InvalidCmdResponse> = {
     const obj: any = {};
     if (message.cmdId !== "") {
       obj.cmdId = message.cmdId;
-    }
-    if (message.status !== 0) {
-      obj.status = operationStatusToJSON(message.status);
-    }
-    if (message.errorMsg !== undefined) {
-      obj.errorMsg = message.errorMsg;
     }
     return obj;
   },
@@ -1706,8 +1503,6 @@ export const InvalidCmdResponse: MessageFns<InvalidCmdResponse> = {
   fromPartial<I extends Exact<DeepPartial<InvalidCmdResponse>, I>>(object: I): InvalidCmdResponse {
     const message = createBaseInvalidCmdResponse();
     message.cmdId = object.cmdId ?? "";
-    message.status = object.status ?? 0;
-    message.errorMsg = object.errorMsg ?? undefined;
     return message;
   },
 };
@@ -1839,7 +1634,16 @@ export const Command: MessageFns<Command> = {
 };
 
 function createBaseResponse(): Response {
-  return { add: undefined, list: undefined, set: undefined, get: undefined, del: undefined, inv: undefined };
+  return {
+    add: undefined,
+    list: undefined,
+    set: undefined,
+    get: undefined,
+    del: undefined,
+    inv: undefined,
+    status: 0,
+    errorMsg: undefined,
+  };
 }
 
 export const Response: MessageFns<Response> = {
@@ -1861,6 +1665,12 @@ export const Response: MessageFns<Response> = {
     }
     if (message.inv !== undefined) {
       InvalidCmdResponse.encode(message.inv, writer.uint32(50).fork()).join();
+    }
+    if (message.status !== 0) {
+      writer.uint32(56).int32(message.status);
+    }
+    if (message.errorMsg !== undefined) {
+      writer.uint32(66).string(message.errorMsg);
     }
     return writer;
   },
@@ -1920,6 +1730,22 @@ export const Response: MessageFns<Response> = {
           message.inv = InvalidCmdResponse.decode(reader, reader.uint32());
           continue;
         }
+        case 7: {
+          if (tag !== 56) {
+            break;
+          }
+
+          message.status = reader.int32() as any;
+          continue;
+        }
+        case 8: {
+          if (tag !== 66) {
+            break;
+          }
+
+          message.errorMsg = reader.string();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1937,6 +1763,12 @@ export const Response: MessageFns<Response> = {
       get: isSet(object.get) ? GetResponse.fromJSON(object.get) : undefined,
       del: isSet(object.del) ? DelResponse.fromJSON(object.del) : undefined,
       inv: isSet(object.inv) ? InvalidCmdResponse.fromJSON(object.inv) : undefined,
+      status: isSet(object.status) ? operationStatusFromJSON(object.status) : 0,
+      errorMsg: isSet(object.errorMsg)
+        ? globalThis.String(object.errorMsg)
+        : isSet(object.error_msg)
+        ? globalThis.String(object.error_msg)
+        : undefined,
     };
   },
 
@@ -1960,6 +1792,12 @@ export const Response: MessageFns<Response> = {
     if (message.inv !== undefined) {
       obj.inv = InvalidCmdResponse.toJSON(message.inv);
     }
+    if (message.status !== 0) {
+      obj.status = operationStatusToJSON(message.status);
+    }
+    if (message.errorMsg !== undefined) {
+      obj.errorMsg = message.errorMsg;
+    }
     return obj;
   },
 
@@ -1978,6 +1816,8 @@ export const Response: MessageFns<Response> = {
     message.inv = (object.inv !== undefined && object.inv !== null)
       ? InvalidCmdResponse.fromPartial(object.inv)
       : undefined;
+    message.status = object.status ?? 0;
+    message.errorMsg = object.errorMsg ?? undefined;
     return message;
   },
 };

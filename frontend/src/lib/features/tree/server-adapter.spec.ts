@@ -11,9 +11,9 @@ vi.mock("$lib/core/ws/tag-stream-client", () => ({
 describe("fetchTreeChildren", () => {
   it("maps root LIST payload to root tree nodes", async () => {
     vi.mocked(tagStreamClient.listChildren).mockResolvedValue({
-      cmd_id: "cmd-1",
-      children_folders: { root: "root-id" },
-      children_vars: {},
+      cmdId: "cmd-1",
+      childrenFolders: { root: "root-id" },
+      childrenVars: {},
     });
 
     const roots = await fetchTreeChildren(null);
@@ -29,9 +29,9 @@ describe("fetchTreeChildren", () => {
 
   it("maps folder and variable children for a parent", async () => {
     vi.mocked(tagStreamClient.listChildren).mockResolvedValue({
-      cmd_id: "cmd-2",
-      children_folders: { area: "folder-1" },
-      children_vars: { pressure: ["var-1", "Float"] },
+      cmdId: "cmd-2",
+      childrenFolders: { area: "folder-1" },
+      childrenVars: { pressure: { varId: "var-1", varDType: "Float" as any } },
     });
 
     const parent = {
