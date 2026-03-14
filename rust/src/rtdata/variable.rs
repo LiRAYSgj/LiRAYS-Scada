@@ -269,7 +269,7 @@ impl VariableManager {
                     }
                     Err(e) => (OperationStatus::Err as i32, Some(format!("Creating transaction error: {e}")))
                 };
-                Response { response_type: Some(ResponseType::Add(AddResponse { cmd_id: add_cmd.cmd_id, status, error_msg })) }
+                Response { response_type: Some(ResponseType::Add(AddResponse { cmd_id: add_cmd.cmd_id })), status, error_msg }
             }
             Some(CommandType::List(list_cmd)) => {
                 let mut children_folders: HashMap<String, String> = HashMap::new();
@@ -311,11 +311,9 @@ impl VariableManager {
                 };
                 Response { response_type: Some(ResponseType::List(ListResponse {
                     cmd_id: list_cmd.cmd_id,
-                    status: status,
                     children_folders,
-                    children_vars,
-                    error_msg
-                })) }
+                    children_vars
+                })), status, error_msg }
             }
             Some(CommandType::Set(set_cmd)) => {
                 let (status, error_msg) = match self.env.write_txn() {
@@ -336,7 +334,7 @@ impl VariableManager {
                     }
                     Err(e) => (OperationStatus::Err as i32, Some(format!("Creating transaction error: {e}")))
                 };
-                Response { response_type: Some(ResponseType::Set(SetResponse { cmd_id: set_cmd.cmd_id, status, error_msg })) }
+                Response { response_type: Some(ResponseType::Set(SetResponse { cmd_id: set_cmd.cmd_id })), status, error_msg }
             }
             Some(CommandType::Get(get_cmd)) => {
                 let (status, error_msg, var_values) = match self.env.read_txn() {
@@ -350,7 +348,7 @@ impl VariableManager {
                     }
                     Err(e) => (OperationStatus::Err as i32, Some(format!("Creating transaction error: {e}")), vec![])
                 };
-                Response { response_type: Some(ResponseType::Get(GetResponse { cmd_id: get_cmd.cmd_id, status, var_values, error_msg })) }
+                Response { response_type: Some(ResponseType::Get(GetResponse { cmd_id: get_cmd.cmd_id, var_values })), status, error_msg }
             }
             Some(CommandType::Del(del_cmd)) => {
                 let (status, error_msg) = match self.env.write_txn() {
@@ -371,15 +369,16 @@ impl VariableManager {
                     }
                     Err(e) => (OperationStatus::Err as i32, Some(format!("Creating transaction error: {e}")))
                 };
-                Response { response_type: Some(ResponseType::Del(DelResponse { cmd_id: del_cmd.cmd_id, status, error_msg })) }
+                Response { response_type: Some(ResponseType::Del(DelResponse { cmd_id: del_cmd.cmd_id })), status, error_msg }
             }
             None => {
                 let uid = Uuid::new_v4().to_string();
                 Response { response_type: Some(ResponseType::Inv(InvalidCmdResponse {
-                    cmd_id: uid,
-                    status: OperationStatus::Err as i32,
-                    error_msg: Some("No valid command received".to_string())
-                })) }
+                    cmd_id: uid
+                })),
+                status: OperationStatus::Err as i32,
+                error_msg: Some("No valid command received".to_string())
+                }
             }
         }
     }

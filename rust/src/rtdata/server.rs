@@ -27,8 +27,8 @@ async fn run_server(host: &str, port: u16, db_dir: &str) {
                                         match ws_stream.next().await {
                                             Some(Ok(msg)) => {
                                                 match msg {
-                                                    Message::Text(text) => {
-                                                        let command = match Proto::<Command>::bytes_decode(text.as_bytes()) {
+                                                    Message::Binary(bin) => {
+                                                        let command = match Proto::<Command>::bytes_decode(&bin) {
                                                             Ok(cmd) => cmd,
                                                             Err(_) => Command { command_type: None }
                                                         };

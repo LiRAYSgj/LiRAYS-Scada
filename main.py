@@ -158,8 +158,8 @@ if __name__ == "__main__":
     signal.signal(signal.SIGINT, signal_handler)
 
     try:
-        frontend_process = run_svelte_server()
-        logger.info("Svelte process started with pid=%s", frontend_process.pid)
+        # frontend_process = run_svelte_server()
+        # logger.info("Svelte process started with pid=%s", frontend_process.pid)
 
         api_thread = ApiServer(app, "0.0.0.0", 1237)
         api_thread.start()

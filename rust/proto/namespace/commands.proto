@@ -29,8 +29,6 @@ message AddCommand {
 
 message AddResponse {
   string cmd_id = 1;
-  OperationStatus status = 2;
-  optional string error_msg = 3;
 }
 
 message ListCommand {
@@ -40,10 +38,8 @@ message ListCommand {
 
 message ListResponse {
   string cmd_id = 1;
-  OperationStatus status = 2;
-  map<string, string> children_folders = 3;
-  map<string, VarInfo> children_vars = 4;
-  optional string error_msg = 5;
+  map<string, string> children_folders = 2;
+  map<string, VarInfo> children_vars = 3;
 }
 
 message SetCommand {
@@ -53,8 +49,6 @@ message SetCommand {
 
 message SetResponse {
   string cmd_id = 1;
-  OperationStatus status = 2;
-  optional string error_msg = 3;
 }
 
 message GetCommand {
@@ -64,9 +58,7 @@ message GetCommand {
 
 message GetResponse {
   string cmd_id = 1;
-  OperationStatus status = 2;
-  repeated OptionalValue var_values = 3;
-  optional string error_msg = 4;
+  repeated OptionalValue var_values = 2;
 }
 
 message DelCommand {
@@ -76,14 +68,10 @@ message DelCommand {
 
 message DelResponse {
   string cmd_id = 1;
-  OperationStatus status = 2;
-  optional string error_msg = 3;
 }
 
 message InvalidCmdResponse {
   string cmd_id = 1;
-  OperationStatus status = 2;
-  optional string error_msg = 3;
 }
 
 // Envelopes
@@ -106,4 +94,6 @@ message Response {
     DelResponse del = 5;
     InvalidCmdResponse inv = 6;
   }
+  OperationStatus status = 7;
+  optional string error_msg = 8;
 }
