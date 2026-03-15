@@ -22,6 +22,12 @@
     onDragStart: (event: DragEvent, node: TreeNode) => void;
     onDragEnd: (event: DragEvent) => void;
     liveValue?: TagScalarValue;
+    /** When true, show selection checkbox and disable single-select/drag/context menu. */
+    multiSelectMode?: boolean;
+    /** Whether this node is in the multi-selection (only when multiSelectMode). */
+    isChecked?: boolean;
+    /** Called when the selection checkbox is clicked (only when multiSelectMode). */
+    onCheckClick?: (event: MouseEvent) => void;
   }
 
   let {
@@ -33,6 +39,9 @@
     onDragStart,
     onDragEnd,
     liveValue,
+    multiSelectMode = false,
+    isChecked = false,
+    onCheckClick,
   }: Props = $props();
 
   const displayValue = $derived(
@@ -41,23 +50,24 @@
 </script>
 
 <div
-  class={`grid h-8 cursor-pointer grid-cols-[1fr_90px_90px] items-center border-b border-black/10 px-2 text-xs dark:border-white/10 ${
-    isSelected ? "bg-(--bg-selected)" : "hover:bg-(--bg-hover)"
-  }`}
+  class={`grid h-8 grid-cols-[1fr_90px_90px] items-center border-b border-black/10 px-2 text-xs dark:border-white/10 ${
+    multiSelectMode ? "cursor-default" : "cursor-pointer"
+  } ${!multiSelectMode && isSelected ? "bg-(--bg-selected)" : "hover:bg-(--bg-hover)"}`}
   role="treeitem"
   tabindex="-1"
   aria-expanded={row.node.hasChildren ? row.isExpanded : undefined}
-  aria-selected={isSelected}
+  aria-selected={multiSelectMode ? undefined : isSelected}
   aria-level={row.depth}
-  draggable="true"
-  onclick={onSelect}
+  draggable={!multiSelectMode}
+  onclick={multiSelectMode ? undefined : onSelect}
   oncontextmenu={(event) => {
     event.preventDefault();
-    onContextMenu(event, row.node);
+    if (!multiSelectMode) onContextMenu(event, row.node);
   }}
-  ondragstart={(event) => onDragStart(event, row.node)}
-  ondragend={onDragEnd}
+  ondragstart={multiSelectMode ? undefined : (event) => onDragStart(event, row.node)}
+  ondragend={multiSelectMode ? undefined : onDragEnd}
   onkeydown={(event) => {
+    if (multiSelectMode) return;
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       onSelect();
@@ -76,6 +86,25 @@
       isLoading={row.isLoading}
       {onToggle}
     />
+    {#if multiSelectMode}
+      <button
+        type="button"
+        class="flex h-5 w-5 shrink-0 items-center justify-center rounded border border-black/25 bg-(--bg-panel) text-(--text-primary) hover:border-black/40 dark:border-white/25 dark:hover:border-white/40"
+        aria-label={isChecked ? "Deselect" : "Select"}
+        aria-pressed={isChecked}
+        onclick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onCheckClick?.(e);
+        }}
+      >
+        {#if isChecked}
+          <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+        {/if}
+      </button>
+    {/if}
     <TreeIcon kind={row.node.kind} />
     <span class="truncate text-(--text-primary)">{row.node.name}</span>
     {#if row.isErrored}

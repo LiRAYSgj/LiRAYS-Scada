@@ -42,6 +42,7 @@
     MenuResolverByKind,
   } from "$lib/features/tree/context-menu";
   import type { TreeNode } from "$lib/features/tree/types";
+  import { getMinimalAncestorSet } from "$lib/features/tree/tree-selection";
   import { Layers, Plus, Trash2 } from "lucide-svelte";
 
   interface ActiveMenuState {
@@ -64,12 +65,13 @@
   const theme = themeStore;
 
   // Apply theme to <html> only after it has been loaded from storage (or default); no theme until then.
-  $: if (browser && $theme !== null) {
+  $effect(() => {
+    if (!browser || $theme === null) return;
     const themeClass = $theme === "dark" ? "theme-dark" : "theme-light";
     const other = $theme === "dark" ? "theme-light" : "theme-dark";
     document.documentElement.classList.remove(other);
     document.documentElement.classList.add(themeClass);
-  }
+  });
 
   const realtimeProvider = createPageTagRealtimeProvider(DEMO_WS_ENDPOINT);
   const nodeTypes = {
@@ -78,30 +80,40 @@
   const wsStatus = realtimeProvider.status;
   const tagValues = realtimeProvider.values;
 
-  let activeMenu: ActiveMenuState | null = null;
-  let draggingNode: TreeNode | null = null;
-  let dragPreview: DragPreviewState | null = null;
-  let canvasMode: CanvasMode = "edit";
-  let graphNodes: Node[] = [];
-  let graphEdges: Edge[] = [];
+  let activeMenu = $state<ActiveMenuState | null>(null);
+  let draggingNode = $state<TreeNode | null>(null);
+  let dragPreview = $state<DragPreviewState | null>(null);
+  let canvasMode = $state<CanvasMode>("edit");
+  let graphNodes = $state<Node[]>([]);
+  let graphEdges = $state<Edge[]>([]);
   let graphHostRef: HTMLElement | null = null;
   let graphNodeCounter = 0;
   let graphEdgeCounter = 0;
   let graphViewport: Viewport = { x: 0, y: 0, zoom: 1 };
-  let subscribedTagIds: string[] = [];
   let removeDialog: HTMLDialogElement | null = null;
   let namespaceBuilderDialog: HTMLDialogElement | null = null;
   let namespaceBuilderRef: NamespaceBuilder | null = null;
-  let namespaceBuilderValid = true;
-  let namespaceBuilderCreateLoading = false;
+  let namespaceBuilderValid = $state(true);
+  let namespaceBuilderCreateLoading = $state(false);
   /** When opening from toolbar: root node id (or "" if tree not loaded); from folder context: folder id. */
   let namespaceBuilderParentId = "";
-  let namespaceBuilderParentName = "Root";
+  let namespaceBuilderParentName = $state("Root");
   /** Root folder id from the variable tree (set when tree has loaded). Used as parentId when opening namespace builder from toolbar. */
   let treeRootId: string | null = null;
-  let removeTargetNode: TreeNode | null = null;
-  let removeSubmitting = false;
-  let removeError = "";
+  let removeTargetNode = $state<TreeNode | null>(null);
+  let removeSubmitting = $state(false);
+  let removeError = $state("");
+
+  /** Multi-selection mode: show checkboxes and use global selection set instead of single select. */
+  let multiSelectMode = $state(false);
+  /** Set of node ids selected in multi-selection mode. */
+  let treeSelection = $state(new Set<string>());
+  /** Snapshot of tree nodes from VariableTree for computing minimal delete set. */
+  let treeNodes = $state<Record<string, TreeNode>>({});
+  let treeRootIds = $state<string[]>([]);
+  let removeMultipleDialog: HTMLDialogElement | null = null;
+  let removeMultipleSubmitting = $state(false);
+  let removeMultipleError = $state("");
   const transparentDragImage: HTMLImageElement | null = browser
     ? new Image()
     : null;
@@ -309,6 +321,55 @@
         error instanceof Error ? error.message : "Failed to remove node";
     } finally {
       removeSubmitting = false;
+    }
+  }
+
+  function applySelectionChange(payload: {
+    add: string[];
+    remove: string[];
+  }): void {
+    const next = new Set(treeSelection);
+    for (const id of payload.remove) next.delete(id);
+    for (const id of payload.add) next.add(id);
+    treeSelection = next;
+  }
+
+  function openRemoveMultipleDialog(): void {
+    if (get(wsStatus) !== "connected" || !removeMultipleDialog) return;
+    removeMultipleError = "";
+    removeMultipleDialog.showModal();
+  }
+
+  function closeRemoveMultipleDialog(force = false): void {
+    if (removeMultipleSubmitting && !force) return;
+    removeMultipleDialog?.close();
+    removeMultipleError = "";
+  }
+
+  async function confirmRemoveMultiple(): Promise<void> {
+    if (get(wsStatus) !== "connected") {
+      removeMultipleError =
+        "WebSocket is disconnected. Please reconnect and try again.";
+      return;
+    }
+    const rootId = treeRootIds[0] ?? null;
+    const minimalIds = getMinimalAncestorSet(treeSelection, treeNodes, rootId);
+    if (minimalIds.length === 0) {
+      closeRemoveMultipleDialog(true);
+      treeSelection = new Set();
+      return;
+    }
+    removeMultipleSubmitting = true;
+    removeMultipleError = "";
+    try {
+      await realtimeProvider.removeItems(minimalIds);
+      treeSelection = new Set();
+      closeRemoveMultipleDialog(true);
+    } catch (error) {
+      removeMultipleError =
+        error instanceof Error ? error.message : "Failed to remove selection";
+    } finally {
+      removeMultipleSubmitting = false;
     }
   }
 
@@ -635,16 +696,25 @@
     realtimeProvider.stop();
   });
 
-  $: realtimeProvider.setActive(canvasMode === "play");
-  $: subscribedTagIds = getTrackedTagIds(graphNodes);
-  $: realtimeProvider.setDesiredIds(subscribedTagIds);
-  $: if (canvasMode === "play") {
+  $effect(() => {
+    realtimeProvider.setActive(canvasMode === "play");
+  });
+
+  const subscribedTagIds = $derived(getTrackedTagIds(graphNodes));
+
+  $effect(() => {
+    realtimeProvider.setDesiredIds(subscribedTagIds);
+  });
+
+  $effect(() => {
+    if (canvasMode !== "play") return;
     const result = applyLiveValuesToGraphNodes(graphNodes, $tagValues);
     if (result.changed) {
       graphNodes = result.nodes;
     }
-  }
-  $: {
+  });
+
+  $effect(() => {
     const result = normalizePipeEdges(
       graphEdges,
       PIPE_EDGE_TYPE,
@@ -653,9 +723,11 @@
     if (result.changed) {
       graphEdges = result.edges;
     }
-  }
+  });
 
-  $: themeVars = $theme !== null ? createThemeVars($theme) : "";
+  const themeVars = $derived(
+    $theme !== null ? createThemeVars($theme) : "",
+  );
 </script>
 
 <main
@@ -670,6 +742,10 @@
     onOpenAddDialog={openTreeAddDialog}
     onOpenNamespaceBuilder={openNamespaceBuilderFromToolbar}
     isAddDisabled={false}
+    multiSelectMode={multiSelectMode}
+    onToggleMultiSelect={() => (multiSelectMode = !multiSelectMode)}
+    selectionCount={treeSelection.size}
+    onRemoveSelection={openRemoveMultipleDialog}
   />
 
   <div class="flex h-[calc(100vh-5rem)] gap-4">
@@ -683,6 +759,15 @@
         websocketStatus={$wsStatus}
         realtimeEnabled={canvasMode === "play"}
         liveTagValues={$tagValues}
+        multiSelectMode={multiSelectMode}
+        selection={treeSelection}
+        propagateDown={true}
+        propagateUp={true}
+        onSelectionChange={applySelectionChange}
+        onTreeStateSnapshot={(nodes, rootIds) => {
+          treeNodes = nodes;
+          treeRootIds = rootIds;
+        }}
       />
     </section>
 
@@ -792,6 +877,49 @@
           disabled={removeSubmitting ||
             $wsStatus !== "connected" ||
             !removeTargetNode}
+        />
+      </div>
+    </form>
+  </dialog>
+
+  <dialog
+    bind:this={removeMultipleDialog}
+    class="fixed inset-0 m-auto w-[420px] rounded-md border border-black/10 bg-(--bg-panel) p-0 text-(--text-primary) shadow-xl backdrop:bg-black/50 dark:border-white/10"
+  >
+    <form
+      class="flex flex-col p-4"
+      onsubmit={(event) => {
+        event.preventDefault();
+        void confirmRemoveMultiple();
+      }}
+    >
+      <div class="space-y-2">
+        <h2 class="text-sm font-semibold">Remove selection</h2>
+        <p class="text-xs text-(--text-muted)">
+          Remove {treeSelection.size} selected item(s)? This action cannot be
+          undone.
+        </p>
+        {#if removeMultipleError}
+          <p class="text-xs text-red-500">{removeMultipleError}</p>
+        {/if}
+      </div>
+      <div
+        class="mt-4 flex justify-end gap-2 border-t border-black/10 pt-4 dark:border-white/10"
+      >
+        <Button
+          variant="outline-muted"
+          label="Cancel"
+          title="Cancel"
+          disabled={removeMultipleSubmitting}
+          onclick={() => closeRemoveMultipleDialog()}
+        />
+        <Button
+          type="submit"
+          variant="filled-warn"
+          label="Remove"
+          loadingLabel="Removing..."
+          loading={removeMultipleSubmitting}
+          disabled={removeMultipleSubmitting || $wsStatus !== "connected"}
         />
       </div>
     </form>
