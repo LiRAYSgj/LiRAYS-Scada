@@ -49,6 +49,9 @@
 		) => void;
 		onUpdateType: (rowId: string, dataType: string) => void;
 	} = $props();
+
+	/** Single indent step (px per depth level); padding and guides use this so indent is linear. */
+	const INDENT_STEP = 18;
 </script>
 
 <div
@@ -123,23 +126,23 @@
 	</div>
 	<div
 		class="ns-node-content relative flex w-full items-center gap-2.5 py-1 pr-2 pl-0"
-		style={`padding-left:${row.depth * 24}px`}
+		style={`padding-left:${row.depth * INDENT_STEP + 6}px`}
 	>
 		{#if row.depth > 0}
 			<div
 				class="tree-indent-guides"
-				style={`width:${row.depth * 18}px`}
+				style={`width:${row.depth * INDENT_STEP}px`}
 				aria-hidden="true"
 			>
 				{#each Array(row.depth) as _, i}
 					<span
 						class="tree-indent-guide-vertical"
-						style={`left:${i * 18 + 17}px`}
+						style={`left:${i * INDENT_STEP}px`}
 					></span>
 				{/each}
 				<svg
 					class="tree-indent-guide-branch"
-					style={`left:${(row.depth - 1) * 18}px;width:${18}px`}
+					style={`left:${(row.depth - 1) * INDENT_STEP}px;width:${INDENT_STEP}px`}
 					viewBox="0 0 18 12"
 					preserveAspectRatio="none"
 					aria-hidden="true"
@@ -175,7 +178,7 @@
 				label={row.node.name}
 				disabled={actionsDisabled}
 				ondblclick={() => !actionsDisabled && onStartEditName(row.id)}
-				class="min-w-[150px] justify-start py-0 text-left text-[13px] cursor-text"
+				class="btn--align-start min-w-[150px] py-0 text-[13px] cursor-text h-[22px]"
 			/>
 		{/if}
 		<div class="flex flex-wrap items-center gap-1.5">

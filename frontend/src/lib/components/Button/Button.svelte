@@ -118,6 +118,10 @@
 		cursor: not-allowed;
 		opacity: 0.5;
 	}
+	.btn--align-start {
+		justify-content: flex-start;
+		text-align: left;
+	}
 	.btn--icon {
 		min-width: 1.75rem;
 		height: 1.75rem;
