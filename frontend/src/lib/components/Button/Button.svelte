@@ -20,6 +20,7 @@
 		icon = undefined as ButtonIcon | undefined,
 		label = "",
 		loadingLabel = "Loading…",
+		iconClass = "",
 		title = "",
 		ariaLabel = "",
 		class: className = "",
@@ -39,6 +40,8 @@
 		icon?: ButtonIcon;
 		label?: string;
 		loadingLabel?: string;
+		/** Optional Tailwind/custom class for the icon (e.g. text-emerald-500). Applied to the icon wrapper so the icon can have a different color than the label. */
+		iconClass?: string;
 		title?: string;
 		ariaLabel?: string;
 		class?: string;
@@ -87,7 +90,7 @@
 	{:else}
 		{#if icon}
 			{@const Icon = icon}
-			<span class="btn__icon" aria-hidden="true">
+			<span class="btn__icon {iconClass}" aria-hidden="true">
 				<Icon />
 			</span>
 		{/if}

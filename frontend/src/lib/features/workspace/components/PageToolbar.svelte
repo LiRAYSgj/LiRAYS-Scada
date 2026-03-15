@@ -46,8 +46,8 @@
 			icon={canvasMode === "edit" ? Play : Square}
 			label={canvasMode === "edit" ? "Play" : "Edit"}
 			title={canvasMode === "edit" ? "Play" : "Edit"}
+			iconClass={canvasMode === "edit" ? "text-emerald-500" : "text-amber-500"}
 			onclick={onToggleCanvasMode}
-			class={canvasMode === "edit" ? "text-emerald-500" : "text-amber-500"}
 		/>
 		<Button
 			variant="outline-muted"
