@@ -7,9 +7,15 @@ export interface MenuContext {
   kind: "node" | "drop";
 }
 
+/** Svelte component type for menu item icons (e.g. Lucide icons). */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type MenuOptionIcon = any;
+
 export interface MenuOption {
   id: string;
   label: string;
+  /** Optional icon component (e.g. from lucide-svelte). */
+  icon?: MenuOptionIcon;
   /** When true, render as a visual divider (label and other props ignored). */
   separator?: boolean;
   disabled?: boolean;

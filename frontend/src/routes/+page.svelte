@@ -42,6 +42,7 @@
     MenuResolverByKind,
   } from "$lib/features/tree/context-menu";
   import type { TreeNode } from "$lib/features/tree/types";
+  import { Layers, Plus, Trash2 } from "lucide-svelte";
 
   interface ActiveMenuState {
     x: number;
@@ -93,9 +94,11 @@
   let namespaceBuilderRef: NamespaceBuilder | null = null;
   let namespaceBuilderValid = true;
   let namespaceBuilderCreateLoading = false;
-  /** When opening from toolbar: "" and "Root"; from folder context: folder id and folder name. */
+  /** When opening from toolbar: root node id (or "" if tree not loaded); from folder context: folder id. */
   let namespaceBuilderParentId = "";
   let namespaceBuilderParentName = "Root";
+  /** Root folder id from the variable tree (set when tree has loaded). Used as parentId when opening namespace builder from toolbar. */
+  let treeRootId: string | null = null;
   let removeTargetNode: TreeNode | null = null;
   let removeSubmitting = false;
   let removeError = "";
@@ -149,6 +152,7 @@
       {
         id: "folder-add",
         label: "Add",
+        icon: Plus,
         onSelect: () => {
           window.dispatchEvent(
             new CustomEvent<{ parentId?: string | null }>(
@@ -165,6 +169,7 @@
             {
               id: "folder-remove",
               label: "Remove",
+              icon: Trash2,
               disabled: get(wsStatus) !== "connected",
               onSelect: () => {
                 openRemoveDialog(context.node);
@@ -176,8 +181,12 @@
       {
         id: "folder-namespace-builder",
         label: "Namespace Template Builder",
+        icon: Layers,
         onSelect: () => {
-          openNamespaceBuilderDialog(context.node.id, context.node.name);
+          openNamespaceBuilderDialog(
+            context.node.id,
+            formatNamespaceBuilderPath(context.node.path),
+          );
         },
       },
     ],
@@ -206,6 +215,7 @@
       {
         id: "tag-remove",
         label: "Remove",
+        icon: Trash2,
         disabled: get(wsStatus) !== "connected",
         onSelect: () => {
           openRemoveDialog(context.node);
@@ -482,18 +492,25 @@
     );
   }
 
-  /** Opens the Namespace Template Builder at root (used by toolbar). */
-  function openNamespaceBuilderFromToolbar(): void {
-    openNamespaceBuilderDialog("", "root");
+  /** Path for dialog title: omit root segment and start with /. e.g. "root/Area_/Sub" → "/Area_/Sub". */
+  function formatNamespaceBuilderPath(path: string): string {
+    const segments = path.split("/").filter(Boolean);
+    const withoutRoot = segments.slice(1).join("/");
+    return withoutRoot ? `/${withoutRoot}` : "/";
   }
 
-  /** Opens the Namespace Template Builder dialog (bulk add from YAML). parentId: "" for root, or folder id. parentName: "Root" or folder name for dialog title. */
+  /** Opens the Namespace Template Builder at root (used by toolbar). Sends root node id as parentId when tree has loaded. */
+  function openNamespaceBuilderFromToolbar(): void {
+    openNamespaceBuilderDialog(treeRootId ?? "", "/");
+  }
+
+  /** Opens the Namespace Template Builder dialog (bulk add from YAML). parentId: "" for root, or folder id. parentDisplay: "/" for root, or path like "/Area_/Sub" for dialog title. */
   function openNamespaceBuilderDialog(
     parentId: string,
-    parentName: string,
+    parentDisplay: string,
   ): void {
     namespaceBuilderParentId = parentId;
-    namespaceBuilderParentName = parentName;
+    namespaceBuilderParentName = parentDisplay;
     namespaceBuilderDialog?.showModal();
     if (
       namespaceBuilderRef &&
@@ -661,6 +678,7 @@
         onNodeContextMenu={handleNodeContextMenu}
         onNodeDragStart={handleNodeDragStart}
         onNodeDragEnd={handleNodeDragEnd}
+        onRootId={(id) => (treeRootId = id)}
         onCreateItem={createTreeItem}
         websocketStatus={$wsStatus}
         realtimeEnabled={canvasMode === "play"}

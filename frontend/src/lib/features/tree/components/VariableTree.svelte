@@ -20,6 +20,8 @@
     websocketStatus?: WebSocketConnectionStatus;
     realtimeEnabled?: boolean;
     liveTagValues?: Record<string, TagScalarValue>;
+    /** Called when root node id(s) are known (e.g. for namespace builder parentId at root). */
+    onRootId?: (id: string | null) => void;
     onCreateItem: (input: {
       parentId: string;
       name: string;
@@ -35,6 +37,7 @@
     websocketStatus = WebSocketConnectionStatus.DISCONNECTED,
     realtimeEnabled = false,
     liveTagValues = {},
+    onRootId,
     onCreateItem,
   }: Props = $props();
 
@@ -64,6 +67,16 @@
   const isConnected = $derived(
     websocketStatus === WebSocketConnectionStatus.CONNECTED,
   );
+
+  $effect(() => {
+    if (!onRootId) return;
+    const state = $treeState;
+    if (state.rootIds.length > 0) {
+      onRootId(state.rootIds[0]);
+    } else if (state.hasInitialized) {
+      onRootId(null);
+    }
+  });
 
   const totalRows = $derived($visibleRows.length);
   const startIndex = $derived(

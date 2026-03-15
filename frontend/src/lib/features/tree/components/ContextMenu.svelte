@@ -125,6 +125,28 @@
 	});
 </script>
 
+<style>
+	.context-menu-item__content {
+		display: flex;
+		align-items: center;
+		justify-content: flex-start;
+		gap: 0.5rem;
+		min-width: 0;
+		flex: 1;
+		text-align: left;
+	}
+	.context-menu-item__content :global(svg) {
+		width: 0.875rem;
+		height: 0.875rem;
+		flex-shrink: 0;
+	}
+	.context-menu-item__label {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+</style>
+
 {#each menuLayers as layer, layerIndex}
 	<div
 		data-context-menu
@@ -148,7 +170,7 @@
 					<Button
 						variant="ghost"
 						disabled={item.disabled}
-						class="w-full justify-between rounded px-2 py-1.5 text-left text-xs text-slate-700 dark:text-slate-200"
+						class="context-menu-item w-full justify-between rounded px-2 py-1.5 text-left text-xs text-slate-700 dark:text-slate-200"
 						onmouseenter={() => {
 							void openSubmenu(layerIndex, item);
 						}}
@@ -157,9 +179,15 @@
 						}}
 					>
 						{#snippet children()}
-							<span>{item.label}</span>
+							<span class="context-menu-item__content">
+								{#if item.icon}
+									{@const Icon = item.icon}
+									<Icon class="context-menu-item__icon" aria-hidden="true" />
+								{/if}
+								<span class="context-menu-item__label">{item.label}</span>
+							</span>
 							{#if item.children || item.getChildren}
-								<ChevronRight class="h-3.5 w-3.5" />
+								<ChevronRight class="h-3.5 w-3.5 shrink-0" />
 							{/if}
 						{/snippet}
 					</Button>
