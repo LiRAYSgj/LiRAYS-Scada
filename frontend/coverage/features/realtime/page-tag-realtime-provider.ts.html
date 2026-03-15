@@ -1,67 +1,68 @@
+
 <!doctype html>
 <html lang="en">
-  <head>
-    <title>
-      Code coverage report for features/realtime/page-tag-realtime-provider.ts
-    </title>
+
+<head>
+    <title>Code coverage report for features/realtime/page-tag-realtime-provider.ts</title>
     <meta charset="utf-8" />
     <link rel="stylesheet" href="../../prettify.css" />
     <link rel="stylesheet" href="../../base.css" />
     <link rel="shortcut icon" type="image/x-icon" href="../../favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <style type="text/css">
-      .coverage-summary .sorter {
-        background-image: url(../../sort-arrow-sprite.png);
-      }
+    <style type='text/css'>
+        .coverage-summary .sorter {
+            background-image: url(../../sort-arrow-sprite.png);
+        }
     </style>
-  </head>
-
-  <body>
-    <div class="wrapper">
-      <div class="pad1">
-        <h1>
-          <a href="../../index.html">All files</a> /
-          <a href="index.html">features/realtime</a>
-          page-tag-realtime-provider.ts
-        </h1>
-        <div class="clearfix">
-          <div class="fl pad1y space-right2">
-            <span class="strong">97.05% </span>
-            <span class="quiet">Statements</span>
-            <span class="fraction">33/34</span>
-          </div>
-
-          <div class="fl pad1y space-right2">
-            <span class="strong">93.33% </span>
-            <span class="quiet">Branches</span>
-            <span class="fraction">14/15</span>
-          </div>
-
-          <div class="fl pad1y space-right2">
-            <span class="strong">100% </span>
-            <span class="quiet">Functions</span>
-            <span class="fraction">12/12</span>
-          </div>
-
-          <div class="fl pad1y space-right2">
-            <span class="strong">97.05% </span>
-            <span class="quiet">Lines</span>
-            <span class="fraction">33/34</span>
-          </div>
+</head>
+    
+<body>
+<div class='wrapper'>
+    <div class='pad1'>
+        <h1><a href="../../index.html">All files</a> / <a href="index.html">features/realtime</a> page-tag-realtime-provider.ts</h1>
+        <div class='clearfix'>
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">97.05% </span>
+                <span class="quiet">Statements</span>
+                <span class='fraction'>33/34</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">93.33% </span>
+                <span class="quiet">Branches</span>
+                <span class='fraction'>14/15</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">100% </span>
+                <span class="quiet">Functions</span>
+                <span class='fraction'>12/12</span>
+            </div>
+        
+            
+            <div class='fl pad1y space-right2'>
+                <span class="strong">97.05% </span>
+                <span class="quiet">Lines</span>
+                <span class='fraction'>33/34</span>
+            </div>
+        
+            
         </div>
         <p class="quiet">
-          Press <em>n</em> or <em>j</em> to go to the next uncovered block,
-          <em>b</em>, <em>p</em> or <em>k</em> for the previous block.
+            Press <em>n</em> or <em>j</em> to go to the next uncovered block, <em>b</em>, <em>p</em> or <em>k</em> for the previous block.
         </p>
         <template id="filterTemplate">
-          <div class="quiet">
-            Filter:
-            <input type="search" id="fileSearch" />
-          </div>
+            <div class="quiet">
+                Filter:
+                <input type="search" id="fileSearch">
+            </div>
         </template>
-      </div>
-      <div class="status-line high"></div>
-      <pre><table class="coverage">
+    </div>
+    <div class='status-line high'></div>
+    <pre><table class="coverage">
 <tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
 <a name='L2'></a><a href='#L2'>2</a>
 <a name='L3'></a><a href='#L3'>3</a>
@@ -167,9 +168,7 @@
 <a name='L103'></a><a href='#L103'>103</a>
 <a name='L104'></a><a href='#L104'>104</a>
 <a name='L105'></a><a href='#L105'>105</a>
-<a name='L106'></a><a href='#L106'>106</a>
-<a name='L107'></a><a href='#L107'>107</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L106'></a><a href='#L106'>106</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -278,11 +277,10 @@
 import { tagStreamClient } from "$lib/core/ws/tag-stream-client";
 import type { Readable } from "svelte/store";
 import type {
-  BackendItemType,
-  BackendVarDataType,
   TagScalarValue,
   WebSocketConnectionStatus,
 } from "$lib/core/ws/types";
+import type { ItemType, VarDataType } from "$lib/proto/namespace/enums";
 &nbsp;
 function uniqueIds(ids: string[]): string[] {
   const seen: Record&lt;string, true&gt; = {};
@@ -320,8 +318,8 @@ export interface TagRealtimeClient {
   addItem: (
     parentId: string,
     name: string,
-    itemType: BackendItemType,
-    varType: BackendVarDataType | null,
+    itemType: ItemType,
+    varType: VarDataType | undefined,
     endpoint?: string,
   ) =&gt; Promise&lt;string[]&gt;;
   removeItems: (itemIds: string[], endpoint?: string) =&gt; Promise&lt;void&gt;;
@@ -370,8 +368,8 @@ export function createPageTagRealtimeProvider(
     addItem: (
       parentId: string,
       name: string,
-      itemType: BackendItemType,
-      varType: BackendVarDataType | null,
+      itemType: ItemType,
+      varType: VarDataType | undefined,
     ) =&gt; {
       return client.addItem(parentId, name, itemType, varType, endpoint);
     },
@@ -382,27 +380,21 @@ export function createPageTagRealtimeProvider(
 }
 &nbsp;</pre></td></tr></table></pre>
 
-      <div class="push"></div>
-      <!-- for sticky footer -->
-    </div>
-    <!-- /wrapper -->
-    <div class="footer quiet pad2 space-top1 center small">
-      Code coverage generated by
-      <a
-        href="https://istanbul.js.org/"
-        target="_blank"
-        rel="noopener noreferrer"
-        >istanbul</a
-      >
-      at 2026-03-11T04:56:27.664Z
-    </div>
-    <script src="../../prettify.js"></script>
-    <script>
-      window.onload = function () {
-        prettyPrint();
-      };
-    </script>
-    <script src="../../sorter.js"></script>
-    <script src="../../block-navigation.js"></script>
-  </body>
+                <div class='push'></div><!-- for sticky footer -->
+            </div><!-- /wrapper -->
+            <div class='footer quiet pad2 space-top1 center small'>
+                Code coverage generated by
+                <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
+                at 2026-03-14T21:42:16.666Z
+            </div>
+        <script src="../../prettify.js"></script>
+        <script>
+            window.onload = function () {
+                prettyPrint();
+            };
+        </script>
+        <script src="../../sorter.js"></script>
+        <script src="../../block-navigation.js"></script>
+    </body>
 </html>
+    

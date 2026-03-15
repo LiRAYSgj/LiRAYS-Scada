@@ -88,7 +88,10 @@ function createBaseMeta(): Meta {
 }
 
 export const Meta: MessageFns<Meta> = {
-  encode(message: Meta, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+  encode(
+    message: Meta,
+    writer: BinaryWriter = new BinaryWriter(),
+  ): BinaryWriter {
     if (message.rootUid !== "") {
       writer.uint32(10).string(message.rootUid);
     }
@@ -99,7 +102,8 @@ export const Meta: MessageFns<Meta> = {
   },
 
   decode(input: BinaryReader | Uint8Array, length?: number): Meta {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const reader =
+      input instanceof BinaryReader ? input : new BinaryReader(input);
     const end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseMeta();
     while (reader.pos < end) {
@@ -135,8 +139,8 @@ export const Meta: MessageFns<Meta> = {
       rootUid: isSet(object.rootUid)
         ? globalThis.String(object.rootUid)
         : isSet(object.root_uid)
-        ? globalThis.String(object.root_uid)
-        : "",
+          ? globalThis.String(object.root_uid)
+          : "",
       vendor: isSet(object.vendor) ? globalThis.String(object.vendor) : "",
     };
   },
@@ -164,11 +168,19 @@ export const Meta: MessageFns<Meta> = {
 };
 
 function createBaseValue(): Value {
-  return { integerValue: undefined, floatValue: undefined, textValue: undefined, booleanValue: undefined };
+  return {
+    integerValue: undefined,
+    floatValue: undefined,
+    textValue: undefined,
+    booleanValue: undefined,
+  };
 }
 
 export const Value: MessageFns<Value> = {
-  encode(message: Value, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+  encode(
+    message: Value,
+    writer: BinaryWriter = new BinaryWriter(),
+  ): BinaryWriter {
     if (message.integerValue !== undefined) {
       writer.uint32(8).int64(message.integerValue);
     }
@@ -185,7 +197,8 @@ export const Value: MessageFns<Value> = {
   },
 
   decode(input: BinaryReader | Uint8Array, length?: number): Value {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const reader =
+      input instanceof BinaryReader ? input : new BinaryReader(input);
     const end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseValue();
     while (reader.pos < end) {
@@ -237,23 +250,23 @@ export const Value: MessageFns<Value> = {
       integerValue: isSet(object.integerValue)
         ? globalThis.Number(object.integerValue)
         : isSet(object.integer_value)
-        ? globalThis.Number(object.integer_value)
-        : undefined,
+          ? globalThis.Number(object.integer_value)
+          : undefined,
       floatValue: isSet(object.floatValue)
         ? globalThis.Number(object.floatValue)
         : isSet(object.float_value)
-        ? globalThis.Number(object.float_value)
-        : undefined,
+          ? globalThis.Number(object.float_value)
+          : undefined,
       textValue: isSet(object.textValue)
         ? globalThis.String(object.textValue)
         : isSet(object.text_value)
-        ? globalThis.String(object.text_value)
-        : undefined,
+          ? globalThis.String(object.text_value)
+          : undefined,
       booleanValue: isSet(object.booleanValue)
         ? globalThis.Boolean(object.booleanValue)
         : isSet(object.boolean_value)
-        ? globalThis.Boolean(object.boolean_value)
-        : undefined,
+          ? globalThis.Boolean(object.boolean_value)
+          : undefined,
     };
   },
 
@@ -292,7 +305,10 @@ function createBaseOptionalValue(): OptionalValue {
 }
 
 export const OptionalValue: MessageFns<OptionalValue> = {
-  encode(message: OptionalValue, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+  encode(
+    message: OptionalValue,
+    writer: BinaryWriter = new BinaryWriter(),
+  ): BinaryWriter {
     if (message.value !== undefined) {
       Value.encode(message.value, writer.uint32(10).fork()).join();
     }
@@ -300,7 +316,8 @@ export const OptionalValue: MessageFns<OptionalValue> = {
   },
 
   decode(input: BinaryReader | Uint8Array, length?: number): OptionalValue {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const reader =
+      input instanceof BinaryReader ? input : new BinaryReader(input);
     const end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseOptionalValue();
     while (reader.pos < end) {
@@ -324,7 +341,9 @@ export const OptionalValue: MessageFns<OptionalValue> = {
   },
 
   fromJSON(object: any): OptionalValue {
-    return { value: isSet(object.value) ? Value.fromJSON(object.value) : undefined };
+    return {
+      value: isSet(object.value) ? Value.fromJSON(object.value) : undefined,
+    };
   },
 
   toJSON(message: OptionalValue): unknown {
@@ -335,12 +354,19 @@ export const OptionalValue: MessageFns<OptionalValue> = {
     return obj;
   },
 
-  create<I extends Exact<DeepPartial<OptionalValue>, I>>(base?: I): OptionalValue {
+  create<I extends Exact<DeepPartial<OptionalValue>, I>>(
+    base?: I,
+  ): OptionalValue {
     return OptionalValue.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<OptionalValue>, I>>(object: I): OptionalValue {
+  fromPartial<I extends Exact<DeepPartial<OptionalValue>, I>>(
+    object: I,
+  ): OptionalValue {
     const message = createBaseOptionalValue();
-    message.value = (object.value !== undefined && object.value !== null) ? Value.fromPartial(object.value) : undefined;
+    message.value =
+      object.value !== undefined && object.value !== null
+        ? Value.fromPartial(object.value)
+        : undefined;
     return message;
   },
 };
@@ -350,7 +376,10 @@ function createBaseChildInfo(): ChildInfo {
 }
 
 export const ChildInfo: MessageFns<ChildInfo> = {
-  encode(message: ChildInfo, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+  encode(
+    message: ChildInfo,
+    writer: BinaryWriter = new BinaryWriter(),
+  ): BinaryWriter {
     if (message.childId !== "") {
       writer.uint32(10).string(message.childId);
     }
@@ -364,7 +393,8 @@ export const ChildInfo: MessageFns<ChildInfo> = {
   },
 
   decode(input: BinaryReader | Uint8Array, length?: number): ChildInfo {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const reader =
+      input instanceof BinaryReader ? input : new BinaryReader(input);
     const end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseChildInfo();
     while (reader.pos < end) {
@@ -408,18 +438,18 @@ export const ChildInfo: MessageFns<ChildInfo> = {
       childId: isSet(object.childId)
         ? globalThis.String(object.childId)
         : isSet(object.child_id)
-        ? globalThis.String(object.child_id)
-        : "",
+          ? globalThis.String(object.child_id)
+          : "",
       iType: isSet(object.iType)
         ? itemTypeFromJSON(object.iType)
         : isSet(object.i_type)
-        ? itemTypeFromJSON(object.i_type)
-        : 0,
+          ? itemTypeFromJSON(object.i_type)
+          : 0,
       varDType: isSet(object.varDType)
         ? varDataTypeFromJSON(object.varDType)
         : isSet(object.var_d_type)
-        ? varDataTypeFromJSON(object.var_d_type)
-        : undefined,
+          ? varDataTypeFromJSON(object.var_d_type)
+          : undefined,
     };
   },
 
@@ -440,7 +470,9 @@ export const ChildInfo: MessageFns<ChildInfo> = {
   create<I extends Exact<DeepPartial<ChildInfo>, I>>(base?: I): ChildInfo {
     return ChildInfo.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<ChildInfo>, I>>(object: I): ChildInfo {
+  fromPartial<I extends Exact<DeepPartial<ChildInfo>, I>>(
+    object: I,
+  ): ChildInfo {
     const message = createBaseChildInfo();
     message.childId = object.childId ?? "";
     message.iType = object.iType ?? 0;
@@ -450,11 +482,22 @@ export const ChildInfo: MessageFns<ChildInfo> = {
 };
 
 function createBaseItem(): Item {
-  return { id: "", name: "", parent: undefined, children: {}, iType: 0, varDType: undefined, value: undefined };
+  return {
+    id: "",
+    name: "",
+    parent: undefined,
+    children: {},
+    iType: 0,
+    varDType: undefined,
+    value: undefined,
+  };
 }
 
 export const Item: MessageFns<Item> = {
-  encode(message: Item, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+  encode(
+    message: Item,
+    writer: BinaryWriter = new BinaryWriter(),
+  ): BinaryWriter {
     if (message.id !== "") {
       writer.uint32(10).string(message.id);
     }
@@ -464,9 +507,14 @@ export const Item: MessageFns<Item> = {
     if (message.parent !== undefined) {
       writer.uint32(26).string(message.parent);
     }
-    globalThis.Object.entries(message.children).forEach(([key, value]: [string, ChildInfo]) => {
-      Item_ChildrenEntry.encode({ key: key as any, value }, writer.uint32(34).fork()).join();
-    });
+    globalThis.Object.entries(message.children).forEach(
+      ([key, value]: [string, ChildInfo]) => {
+        Item_ChildrenEntry.encode(
+          { key: key as any, value },
+          writer.uint32(34).fork(),
+        ).join();
+      },
+    );
     if (message.iType !== 0) {
       writer.uint32(40).int32(message.iType);
     }
@@ -480,7 +528,8 @@ export const Item: MessageFns<Item> = {
   },
 
   decode(input: BinaryReader | Uint8Array, length?: number): Item {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const reader =
+      input instanceof BinaryReader ? input : new BinaryReader(input);
     const end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseItem();
     while (reader.pos < end) {
@@ -558,26 +607,33 @@ export const Item: MessageFns<Item> = {
     return {
       id: isSet(object.id) ? globalThis.String(object.id) : "",
       name: isSet(object.name) ? globalThis.String(object.name) : "",
-      parent: isSet(object.parent) ? globalThis.String(object.parent) : undefined,
+      parent: isSet(object.parent)
+        ? globalThis.String(object.parent)
+        : undefined,
       children: isObject(object.children)
-        ? (globalThis.Object.entries(object.children) as [string, any][]).reduce(
-          (acc: { [key: string]: ChildInfo }, [key, value]: [string, any]) => {
-            acc[key] = ChildInfo.fromJSON(value);
-            return acc;
-          },
-          {},
-        )
+        ? (
+            globalThis.Object.entries(object.children) as [string, any][]
+          ).reduce(
+            (
+              acc: { [key: string]: ChildInfo },
+              [key, value]: [string, any],
+            ) => {
+              acc[key] = ChildInfo.fromJSON(value);
+              return acc;
+            },
+            {},
+          )
         : {},
       iType: isSet(object.iType)
         ? itemTypeFromJSON(object.iType)
         : isSet(object.i_type)
-        ? itemTypeFromJSON(object.i_type)
-        : 0,
+          ? itemTypeFromJSON(object.i_type)
+          : 0,
       varDType: isSet(object.varDType)
         ? varDataTypeFromJSON(object.varDType)
         : isSet(object.var_d_type)
-        ? varDataTypeFromJSON(object.var_d_type)
-        : undefined,
+          ? varDataTypeFromJSON(object.var_d_type)
+          : undefined,
       value: isSet(object.value) ? Value.fromJSON(object.value) : undefined,
     };
   },
@@ -594,7 +650,10 @@ export const Item: MessageFns<Item> = {
       obj.parent = message.parent;
     }
     if (message.children) {
-      const entries = globalThis.Object.entries(message.children) as [string, ChildInfo][];
+      const entries = globalThis.Object.entries(message.children) as [
+        string,
+        ChildInfo,
+      ][];
       if (entries.length > 0) {
         obj.children = {};
         entries.forEach(([k, v]) => {
@@ -622,8 +681,13 @@ export const Item: MessageFns<Item> = {
     message.id = object.id ?? "";
     message.name = object.name ?? "";
     message.parent = object.parent ?? undefined;
-    message.children = (globalThis.Object.entries(object.children ?? {}) as [string, ChildInfo][]).reduce(
-      (acc: { [key: string]: ChildInfo }, [key, value]: [string, ChildInfo]) => {
+    message.children = (
+      globalThis.Object.entries(object.children ?? {}) as [string, ChildInfo][]
+    ).reduce(
+      (
+        acc: { [key: string]: ChildInfo },
+        [key, value]: [string, ChildInfo],
+      ) => {
         if (value !== undefined) {
           acc[key] = ChildInfo.fromPartial(value);
         }
@@ -633,7 +697,10 @@ export const Item: MessageFns<Item> = {
     );
     message.iType = object.iType ?? 0;
     message.varDType = object.varDType ?? undefined;
-    message.value = (object.value !== undefined && object.value !== null) ? Value.fromPartial(object.value) : undefined;
+    message.value =
+      object.value !== undefined && object.value !== null
+        ? Value.fromPartial(object.value)
+        : undefined;
     return message;
   },
 };
@@ -643,7 +710,10 @@ function createBaseItem_ChildrenEntry(): Item_ChildrenEntry {
 }
 
 export const Item_ChildrenEntry: MessageFns<Item_ChildrenEntry> = {
-  encode(message: Item_ChildrenEntry, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+  encode(
+    message: Item_ChildrenEntry,
+    writer: BinaryWriter = new BinaryWriter(),
+  ): BinaryWriter {
     if (message.key !== "") {
       writer.uint32(10).string(message.key);
     }
@@ -653,8 +723,12 @@ export const Item_ChildrenEntry: MessageFns<Item_ChildrenEntry> = {
     return writer;
   },
 
-  decode(input: BinaryReader | Uint8Array, length?: number): Item_ChildrenEntry {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+  decode(
+    input: BinaryReader | Uint8Array,
+    length?: number,
+  ): Item_ChildrenEntry {
+    const reader =
+      input instanceof BinaryReader ? input : new BinaryReader(input);
     const end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseItem_ChildrenEntry();
     while (reader.pos < end) {
@@ -703,15 +777,20 @@ export const Item_ChildrenEntry: MessageFns<Item_ChildrenEntry> = {
     return obj;
   },
 
-  create<I extends Exact<DeepPartial<Item_ChildrenEntry>, I>>(base?: I): Item_ChildrenEntry {
+  create<I extends Exact<DeepPartial<Item_ChildrenEntry>, I>>(
+    base?: I,
+  ): Item_ChildrenEntry {
     return Item_ChildrenEntry.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<Item_ChildrenEntry>, I>>(object: I): Item_ChildrenEntry {
+  fromPartial<I extends Exact<DeepPartial<Item_ChildrenEntry>, I>>(
+    object: I,
+  ): Item_ChildrenEntry {
     const message = createBaseItem_ChildrenEntry();
     message.key = object.key ?? "";
-    message.value = (object.value !== undefined && object.value !== null)
-      ? ChildInfo.fromPartial(object.value)
-      : undefined;
+    message.value =
+      object.value !== undefined && object.value !== null
+        ? ChildInfo.fromPartial(object.value)
+        : undefined;
     return message;
   },
 };
@@ -721,15 +800,27 @@ function createBaseUnifiedNamespaceSchema(): UnifiedNamespaceSchema {
 }
 
 export const UnifiedNamespaceSchema: MessageFns<UnifiedNamespaceSchema> = {
-  encode(message: UnifiedNamespaceSchema, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    globalThis.Object.entries(message.roots).forEach(([key, value]: [string, NamespaceNode]) => {
-      UnifiedNamespaceSchema_RootsEntry.encode({ key: key as any, value }, writer.uint32(10).fork()).join();
-    });
+  encode(
+    message: UnifiedNamespaceSchema,
+    writer: BinaryWriter = new BinaryWriter(),
+  ): BinaryWriter {
+    globalThis.Object.entries(message.roots).forEach(
+      ([key, value]: [string, NamespaceNode]) => {
+        UnifiedNamespaceSchema_RootsEntry.encode(
+          { key: key as any, value },
+          writer.uint32(10).fork(),
+        ).join();
+      },
+    );
     return writer;
   },
 
-  decode(input: BinaryReader | Uint8Array, length?: number): UnifiedNamespaceSchema {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+  decode(
+    input: BinaryReader | Uint8Array,
+    length?: number,
+  ): UnifiedNamespaceSchema {
+    const reader =
+      input instanceof BinaryReader ? input : new BinaryReader(input);
     const end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseUnifiedNamespaceSchema();
     while (reader.pos < end) {
@@ -740,7 +831,10 @@ export const UnifiedNamespaceSchema: MessageFns<UnifiedNamespaceSchema> = {
             break;
           }
 
-          const entry1 = UnifiedNamespaceSchema_RootsEntry.decode(reader, reader.uint32());
+          const entry1 = UnifiedNamespaceSchema_RootsEntry.decode(
+            reader,
+            reader.uint32(),
+          );
           if (entry1.value !== undefined) {
             message.roots[entry1.key] = entry1.value;
           }
@@ -759,12 +853,15 @@ export const UnifiedNamespaceSchema: MessageFns<UnifiedNamespaceSchema> = {
     return {
       roots: isObject(object.roots)
         ? (globalThis.Object.entries(object.roots) as [string, any][]).reduce(
-          (acc: { [key: string]: NamespaceNode }, [key, value]: [string, any]) => {
-            acc[key] = NamespaceNode.fromJSON(value);
-            return acc;
-          },
-          {},
-        )
+            (
+              acc: { [key: string]: NamespaceNode },
+              [key, value]: [string, any],
+            ) => {
+              acc[key] = NamespaceNode.fromJSON(value);
+              return acc;
+            },
+            {},
+          )
         : {},
     };
   },
@@ -772,7 +869,10 @@ export const UnifiedNamespaceSchema: MessageFns<UnifiedNamespaceSchema> = {
   toJSON(message: UnifiedNamespaceSchema): unknown {
     const obj: any = {};
     if (message.roots) {
-      const entries = globalThis.Object.entries(message.roots) as [string, NamespaceNode][];
+      const entries = globalThis.Object.entries(message.roots) as [
+        string,
+        NamespaceNode,
+      ][];
       if (entries.length > 0) {
         obj.roots = {};
         entries.forEach(([k, v]) => {
@@ -783,13 +883,22 @@ export const UnifiedNamespaceSchema: MessageFns<UnifiedNamespaceSchema> = {
     return obj;
   },
 
-  create<I extends Exact<DeepPartial<UnifiedNamespaceSchema>, I>>(base?: I): UnifiedNamespaceSchema {
+  create<I extends Exact<DeepPartial<UnifiedNamespaceSchema>, I>>(
+    base?: I,
+  ): UnifiedNamespaceSchema {
     return UnifiedNamespaceSchema.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<UnifiedNamespaceSchema>, I>>(object: I): UnifiedNamespaceSchema {
+  fromPartial<I extends Exact<DeepPartial<UnifiedNamespaceSchema>, I>>(
+    object: I,
+  ): UnifiedNamespaceSchema {
     const message = createBaseUnifiedNamespaceSchema();
-    message.roots = (globalThis.Object.entries(object.roots ?? {}) as [string, NamespaceNode][]).reduce(
-      (acc: { [key: string]: NamespaceNode }, [key, value]: [string, NamespaceNode]) => {
+    message.roots = (
+      globalThis.Object.entries(object.roots ?? {}) as [string, NamespaceNode][]
+    ).reduce(
+      (
+        acc: { [key: string]: NamespaceNode },
+        [key, value]: [string, NamespaceNode],
+      ) => {
         if (value !== undefined) {
           acc[key] = NamespaceNode.fromPartial(value);
         }
@@ -805,90 +914,104 @@ function createBaseUnifiedNamespaceSchema_RootsEntry(): UnifiedNamespaceSchema_R
   return { key: "", value: undefined };
 }
 
-export const UnifiedNamespaceSchema_RootsEntry: MessageFns<UnifiedNamespaceSchema_RootsEntry> = {
-  encode(message: UnifiedNamespaceSchema_RootsEntry, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    if (message.key !== "") {
-      writer.uint32(10).string(message.key);
-    }
-    if (message.value !== undefined) {
-      NamespaceNode.encode(message.value, writer.uint32(18).fork()).join();
-    }
-    return writer;
-  },
-
-  decode(input: BinaryReader | Uint8Array, length?: number): UnifiedNamespaceSchema_RootsEntry {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
-    const end = length === undefined ? reader.len : reader.pos + length;
-    const message = createBaseUnifiedNamespaceSchema_RootsEntry();
-    while (reader.pos < end) {
-      const tag = reader.uint32();
-      switch (tag >>> 3) {
-        case 1: {
-          if (tag !== 10) {
-            break;
-          }
-
-          message.key = reader.string();
-          continue;
-        }
-        case 2: {
-          if (tag !== 18) {
-            break;
-          }
-
-          message.value = NamespaceNode.decode(reader, reader.uint32());
-          continue;
-        }
+export const UnifiedNamespaceSchema_RootsEntry: MessageFns<UnifiedNamespaceSchema_RootsEntry> =
+  {
+    encode(
+      message: UnifiedNamespaceSchema_RootsEntry,
+      writer: BinaryWriter = new BinaryWriter(),
+    ): BinaryWriter {
+      if (message.key !== "") {
+        writer.uint32(10).string(message.key);
       }
-      if ((tag & 7) === 4 || tag === 0) {
-        break;
+      if (message.value !== undefined) {
+        NamespaceNode.encode(message.value, writer.uint32(18).fork()).join();
       }
-      reader.skip(tag & 7);
-    }
-    return message;
-  },
+      return writer;
+    },
 
-  fromJSON(object: any): UnifiedNamespaceSchema_RootsEntry {
-    return {
-      key: isSet(object.key) ? globalThis.String(object.key) : "",
-      value: isSet(object.value) ? NamespaceNode.fromJSON(object.value) : undefined,
-    };
-  },
+    decode(
+      input: BinaryReader | Uint8Array,
+      length?: number,
+    ): UnifiedNamespaceSchema_RootsEntry {
+      const reader =
+        input instanceof BinaryReader ? input : new BinaryReader(input);
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseUnifiedNamespaceSchema_RootsEntry();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 10) {
+              break;
+            }
 
-  toJSON(message: UnifiedNamespaceSchema_RootsEntry): unknown {
-    const obj: any = {};
-    if (message.key !== "") {
-      obj.key = message.key;
-    }
-    if (message.value !== undefined) {
-      obj.value = NamespaceNode.toJSON(message.value);
-    }
-    return obj;
-  },
+            message.key = reader.string();
+            continue;
+          }
+          case 2: {
+            if (tag !== 18) {
+              break;
+            }
 
-  create<I extends Exact<DeepPartial<UnifiedNamespaceSchema_RootsEntry>, I>>(
-    base?: I,
-  ): UnifiedNamespaceSchema_RootsEntry {
-    return UnifiedNamespaceSchema_RootsEntry.fromPartial(base ?? ({} as any));
-  },
-  fromPartial<I extends Exact<DeepPartial<UnifiedNamespaceSchema_RootsEntry>, I>>(
-    object: I,
-  ): UnifiedNamespaceSchema_RootsEntry {
-    const message = createBaseUnifiedNamespaceSchema_RootsEntry();
-    message.key = object.key ?? "";
-    message.value = (object.value !== undefined && object.value !== null)
-      ? NamespaceNode.fromPartial(object.value)
-      : undefined;
-    return message;
-  },
-};
+            message.value = NamespaceNode.decode(reader, reader.uint32());
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    },
+
+    fromJSON(object: any): UnifiedNamespaceSchema_RootsEntry {
+      return {
+        key: isSet(object.key) ? globalThis.String(object.key) : "",
+        value: isSet(object.value)
+          ? NamespaceNode.fromJSON(object.value)
+          : undefined,
+      };
+    },
+
+    toJSON(message: UnifiedNamespaceSchema_RootsEntry): unknown {
+      const obj: any = {};
+      if (message.key !== "") {
+        obj.key = message.key;
+      }
+      if (message.value !== undefined) {
+        obj.value = NamespaceNode.toJSON(message.value);
+      }
+      return obj;
+    },
+
+    create<I extends Exact<DeepPartial<UnifiedNamespaceSchema_RootsEntry>, I>>(
+      base?: I,
+    ): UnifiedNamespaceSchema_RootsEntry {
+      return UnifiedNamespaceSchema_RootsEntry.fromPartial(base ?? ({} as any));
+    },
+    fromPartial<
+      I extends Exact<DeepPartial<UnifiedNamespaceSchema_RootsEntry>, I>,
+    >(object: I): UnifiedNamespaceSchema_RootsEntry {
+      const message = createBaseUnifiedNamespaceSchema_RootsEntry();
+      message.key = object.key ?? "";
+      message.value =
+        object.value !== undefined && object.value !== null
+          ? NamespaceNode.fromPartial(object.value)
+          : undefined;
+      return message;
+    },
+  };
 
 function createBaseNamespaceNode(): NamespaceNode {
   return { folder: undefined, variableType: undefined };
 }
 
 export const NamespaceNode: MessageFns<NamespaceNode> = {
-  encode(message: NamespaceNode, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+  encode(
+    message: NamespaceNode,
+    writer: BinaryWriter = new BinaryWriter(),
+  ): BinaryWriter {
     if (message.folder !== undefined) {
       NamespaceFolder.encode(message.folder, writer.uint32(10).fork()).join();
     }
@@ -899,7 +1022,8 @@ export const NamespaceNode: MessageFns<NamespaceNode> = {
   },
 
   decode(input: BinaryReader | Uint8Array, length?: number): NamespaceNode {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const reader =
+      input instanceof BinaryReader ? input : new BinaryReader(input);
     const end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseNamespaceNode();
     while (reader.pos < end) {
@@ -932,12 +1056,14 @@ export const NamespaceNode: MessageFns<NamespaceNode> = {
 
   fromJSON(object: any): NamespaceNode {
     return {
-      folder: isSet(object.folder) ? NamespaceFolder.fromJSON(object.folder) : undefined,
+      folder: isSet(object.folder)
+        ? NamespaceFolder.fromJSON(object.folder)
+        : undefined,
       variableType: isSet(object.variableType)
         ? globalThis.String(object.variableType)
         : isSet(object.variable_type)
-        ? globalThis.String(object.variable_type)
-        : undefined,
+          ? globalThis.String(object.variable_type)
+          : undefined,
     };
   },
 
@@ -952,14 +1078,19 @@ export const NamespaceNode: MessageFns<NamespaceNode> = {
     return obj;
   },
 
-  create<I extends Exact<DeepPartial<NamespaceNode>, I>>(base?: I): NamespaceNode {
+  create<I extends Exact<DeepPartial<NamespaceNode>, I>>(
+    base?: I,
+  ): NamespaceNode {
     return NamespaceNode.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<NamespaceNode>, I>>(object: I): NamespaceNode {
+  fromPartial<I extends Exact<DeepPartial<NamespaceNode>, I>>(
+    object: I,
+  ): NamespaceNode {
     const message = createBaseNamespaceNode();
-    message.folder = (object.folder !== undefined && object.folder !== null)
-      ? NamespaceFolder.fromPartial(object.folder)
-      : undefined;
+    message.folder =
+      object.folder !== undefined && object.folder !== null
+        ? NamespaceFolder.fromPartial(object.folder)
+        : undefined;
     message.variableType = object.variableType ?? undefined;
     return message;
   },
@@ -970,15 +1101,24 @@ function createBaseNamespaceFolder(): NamespaceFolder {
 }
 
 export const NamespaceFolder: MessageFns<NamespaceFolder> = {
-  encode(message: NamespaceFolder, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    globalThis.Object.entries(message.children).forEach(([key, value]: [string, NamespaceNode]) => {
-      NamespaceFolder_ChildrenEntry.encode({ key: key as any, value }, writer.uint32(10).fork()).join();
-    });
+  encode(
+    message: NamespaceFolder,
+    writer: BinaryWriter = new BinaryWriter(),
+  ): BinaryWriter {
+    globalThis.Object.entries(message.children).forEach(
+      ([key, value]: [string, NamespaceNode]) => {
+        NamespaceFolder_ChildrenEntry.encode(
+          { key: key as any, value },
+          writer.uint32(10).fork(),
+        ).join();
+      },
+    );
     return writer;
   },
 
   decode(input: BinaryReader | Uint8Array, length?: number): NamespaceFolder {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const reader =
+      input instanceof BinaryReader ? input : new BinaryReader(input);
     const end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseNamespaceFolder();
     while (reader.pos < end) {
@@ -989,7 +1129,10 @@ export const NamespaceFolder: MessageFns<NamespaceFolder> = {
             break;
           }
 
-          const entry1 = NamespaceFolder_ChildrenEntry.decode(reader, reader.uint32());
+          const entry1 = NamespaceFolder_ChildrenEntry.decode(
+            reader,
+            reader.uint32(),
+          );
           if (entry1.value !== undefined) {
             message.children[entry1.key] = entry1.value;
           }
@@ -1007,13 +1150,18 @@ export const NamespaceFolder: MessageFns<NamespaceFolder> = {
   fromJSON(object: any): NamespaceFolder {
     return {
       children: isObject(object.children)
-        ? (globalThis.Object.entries(object.children) as [string, any][]).reduce(
-          (acc: { [key: string]: NamespaceNode }, [key, value]: [string, any]) => {
-            acc[key] = NamespaceNode.fromJSON(value);
-            return acc;
-          },
-          {},
-        )
+        ? (
+            globalThis.Object.entries(object.children) as [string, any][]
+          ).reduce(
+            (
+              acc: { [key: string]: NamespaceNode },
+              [key, value]: [string, any],
+            ) => {
+              acc[key] = NamespaceNode.fromJSON(value);
+              return acc;
+            },
+            {},
+          )
         : {},
     };
   },
@@ -1021,7 +1169,10 @@ export const NamespaceFolder: MessageFns<NamespaceFolder> = {
   toJSON(message: NamespaceFolder): unknown {
     const obj: any = {};
     if (message.children) {
-      const entries = globalThis.Object.entries(message.children) as [string, NamespaceNode][];
+      const entries = globalThis.Object.entries(message.children) as [
+        string,
+        NamespaceNode,
+      ][];
       if (entries.length > 0) {
         obj.children = {};
         entries.forEach(([k, v]) => {
@@ -1032,13 +1183,25 @@ export const NamespaceFolder: MessageFns<NamespaceFolder> = {
     return obj;
   },
 
-  create<I extends Exact<DeepPartial<NamespaceFolder>, I>>(base?: I): NamespaceFolder {
+  create<I extends Exact<DeepPartial<NamespaceFolder>, I>>(
+    base?: I,
+  ): NamespaceFolder {
     return NamespaceFolder.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<NamespaceFolder>, I>>(object: I): NamespaceFolder {
+  fromPartial<I extends Exact<DeepPartial<NamespaceFolder>, I>>(
+    object: I,
+  ): NamespaceFolder {
     const message = createBaseNamespaceFolder();
-    message.children = (globalThis.Object.entries(object.children ?? {}) as [string, NamespaceNode][]).reduce(
-      (acc: { [key: string]: NamespaceNode }, [key, value]: [string, NamespaceNode]) => {
+    message.children = (
+      globalThis.Object.entries(object.children ?? {}) as [
+        string,
+        NamespaceNode,
+      ][]
+    ).reduce(
+      (
+        acc: { [key: string]: NamespaceNode },
+        [key, value]: [string, NamespaceNode],
+      ) => {
         if (value !== undefined) {
           acc[key] = NamespaceNode.fromPartial(value);
         }
@@ -1054,93 +1217,120 @@ function createBaseNamespaceFolder_ChildrenEntry(): NamespaceFolder_ChildrenEntr
   return { key: "", value: undefined };
 }
 
-export const NamespaceFolder_ChildrenEntry: MessageFns<NamespaceFolder_ChildrenEntry> = {
-  encode(message: NamespaceFolder_ChildrenEntry, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    if (message.key !== "") {
-      writer.uint32(10).string(message.key);
-    }
-    if (message.value !== undefined) {
-      NamespaceNode.encode(message.value, writer.uint32(18).fork()).join();
-    }
-    return writer;
-  },
-
-  decode(input: BinaryReader | Uint8Array, length?: number): NamespaceFolder_ChildrenEntry {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
-    const end = length === undefined ? reader.len : reader.pos + length;
-    const message = createBaseNamespaceFolder_ChildrenEntry();
-    while (reader.pos < end) {
-      const tag = reader.uint32();
-      switch (tag >>> 3) {
-        case 1: {
-          if (tag !== 10) {
-            break;
-          }
-
-          message.key = reader.string();
-          continue;
-        }
-        case 2: {
-          if (tag !== 18) {
-            break;
-          }
-
-          message.value = NamespaceNode.decode(reader, reader.uint32());
-          continue;
-        }
+export const NamespaceFolder_ChildrenEntry: MessageFns<NamespaceFolder_ChildrenEntry> =
+  {
+    encode(
+      message: NamespaceFolder_ChildrenEntry,
+      writer: BinaryWriter = new BinaryWriter(),
+    ): BinaryWriter {
+      if (message.key !== "") {
+        writer.uint32(10).string(message.key);
       }
-      if ((tag & 7) === 4 || tag === 0) {
-        break;
+      if (message.value !== undefined) {
+        NamespaceNode.encode(message.value, writer.uint32(18).fork()).join();
       }
-      reader.skip(tag & 7);
-    }
-    return message;
-  },
+      return writer;
+    },
 
-  fromJSON(object: any): NamespaceFolder_ChildrenEntry {
-    return {
-      key: isSet(object.key) ? globalThis.String(object.key) : "",
-      value: isSet(object.value) ? NamespaceNode.fromJSON(object.value) : undefined,
-    };
-  },
+    decode(
+      input: BinaryReader | Uint8Array,
+      length?: number,
+    ): NamespaceFolder_ChildrenEntry {
+      const reader =
+        input instanceof BinaryReader ? input : new BinaryReader(input);
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseNamespaceFolder_ChildrenEntry();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 10) {
+              break;
+            }
 
-  toJSON(message: NamespaceFolder_ChildrenEntry): unknown {
-    const obj: any = {};
-    if (message.key !== "") {
-      obj.key = message.key;
-    }
-    if (message.value !== undefined) {
-      obj.value = NamespaceNode.toJSON(message.value);
-    }
-    return obj;
-  },
+            message.key = reader.string();
+            continue;
+          }
+          case 2: {
+            if (tag !== 18) {
+              break;
+            }
 
-  create<I extends Exact<DeepPartial<NamespaceFolder_ChildrenEntry>, I>>(base?: I): NamespaceFolder_ChildrenEntry {
-    return NamespaceFolder_ChildrenEntry.fromPartial(base ?? ({} as any));
-  },
-  fromPartial<I extends Exact<DeepPartial<NamespaceFolder_ChildrenEntry>, I>>(
-    object: I,
-  ): NamespaceFolder_ChildrenEntry {
-    const message = createBaseNamespaceFolder_ChildrenEntry();
-    message.key = object.key ?? "";
-    message.value = (object.value !== undefined && object.value !== null)
-      ? NamespaceNode.fromPartial(object.value)
-      : undefined;
-    return message;
-  },
-};
+            message.value = NamespaceNode.decode(reader, reader.uint32());
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    },
 
-type Builtin = Date | Function | Uint8Array | string | number | boolean | undefined;
+    fromJSON(object: any): NamespaceFolder_ChildrenEntry {
+      return {
+        key: isSet(object.key) ? globalThis.String(object.key) : "",
+        value: isSet(object.value)
+          ? NamespaceNode.fromJSON(object.value)
+          : undefined,
+      };
+    },
 
-export type DeepPartial<T> = T extends Builtin ? T
-  : T extends globalThis.Array<infer U> ? globalThis.Array<DeepPartial<U>>
-  : T extends ReadonlyArray<infer U> ? ReadonlyArray<DeepPartial<U>>
-  : T extends {} ? { [K in keyof T]?: DeepPartial<T[K]> }
-  : Partial<T>;
+    toJSON(message: NamespaceFolder_ChildrenEntry): unknown {
+      const obj: any = {};
+      if (message.key !== "") {
+        obj.key = message.key;
+      }
+      if (message.value !== undefined) {
+        obj.value = NamespaceNode.toJSON(message.value);
+      }
+      return obj;
+    },
+
+    create<I extends Exact<DeepPartial<NamespaceFolder_ChildrenEntry>, I>>(
+      base?: I,
+    ): NamespaceFolder_ChildrenEntry {
+      return NamespaceFolder_ChildrenEntry.fromPartial(base ?? ({} as any));
+    },
+    fromPartial<I extends Exact<DeepPartial<NamespaceFolder_ChildrenEntry>, I>>(
+      object: I,
+    ): NamespaceFolder_ChildrenEntry {
+      const message = createBaseNamespaceFolder_ChildrenEntry();
+      message.key = object.key ?? "";
+      message.value =
+        object.value !== undefined && object.value !== null
+          ? NamespaceNode.fromPartial(object.value)
+          : undefined;
+      return message;
+    },
+  };
+
+type Builtin =
+  | Date
+  | Function
+  | Uint8Array
+  | string
+  | number
+  | boolean
+  | undefined;
+
+export type DeepPartial<T> = T extends Builtin
+  ? T
+  : T extends globalThis.Array<infer U>
+    ? globalThis.Array<DeepPartial<U>>
+    : T extends ReadonlyArray<infer U>
+      ? ReadonlyArray<DeepPartial<U>>
+      : T extends {}
+        ? { [K in keyof T]?: DeepPartial<T[K]> }
+        : Partial<T>;
 
 type KeysOfUnion<T> = T extends T ? keyof T : never;
-export type Exact<P, I extends P> = P extends Builtin ? P
-  : P & { [K in keyof P]: Exact<P[K], I[K]> } & { [K in Exclude<keyof I, KeysOfUnion<P>>]: never };
+export type Exact<P, I extends P> = P extends Builtin
+  ? P
+  : P & { [K in keyof P]: Exact<P[K], I[K]> } & {
+      [K in Exclude<keyof I, KeysOfUnion<P>>]: never;
+    };
 
 function longToNumber(int64: { toString(): string }): number {
   const num = globalThis.Number(int64.toString());

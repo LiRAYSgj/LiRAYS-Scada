@@ -117,24 +117,30 @@ describe("TagStreamClient", () => {
     expect(get(client.values)).toEqual({ "tag-a": 57 });
   });
 
-  it("sends write payload when requested", () => {
+  it("sends write payload and resolves when Response.status is OK", async () => {
     const client = new TagStreamClient();
     client.start("ws://localhost:8787");
     const ws = FakeWebSocket.instances[0];
     ws.readyState = FakeWebSocket.OPEN;
     ws.emit("open");
 
-    client.sendWriteValue("tag-cmd", 42);
-
-    const decodedRequests = ws.sent.map((msg) => Command.decode(msg));
-    expect(decodedRequests.some((req) => req.set !== undefined)).toBe(true);
+    const writePromise = client.sendWriteValue("tag-cmd", 42);
+    await Promise.resolve();
+    const setMsg = ws.sent.find((msg) => Command.decode(msg).set !== undefined);
+    expect(setMsg).toBeDefined();
+    const cmdId = Command.decode(setMsg!).set!.cmdId;
     expect(
-      decodedRequests.some((req) =>
-        req.set?.varIdsValues.some(
-          (v) => v.varId === "tag-cmd" && v.value?.integerValue === 42,
-        ),
+      Command.decode(setMsg!).set?.varIdsValues.some(
+        (v) => v.varId === "tag-cmd" && v.value?.integerValue === 42,
       ),
     ).toBe(true);
+
+    const responseBytes = Response.encode({
+      status: OperationStatus.OPERATION_STATUS_OK,
+      set: { cmdId },
+    }).finish();
+    ws.emit("message", { data: responseBytes.slice().buffer });
+    await expect(writePromise).resolves.toBeUndefined();
   });
 
   it("reuses existing socket when list request happens before start", async () => {
@@ -190,9 +196,13 @@ describe("TagStreamClient", () => {
     ws.readyState = FakeWebSocket.OPEN;
     ws.emit("open");
 
-    const bulkPromise = client.addBulkNamespace("", { Area_: { Power: "Float" } });
+    const bulkPromise = client.addBulkNamespace("", {
+      Area_: { Power: "Float" },
+    });
     await Promise.resolve();
-    const bulkMsg = ws.sent.find((msg) => Command.decode(msg).addBulk !== undefined);
+    const bulkMsg = ws.sent.find(
+      (msg) => Command.decode(msg).addBulk !== undefined,
+    );
     expect(bulkMsg).toBeDefined();
     const cmdId = Command.decode(bulkMsg!).addBulk!.cmdId;
 

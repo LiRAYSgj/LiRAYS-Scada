@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Button } from '$lib/components/Button';
 	import { ChevronDown, ChevronRight, LoaderCircle } from 'lucide-svelte';
 
 	interface Props {
@@ -12,23 +13,26 @@
 </script>
 
 {#if hasChildren}
-	<button
-		type="button"
-		class="inline-flex h-5 w-5 cursor-pointer items-center justify-center rounded text-(--text-muted) hover:bg-(--bg-hover) hover:text-(--text-primary)"
-		onclick={(event) => {
-			event.stopPropagation();
+	<Button
+		variant="ghost"
+		title={isExpanded ? 'Collapse node' : 'Expand node'}
+		ariaLabel={isExpanded ? 'Collapse node' : 'Expand node'}
+		class="h-5 min-w-0 w-5 p-0 text-(--text-muted)"
+		onclick={(e) => {
+			e?.stopPropagation();
 			onToggle();
 		}}
-		aria-label={isExpanded ? 'Collapse node' : 'Expand node'}
 	>
-		{#if isLoading}
-			<LoaderCircle class="h-3.5 w-3.5 animate-spin" />
-		{:else if isExpanded}
-			<ChevronDown class="h-3.5 w-3.5" />
-		{:else}
-			<ChevronRight class="h-3.5 w-3.5" />
-		{/if}
-	</button>
+		{#snippet children()}
+			{#if isLoading}
+				<LoaderCircle class="h-3.5 w-3.5 animate-spin" />
+			{:else if isExpanded}
+				<ChevronDown class="h-3.5 w-3.5" />
+			{:else}
+				<ChevronRight class="h-3.5 w-3.5" />
+			{/if}
+		{/snippet}
+	</Button>
 {:else}
 	<span class="inline-block h-5 w-5" aria-hidden="true"></span>
 {/if}

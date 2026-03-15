@@ -9,7 +9,7 @@ import {
   createListCommand,
   createSetCommand,
   fromBackendValue,
-  namespaceJsonToUnifiedSchema,
+  namespaceJsonToSchema,
 } from "./command-ws-client";
 import { WebSocketConnectionStatus, type TagScalarValue } from "./types";
 import {
@@ -17,35 +17,26 @@ import {
   Response,
   type ListResponse,
 } from "../../proto/namespace/commands";
-import { ItemType, type VarDataType } from "../../proto/namespace/enums";
+import {
+  ItemType,
+  OperationStatus,
+  type VarDataType,
+} from "../../proto/namespace/enums";
+import { snackbarStore } from "../../stores/snackbar";
 
 const RETRY_BASE_MS = 2000;
 const RETRY_MAX_MS = 10000;
 const POLL_MS = 2000;
-const REQUEST_TIMEOUT_MS = 5000;
-/** Bulk add may take longer until backend implements processing; UI still waits on cmd_id. */
-const ADD_BULK_TIMEOUT_MS = 120_000;
+/** All commands use the same timeout; success/failure is determined by Response.status and optional error_msg. */
+const COMMAND_TIMEOUT_MS = 60_000;
 
-interface PendingListRequest {
-  resolve: (value: ListResponse) => void;
-  reject: (reason?: unknown) => void;
-  timeoutId: ReturnType<typeof setTimeout>;
-}
+const TIMEOUT_USER_MESSAGE = "Requested operation timed out. Try again.";
 
-interface PendingAddRequest {
-  resolve: (itemIds: string[]) => void;
-  reject: (reason?: unknown) => void;
-  timeoutId: ReturnType<typeof setTimeout>;
-}
+type PendingType = "list" | "add" | "set" | "del" | "add_bulk";
 
-interface PendingDelRequest {
-  resolve: () => void;
-  reject: (reason?: unknown) => void;
-  timeoutId: ReturnType<typeof setTimeout>;
-}
-
-interface PendingAddBulkRequest {
-  resolve: () => void;
+interface PendingCommand {
+  type: PendingType;
+  resolve: (value?: unknown) => void;
   reject: (reason?: unknown) => void;
   timeoutId: ReturnType<typeof setTimeout>;
 }
@@ -61,10 +52,7 @@ export class TagStreamClient {
   private intentionallyClosed = false;
   private endpoint = "";
   private inflightByCmdId = new Map<string, string[]>();
-  private inflightListByCmdId = new Map<string, PendingListRequest>();
-  private inflightAddByCmdId = new Map<string, PendingAddRequest>();
-  private inflightDelByCmdId = new Map<string, PendingDelRequest>();
-  private inflightAddBulkByCmdId = new Map<string, PendingAddBulkRequest>();
+  private pendingByCmdId = new Map<string, PendingCommand>();
   private connectionWaiters: Array<{
     resolve: () => void;
     reject: (reason?: unknown) => void;
@@ -101,10 +89,7 @@ export class TagStreamClient {
     this.started = false;
     this.desiredIds.clear();
     this.inflightByCmdId.clear();
-    this.rejectAllListRequests(new Error("Stopped"));
-    this.rejectAllAddRequests(new Error("Stopped"));
-    this.rejectAllDelRequests(new Error("Stopped"));
-    this.rejectAllAddBulkRequests(new Error("Stopped"));
+    this.rejectAllPending(new Error("Stopped"));
     this.clearReconnect();
     this.stopPolling();
     this.status.set(WebSocketConnectionStatus.DISCONNECTED);
@@ -124,11 +109,30 @@ export class TagStreamClient {
     this.pollOnce();
   }
 
-  sendWriteValue(id: string, value: TagScalarValue): void {
+  async sendWriteValue(
+    id: string,
+    value: TagScalarValue,
+    endpoint?: string,
+  ): Promise<void> {
     if (!id) {
       return;
     }
-    this.send(createSetCommand(id, value));
+    await this.ensureConnected(endpoint);
+    const { cmdId, command } = createSetCommand(id, value);
+    return new Promise<void>((resolve, reject) => {
+      const timeoutId = setTimeout(() => {
+        this.pendingByCmdId.delete(cmdId);
+        snackbarStore.error(TIMEOUT_USER_MESSAGE);
+        reject(new Error("SET request timed out"));
+      }, COMMAND_TIMEOUT_MS);
+      this.pendingByCmdId.set(cmdId, {
+        type: "set",
+        resolve: () => resolve(),
+        reject,
+        timeoutId,
+      });
+      this.send(command);
+    });
   }
 
   async listChildren(
@@ -139,11 +143,16 @@ export class TagStreamClient {
     const { cmdId, command } = createListCommand(parentId);
     return new Promise<ListResponse>((resolve, reject) => {
       const timeoutId = setTimeout(() => {
-        this.inflightListByCmdId.delete(cmdId);
+        this.pendingByCmdId.delete(cmdId);
+        snackbarStore.error(TIMEOUT_USER_MESSAGE);
         reject(new Error("LIST request timed out"));
-      }, REQUEST_TIMEOUT_MS);
-
-      this.inflightListByCmdId.set(cmdId, { resolve, reject, timeoutId });
+      }, COMMAND_TIMEOUT_MS);
+      this.pendingByCmdId.set(cmdId, {
+        type: "list",
+        resolve: (v) => resolve(v as ListResponse),
+        reject,
+        timeoutId,
+      });
       this.send(command);
     });
   }
@@ -165,17 +174,22 @@ export class TagStreamClient {
     ]);
     return new Promise<string[]>((resolve, reject) => {
       const timeoutId = setTimeout(() => {
-        this.inflightAddByCmdId.delete(cmdId);
+        this.pendingByCmdId.delete(cmdId);
+        snackbarStore.error(TIMEOUT_USER_MESSAGE);
         reject(new Error("ADD request timed out"));
-      }, REQUEST_TIMEOUT_MS);
-
-      this.inflightAddByCmdId.set(cmdId, { resolve, reject, timeoutId });
+      }, COMMAND_TIMEOUT_MS);
+      this.pendingByCmdId.set(cmdId, {
+        type: "add",
+        resolve: () => resolve([] as string[]),
+        reject,
+        timeoutId,
+      });
       this.send(command);
     });
   }
 
   /**
-   * Send AddBulkCommand with protobuf schema; resolves when Response.add_bulk matches cmd_id.
+   * Send AddBulkCommand; resolves when Response has status OK for that cmd_id.
    * @param parentId Root parent for bulk tree (often "").
    * @param json Nested object from buildNamespaceJsonFromYaml (leaves = type strings).
    */
@@ -185,14 +199,20 @@ export class TagStreamClient {
     endpoint?: string,
   ): Promise<void> {
     await this.ensureConnected(endpoint);
-    const schema = namespaceJsonToUnifiedSchema(json);
+    const schema = namespaceJsonToSchema(json);
     const { cmdId, command } = createAddBulkCommand(parentId, schema);
     return new Promise<void>((resolve, reject) => {
       const timeoutId = setTimeout(() => {
-        this.inflightAddBulkByCmdId.delete(cmdId);
+        this.pendingByCmdId.delete(cmdId);
+        snackbarStore.error(TIMEOUT_USER_MESSAGE);
         reject(new Error("ADD_BULK request timed out"));
-      }, ADD_BULK_TIMEOUT_MS);
-      this.inflightAddBulkByCmdId.set(cmdId, { resolve, reject, timeoutId });
+      }, COMMAND_TIMEOUT_MS);
+      this.pendingByCmdId.set(cmdId, {
+        type: "add_bulk",
+        resolve: () => resolve(),
+        reject,
+        timeoutId,
+      });
       this.send(command);
     });
   }
@@ -202,10 +222,16 @@ export class TagStreamClient {
     const { cmdId, command } = createDelCommand(itemIds);
     return new Promise<void>((resolve, reject) => {
       const timeoutId = setTimeout(() => {
-        this.inflightDelByCmdId.delete(cmdId);
+        this.pendingByCmdId.delete(cmdId);
+        snackbarStore.error(TIMEOUT_USER_MESSAGE);
         reject(new Error("DEL request timed out"));
-      }, REQUEST_TIMEOUT_MS);
-      this.inflightDelByCmdId.set(cmdId, { resolve, reject, timeoutId });
+      }, COMMAND_TIMEOUT_MS);
+      this.pendingByCmdId.set(cmdId, {
+        type: "del",
+        resolve: () => resolve(),
+        reject,
+        timeoutId,
+      });
       this.send(command);
     });
   }
@@ -267,10 +293,7 @@ export class TagStreamClient {
       this.stopPolling();
       this.socket = null;
       this.rejectConnectionWaiters(new Error("WebSocket connection closed"));
-      this.rejectAllListRequests(new Error("WebSocket connection closed"));
-      this.rejectAllAddRequests(new Error("WebSocket connection closed"));
-      this.rejectAllDelRequests(new Error("WebSocket connection closed"));
-      this.rejectAllAddBulkRequests(new Error("WebSocket connection closed"));
+      this.rejectAllPending(new Error("WebSocket connection closed"));
       if (this.intentionallyClosed || !this.started) {
         if (this.started || this.intentionallyClosed) {
           this.status.set(WebSocketConnectionStatus.DISCONNECTED);
@@ -324,7 +347,6 @@ export class TagStreamClient {
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
       return;
     }
-    console.log("Sending message:", message);
     const bytes = Command.encode(message).finish();
     this.socket.send(bytes);
   }
@@ -339,6 +361,21 @@ export class TagStreamClient {
     this.send(command);
   }
 
+  /**
+   * Called when a response has a non-terminal status (e.g. future Pending/Progress).
+   * Resets the timeout for that command so the client keeps waiting.
+   * Add new status values here when backend introduces them.
+   */
+  private resetCommandTimeout(cmdId: string): void {
+    const pending = this.pendingByCmdId.get(cmdId);
+    if (!pending) return;
+    clearTimeout(pending.timeoutId);
+    pending.timeoutId = setTimeout(() => {
+      this.pendingByCmdId.delete(cmdId);
+      pending.reject(new Error("Command timed out"));
+    }, COMMAND_TIMEOUT_MS);
+  }
+
   private handleMessage(rawData: unknown): void {
     if (!(rawData instanceof ArrayBuffer)) {
       return;
@@ -346,74 +383,79 @@ export class TagStreamClient {
 
     try {
       const payload = Response.decode(new Uint8Array(rawData));
-      const listPayload = payload.list;
-      if (listPayload) {
-        const request = this.inflightListByCmdId.get(listPayload.cmdId);
-        if (!request) {
-          return;
-        }
-        this.inflightListByCmdId.delete(listPayload.cmdId);
-        clearTimeout(request.timeoutId);
-        request.resolve(listPayload);
-        return;
-      }
-      const getPayload = payload.get;
-      if (!getPayload) {
-        const addPayload = payload.add;
-        if (addPayload) {
-          const request = this.inflightAddByCmdId.get(addPayload.cmdId);
-          if (!request) {
-            return;
-          }
-          this.inflightAddByCmdId.delete(addPayload.cmdId);
-          clearTimeout(request.timeoutId);
-          request.resolve([]);
-          return;
-        }
+      const status = payload.status ?? OperationStatus.OPERATION_STATUS_INVALID;
+      const errorMsg = payload.errorMsg ?? "";
 
-        const delPayload = payload.del;
-        if (delPayload) {
-          const request = this.inflightDelByCmdId.get(delPayload.cmdId);
-          if (!request) {
-            return;
-          }
-          this.inflightDelByCmdId.delete(delPayload.cmdId);
-          clearTimeout(request.timeoutId);
-          request.resolve();
-          return;
-        }
-        const addBulkPayload = payload.addBulk;
-        if (addBulkPayload) {
-          const request = this.inflightAddBulkByCmdId.get(addBulkPayload.cmdId);
-          if (!request) {
-            return;
-          }
-          this.inflightAddBulkByCmdId.delete(addBulkPayload.cmdId);
-          clearTimeout(request.timeoutId);
-          request.resolve();
-          return;
+      const cmdId =
+        payload.list?.cmdId ??
+        payload.get?.cmdId ??
+        payload.set?.cmdId ??
+        payload.add?.cmdId ??
+        payload.del?.cmdId ??
+        payload.inv?.cmdId ??
+        payload.addBulk?.cmdId ??
+        "";
+
+      const isTerminalError =
+        status === OperationStatus.OPERATION_STATUS_ERR ||
+        status === OperationStatus.OPERATION_STATUS_INVALID ||
+        payload.inv != null;
+      const isTerminalSuccess =
+        status === OperationStatus.OPERATION_STATUS_OK;
+
+      if (isTerminalError && cmdId) {
+        const pending = this.pendingByCmdId.get(cmdId);
+        const message =
+          errorMsg ||
+          (status === OperationStatus.OPERATION_STATUS_INVALID
+            ? "Invalid operation status"
+            : "Operation failed");
+        if (pending) {
+          clearTimeout(pending.timeoutId);
+          this.pendingByCmdId.delete(cmdId);
+          snackbarStore.error(message);
+          pending.reject(new Error(message));
         }
         return;
       }
-      const ids = this.inflightByCmdId.get(getPayload.cmdId);
-      if (!ids) {
-        return;
-      }
-      this.inflightByCmdId.delete(getPayload.cmdId);
-      this.values.update((current) => {
-        const next = { ...current };
-        for (let index = 0; index < ids.length; index += 1) {
-          const id = ids[index];
-          const raw = getPayload.varValues[index];
-          const parsed = fromBackendValue(raw?.value);
-          if (parsed !== undefined) {
-            next[id] = parsed;
+
+      if (isTerminalSuccess) {
+        if (payload.get != null) {
+          const ids = this.inflightByCmdId.get(payload.get.cmdId);
+          if (ids != null) {
+            this.inflightByCmdId.delete(payload.get.cmdId);
+            this.values.update((current) => {
+              const next = { ...current };
+              for (let i = 0; i < ids.length; i += 1) {
+                const id = ids[i];
+                const raw = payload.get!.varValues[i];
+                const parsed = fromBackendValue(raw?.value);
+                if (parsed !== undefined) next[id] = parsed;
+              }
+              return next;
+            });
+          }
+        } else if (cmdId) {
+          const pending = this.pendingByCmdId.get(cmdId);
+          if (pending) {
+            clearTimeout(pending.timeoutId);
+            this.pendingByCmdId.delete(cmdId);
+            if (pending.type === "list" && payload.list != null) {
+              pending.resolve(payload.list);
+            } else {
+              pending.resolve();
+            }
           }
         }
-        return next;
-      });
+        return;
+      }
+
+      // Non-terminal status (e.g. future Pending/Progress): reset timeout and keep waiting
+      if (cmdId) {
+        this.resetCommandTimeout(cmdId);
+      }
     } catch {
-      // Ignore malformed payloads or non-command text.
+      // Ignore malformed payloads
     }
   }
 
@@ -431,36 +473,12 @@ export class TagStreamClient {
     this.connectionWaiters = [];
   }
 
-  private rejectAllListRequests(error: Error): void {
-    for (const [, request] of this.inflightListByCmdId) {
-      clearTimeout(request.timeoutId);
-      request.reject(error);
+  private rejectAllPending(error: Error): void {
+    for (const [, pending] of this.pendingByCmdId) {
+      clearTimeout(pending.timeoutId);
+      pending.reject(error);
     }
-    this.inflightListByCmdId.clear();
-  }
-
-  private rejectAllAddRequests(error: Error): void {
-    for (const [, request] of this.inflightAddByCmdId) {
-      clearTimeout(request.timeoutId);
-      request.reject(error);
-    }
-    this.inflightAddByCmdId.clear();
-  }
-
-  private rejectAllDelRequests(error: Error): void {
-    for (const [, request] of this.inflightDelByCmdId) {
-      clearTimeout(request.timeoutId);
-      request.reject(error);
-    }
-    this.inflightDelByCmdId.clear();
-  }
-
-  private rejectAllAddBulkRequests(error: Error): void {
-    for (const [, request] of this.inflightAddBulkByCmdId) {
-      clearTimeout(request.timeoutId);
-      request.reject(error);
-    }
-    this.inflightAddBulkByCmdId.clear();
+    this.pendingByCmdId.clear();
   }
 }
 

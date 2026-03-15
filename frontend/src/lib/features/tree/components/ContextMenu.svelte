@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { Button } from '$lib/components/Button';
 	import { ChevronRight, LoaderCircle } from 'lucide-svelte';
 	import {
 		resolveMenuOptions,
@@ -55,7 +56,7 @@
 	async function openSubmenu(layerIndex: number, item: MenuOption): Promise<void> {
 		menuLayers = menuLayers.slice(0, layerIndex + 1);
 
-		if (!item.children && !item.getChildren) {
+		if (item.separator || (!item.children && !item.getChildren)) {
 			return;
 		}
 
@@ -85,7 +86,7 @@
 	}
 
 	async function selectOption(item: MenuOption): Promise<void> {
-		if (item.disabled) {
+		if (item.separator || item.disabled) {
 			return;
 		}
 
@@ -137,22 +138,32 @@
 			</div>
 		{:else}
 			{#each layer.items as item (item.id)}
-				<button
-					type="button"
-					class="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-xs text-slate-700 hover:bg-(--bg-hover) hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50 dark:text-slate-200 dark:hover:text-white"
-					disabled={item.disabled}
-					onmouseenter={() => {
-						void openSubmenu(layerIndex, item);
-					}}
-					onclick={() => {
-						void selectOption(item);
-					}}
-				>
-					<span>{item.label}</span>
-					{#if item.children || item.getChildren}
-						<ChevronRight class="h-3.5 w-3.5" />
-					{/if}
-				</button>
+				{#if item.separator}
+					<div
+						class="my-1 border-t border-black/10 dark:border-white/10"
+						role="separator"
+						aria-hidden="true"
+					></div>
+				{:else}
+					<Button
+						variant="ghost"
+						disabled={item.disabled}
+						class="w-full justify-between rounded px-2 py-1.5 text-left text-xs text-slate-700 dark:text-slate-200"
+						onmouseenter={() => {
+							void openSubmenu(layerIndex, item);
+						}}
+						onclick={() => {
+							void selectOption(item);
+						}}
+					>
+						{#snippet children()}
+							<span>{item.label}</span>
+							{#if item.children || item.getChildren}
+								<ChevronRight class="h-3.5 w-3.5" />
+							{/if}
+						{/snippet}
+					</Button>
+				{/if}
 			{/each}
 		{/if}
 	</div>

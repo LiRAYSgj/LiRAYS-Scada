@@ -1,6 +1,6 @@
 <script lang="ts">
 	/**
-	 * Unified namespace builder: two modes — visual tree (CRUD + DnD) and code YAML (Monaco).
+	 * Namespace builder: two modes — visual tree (CRUD + DnD) and code YAML (Monaco).
 	 * YAML format: "name: Type" (variable) or "name:" (folder). Leaf type auto-fill runs when
 	 * strict parse fails; cursor-aware skips avoid rewriting the line the user is on.
 	 */
@@ -9,8 +9,24 @@
 	import type { editor as MonacoEditorNamespace } from 'monaco-editor';
 	import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
 	import 'monaco-editor/min/vs/editor/editor.main.css';
-	import type { EditorMode, FlatRow, NamespaceNode } from '../types.js';
+	import type { EditorMode, NamespaceNode } from '../types.js';
 	import * as nsYaml from '../namespace-yaml.js';
+	import { Button } from '$lib/components/Button';
+	import NamespaceBuilderHeader from './NamespaceBuilderHeader.svelte';
+	import NamespaceBuilderTreeRow from './NamespaceBuilderTreeRow.svelte';
+	import NamespaceBuilderYamlPanel from './NamespaceBuilderYamlPanel.svelte';
+	import {
+		ROW_HEIGHT,
+		OVERSCAN,
+		flatten,
+		findRowById,
+		findParentContainer,
+		findNodeLocation,
+		isDescendant,
+		isDropAllowed,
+		resolveDropPositionForPointer,
+		getGhostParent
+	} from './namespace-tree-helpers.js';
 	import {
 		UNS_YAML_LANGUAGE_ID,
 		UNS_YAML_THEME_DARK_ID,
@@ -28,6 +44,8 @@
 	export let allowedDataTypes: string[] = ['Float', 'Integer', 'Text', 'Boolean'];
 	/** App theme so the YAML editor matches dark/light mode. */
 	export let colorMode: 'light' | 'dark' = 'dark';
+	/** True while Create is in progress (disables header + tree actions, hides Cancel in parent). */
+	export let createLoading = false;
 	/** Called whenever YAML validity changes (so parent can disable Create button). */
 	export let onValidityChange: ((valid: boolean) => void) | undefined = undefined;
 	/** Called when ast or yamlText change (e.g. after parse or edit). */
@@ -38,7 +56,7 @@
 	let yamlText = initialText || '';
 	let parseError = '';
 
-	$: yamlValid = !parseError && !monacoInitError;
+	$: yamlValid = !parseError && !monacoInitError && yamlText.trim() !== '';
 	$: onValidityChange?.(yamlValid);
 
 	let editingNodeId: string | null = null;
@@ -82,8 +100,6 @@
 	let isPointerDragging = false;
 
 	/** Virtual scroll (same pattern as VariableTree.svelte) */
-	const ROW_HEIGHT = 36;
-	const OVERSCAN = 8;
 	let treeViewportEl: HTMLDivElement | null = null;
 	let scrollTop = 0;
 	let viewportHeight = 0;
@@ -128,74 +144,6 @@
 		};
 	}
 
-	function flatten(nodes: NamespaceNode[], depth = 0, parentId: string | null = null): FlatRow[] {
-		const rows: FlatRow[] = [];
-		for (let i = 0; i < nodes.length; i += 1) {
-			const node = nodes[i];
-			rows.push({
-				id: node.id,
-				depth,
-				node,
-				parentId,
-				parentChildren: nodes,
-				index: i
-			});
-			rows.push(...flatten(node.children, depth + 1, node.id));
-		}
-		return rows;
-	}
-
-	function findRowById(nodeId: string): FlatRow | null {
-		const rows = flatten(ast);
-		return rows.find((row) => row.id === nodeId) ?? null;
-	}
-
-	function findParentContainer(parentId: string | null): NamespaceNode[] {
-		if (!parentId) return ast;
-		const row = findRowById(parentId);
-		return row?.node.children ?? ast;
-	}
-
-	function findNodeLocation(
-		nodes: NamespaceNode[],
-		nodeId: string,
-		parent: NamespaceNode | null = null,
-		parentChildren: NamespaceNode[] = nodes
-	):
-		| {
-				node: NamespaceNode;
-				parent: NamespaceNode | null;
-				parentChildren: NamespaceNode[];
-				index: number;
-		  }
-		| null {
-		for (let index = 0; index < nodes.length; index += 1) {
-			const node = nodes[index];
-			if (node.id === nodeId) {
-				return { node, parent, parentChildren, index };
-			}
-			const nested = findNodeLocation(node.children, nodeId, node, node.children);
-			if (nested) return nested;
-		}
-		return null;
-	}
-
-	function isDescendant(root: NamespaceNode, candidateId: string): boolean {
-		for (const child of root.children) {
-			if (child.id === candidateId) return true;
-			if (isDescendant(child, candidateId)) return true;
-		}
-		return false;
-	}
-
-	/** Cannot drop a node into its own descendant (would create a cycle). */
-	function isDropAllowed(draggedId: string, targetRowId: string): boolean {
-		if (draggedId === targetRowId) return false;
-		const draggedRow = findRowById(draggedId);
-		if (!draggedRow) return false;
-		return !isDescendant(draggedRow.node, targetRowId);
-	}
-
 	/**
 	 * Serializes ast → yamlText and syncs Monaco. Always clears parseError because
 	 * serializeYamlLike only emits valid structure — visual tree is source of truth
@@ -223,9 +171,9 @@
 		return nsYaml.astToNamespaceJson(roots, allowedDataTypes);
 	}
 
-	/** Current YAML validity (no parse error and no Monaco init error). Used by parent to disable Create. */
+	/** Current YAML validity (no parse error, no Monaco init error, non-empty code). Used by parent to disable Create. */
 	export function getValidity(): boolean {
-		return !parseError && !monacoInitError;
+		return !parseError && !monacoInitError && yamlText.trim() !== '';
 	}
 
 	/** Clear the tree and YAML content (e.g. when dialog is closed). */
@@ -532,7 +480,7 @@
 	}
 
 	function addChildNode(nodeId: string): void {
-		const row = findRowById(nodeId);
+		const row = findRowById(ast, nodeId);
 		if (!row) return;
 		row.node.children.push(createNode());
 		nsYaml.setKindFromChildren(row.node);
@@ -541,7 +489,7 @@
 	}
 
 	function removeNode(nodeId: string): void {
-		const row = findRowById(nodeId);
+		const row = findRowById(ast, nodeId);
 		if (!row) return;
 		row.parentChildren.splice(row.index, 1);
 		ast = [...ast];
@@ -562,12 +510,12 @@
 	}
 
 	function outdentNode(nodeId: string): void {
-		const row = findRowById(nodeId);
+		const row = findRowById(ast, nodeId);
 		if (!row || !row.parentId) return;
-		const parentRow = findRowById(row.parentId);
+		const parentRow = findRowById(ast, row.parentId);
 		if (!parentRow) return;
 		row.parentChildren.splice(row.index, 1);
-		const parentContainer = findParentContainer(parentRow.parentId);
+		const parentContainer = findParentContainer(ast, parentRow.parentId);
 		const parentIndex = parentContainer.findIndex((item) => item.id === parentRow.id);
 		parentContainer.splice(parentIndex + 1, 0, row.node);
 		ast = [...ast];
@@ -575,7 +523,7 @@
 	}
 
 	function startEditName(nodeId: string): void {
-		const row = findRowById(nodeId);
+		const row = findRowById(ast, nodeId);
 		if (!row) return;
 		editingNodeId = nodeId;
 		editingName = row.node.name;
@@ -588,7 +536,7 @@
 	function commitEditName(nodeId: string): void {
 		// Enter commits then blur fires — ignore second call so name isn't reset to '<New Node>'
 		if (editingNodeId !== nodeId) return;
-		const row = findRowById(nodeId);
+		const row = findRowById(ast, nodeId);
 		if (!row) return;
 		row.node.name = editingName.trim() || '<New Node>';
 		editingNodeId = null;
@@ -598,7 +546,7 @@
 	}
 
 	function updateNodeRange(nodeId: string, key: 'rangeStart' | 'rangeEnd' | 'rangeStep', value: string): void {
-		const row = findRowById(nodeId);
+		const row = findRowById(ast, nodeId);
 		if (!row) return;
 		row.node[key] = value;
 		ast = [...ast];
@@ -606,7 +554,7 @@
 	}
 
 	function updateNodeType(nodeId: string, value: string): void {
-		const row = findRowById(nodeId);
+		const row = findRowById(ast, nodeId);
 		if (!row || row.node.children.length > 0) return;
 		row.node.kind = 'variable';
 		row.node.dataType = value;
@@ -614,34 +562,11 @@
 		updateYamlFromAst();
 	}
 
-	function resolveDropPositionForPointer(target: HTMLElement, clientY: number): 'before' | 'child' {
-		const rect = target.getBoundingClientRect();
-		const y = clientY - rect.top;
-		const h = rect.height;
-		if (h <= 0) return 'child';
-		// Top half: insert before target as sibling. Bottom half: make child of target (indent).
-		return y < h / 2 ? 'before' : 'child';
-	}
-
-	/**
-	 * Modal <dialog> uses the browser top layer; nodes appended to document.body
-	 * paint behind it. Append the ghost inside the open dialog so it stays visible.
-	 */
-	function getGhostParent(sourceEl: HTMLElement | null): HTMLElement {
-		if (sourceEl) {
-			const dialog = sourceEl.closest('dialog');
-			if (dialog && (dialog as HTMLDialogElement).open) return dialog;
-		}
-		const openDialog = document.querySelector('dialog[open]');
-		if (openDialog) return openDialog as HTMLElement;
-		return document.body;
-	}
-
 	function buildDragGhost(rowId: string): HTMLElement | null {
 		const source = document.querySelector(`[data-node-row-id="${rowId}"]`) as HTMLElement | null;
 		const parent = getGhostParent(source);
 		if (!source) {
-			const row = findRowById(rowId);
+			const row = findRowById(ast, rowId);
 			if (!row) return null;
 			const ghost = document.createElement('div');
 			ghost.className =
@@ -689,6 +614,7 @@
 	}
 
 	function startPointerDrag(event: PointerEvent, rowId: string): void {
+		if (createLoading) return;
 		event.preventDefault();
 		event.stopPropagation();
 		draggedNodeId = rowId;
@@ -721,7 +647,7 @@
 			return;
 		}
 		const position = resolveDropPositionForPointer(rowEl, event.clientY);
-		const allowed = isDropAllowed(draggedNodeId, rowId);
+		const allowed = isDropAllowed(ast, draggedNodeId, rowId);
 		dropTarget = { rowId, position, allowed };
 	}
 
@@ -1020,6 +946,11 @@
 		monaco.editor.setTheme(getMonacoThemeId(colorMode));
 	}
 
+	// Readonly only while waiting for Create response; editable again as soon as response arrives (success or error).
+	$: if (editor && typeof editor.updateOptions === 'function') {
+		editor.updateOptions({ readOnly: !!createLoading });
+	}
+
 	$: rows = flatten(ast);
 	$: totalRows = rows.length;
 	// While dragging, render full list so elementFromPoint can hit any row's data-node-row-id
@@ -1077,74 +1008,17 @@
 </script>
 
 <div class="flex min-h-0 flex-col gap-2 h-full">
-	<header
-		class="flex shrink-0 items-center justify-between gap-2 border-b pb-2"
-		style="border-color: color-mix(in srgb, var(--text-muted) 20%, transparent)"
-	>
-		<div class="flex gap-1.5">
-			<button
-				type="button"
-				class="rounded-md border px-2.5 py-1 text-xs cursor-pointer transition-colors bg-[var(--bg-panel)] text-[var(--text-secondary)]"
-				style="border-color: color-mix(in srgb, var(--text-muted) 28%, transparent)"
-				class:!bg-blue-600={mode === 'visual-tree'}
-				class:!border-blue-600={mode === 'visual-tree'}
-				class:!text-white={mode === 'visual-tree'}
-				onclick={() => void openVisualTreeTab()}
-			>
-				Visual Tree
-			</button>
-			<button
-				type="button"
-				class="rounded-md border px-2.5 py-1 text-xs cursor-pointer transition-colors bg-[var(--bg-panel)] text-[var(--text-secondary)]"
-				style="border-color: color-mix(in srgb, var(--text-muted) 28%, transparent)"
-				class:!bg-blue-600={mode === 'code-yaml'}
-				class:!border-blue-600={mode === 'code-yaml'}
-				class:!text-white={mode === 'code-yaml'}
-				onclick={openYamlTab}
-			>
-				YAML
-			</button>
-		</div>
-		<div class="flex gap-1.5">
-			{#if mode === 'visual-tree'}
-				<button
-					type="button"
-					class="rounded-md border px-2.5 py-1 text-xs cursor-pointer bg-[var(--bg-panel)] text-[var(--text-secondary)]"
-					style="border-color: color-mix(in srgb, var(--text-muted) 28%, transparent)"
-					onclick={addRootNode}
-				>
-					Add root node
-				</button>
-			{/if}
-			{#if mode === 'code-yaml'}
-				<button
-					type="button"
-					class="rounded-md border px-2.5 py-1 text-xs cursor-pointer bg-[var(--bg-panel)] text-[var(--text-secondary)]"
-					style="border-color: color-mix(in srgb, var(--text-muted) 28%, transparent)"
-					onclick={importYamlClick}
-				>
-					Import YML
-				</button>
-				<button
-					type="button"
-					class="rounded-md border px-2.5 py-1 text-xs cursor-pointer bg-[var(--bg-panel)] text-[var(--text-secondary)]"
-					style="border-color: color-mix(in srgb, var(--text-muted) 28%, transparent)"
-					onclick={formatYaml}
-				>
-					Format code
-				</button>
-			{/if}
-		</div>
-		<input
-			id="namespace-builder-import-yaml"
-			name="import-yaml"
-			bind:this={importInput}
-			type="file"
-			accept=".yml,.yaml,text/yaml,text/plain"
-			class="hidden"
-			onchange={handleImportYaml}
-		/>
-	</header>
+	<NamespaceBuilderHeader
+		{mode}
+		disabled={createLoading}
+		onOpenVisualTree={() => void openVisualTreeTab()}
+		onOpenYaml={() => void openYamlTab()}
+		onAddRoot={addRootNode}
+		onImportYamlClick={importYamlClick}
+		onFormatYaml={formatYaml}
+		bind:importInput
+		onImportFileChange={handleImportYaml}
+	/>
 
 	<section
 		class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border"
@@ -1157,7 +1031,7 @@
 			class:flex-1={mode === 'visual-tree'}
 			hidden={mode !== 'visual-tree'}
 		>
-			{#if parseError}
+			{#if parseError && yamlText.trim() !== ''}
 				<div
 					class="mb-2 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-red-700 px-2 py-1.5 text-xs text-red-200"
 					style="background: color-mix(in srgb, #7f1d1d 50%, transparent)"
@@ -1165,32 +1039,30 @@
 				>
 					<strong>YAML invalid</strong> — tree may be stale until fixed.
 					<span class="min-w-0 flex-1 basis-full opacity-95">{parseError}</span>
-					<button
-						type="button"
-						class="ml-auto cursor-pointer rounded-md border border-red-200 px-2 py-0.5 text-[11px] text-red-200"
+					<Button
+						variant="outline-accent"
+						label="Open YAML"
+						title="Open YAML"
+						class="ml-auto rounded-md border border-red-200 px-2 py-0.5 text-[11px] text-red-200"
 						style="background: color-mix(in srgb, #450a0a 60%, transparent)"
 						onclick={openYamlTab}
-					>
-						Open YAML
-					</button>
+					/>
 				</div>
 			{/if}
 			<div class="w-full" class:flex-1={rows.length > 0} class:min-h-0={rows.length > 0} class:flex={rows.length > 0} class:flex-col={rows.length > 0} class:overflow-hidden={rows.length > 0}>
 				{#if rows.length === 0}
 					<div
-						class="row-empty flex min-h-9 items-center border-b text-xs text-[var(--text-muted)]"
+						class="row-empty flex min-h-9 items-center border-b text-xs text-(--text-muted)"
 						style="border-color: color-mix(in srgb, var(--text-muted) 18%, transparent)"
 					>
 						<div class="inline-flex items-center gap-0.5 px-1.5 opacity-100">
-							<button
-								type="button"
-								class="ns-row-btn h-[22px] min-w-[22px] cursor-pointer rounded-md border bg-[var(--bg-panel)] text-xs text-[var(--text-secondary)]"
-								style="border-color: color-mix(in srgb, var(--text-muted) 25%, transparent)"
+							<Button
+								variant="icon"
+								label="+"
 								title="Add root node"
+								disabled={createLoading}
 								onclick={addRootNode}
-							>
-								+
-							</button>
+							/>
 						</div>
 						<div class="relative flex w-full items-center gap-2.5 py-1 pr-2 pl-0">
 							No nodes yet. Add your first root node.
@@ -1205,200 +1077,26 @@
 					>
 						<div class="pointer-events-none shrink-0" style="height: {topPadding}px" aria-hidden="true"></div>
 						{#each windowRows as row (row.id)}
-						<div
-							class={`group/row box-border flex min-h-9 items-center border-b transition-opacity ${draggedNodeId === row.id ? 'opacity-[0.35]' : ''} ${
-								dropTarget?.rowId === row.id
-									? dropTarget.allowed
-										? dropTarget.position === 'before'
-											? 'ns-drop-before'
-											: 'ns-drop-child'
-										: 'ns-drop-forbidden'
-									: ''
-							}`}
-							style="min-height: {ROW_HEIGHT}px; border-color: color-mix(in srgb, var(--text-muted) 18%, transparent)"
-							role="listitem"
-							data-node-row-id={row.id}
-						>
-							<div
-								class="inline-flex items-center gap-0.5 px-1.5 opacity-0 transition-opacity duration-100 group-hover/row:opacity-100"
-							>
-								<button
-									type="button"
-									class="ns-row-btn ns-drag-handle inline-flex h-[22px] min-w-[22px] cursor-grab items-center justify-center rounded-md border bg-[var(--bg-panel)] p-0 text-xs text-[var(--text-secondary)] active:cursor-grabbing"
-									style="border-color: color-mix(in srgb, var(--text-muted) 25%, transparent)"
-									title="Drag node"
-									onpointerdown={(event) => startPointerDrag(event, row.id)}
-								>
-									<span class="grid grid-cols-2 gap-0.5 text-current" aria-hidden="true" style="grid-template-columns: repeat(2, 3px); grid-template-rows: repeat(3, 3px)">
-										<span class="h-[3px] w-[3px] rounded-full bg-current opacity-85"></span>
-										<span class="h-[3px] w-[3px] rounded-full bg-current opacity-85"></span>
-										<span class="h-[3px] w-[3px] rounded-full bg-current opacity-85"></span>
-										<span class="h-[3px] w-[3px] rounded-full bg-current opacity-85"></span>
-										<span class="h-[3px] w-[3px] rounded-full bg-current opacity-85"></span>
-										<span class="h-[3px] w-[3px] rounded-full bg-current opacity-85"></span>
-									</span>
-								</button>
-								<button
-									type="button"
-									class="ns-row-btn h-[22px] min-w-[22px] cursor-pointer rounded-md border bg-[var(--bg-panel)] text-xs text-[var(--text-secondary)] disabled:cursor-not-allowed disabled:opacity-50"
-									style="border-color: color-mix(in srgb, var(--text-muted) 25%, transparent)"
-									title="Remove node"
-									onclick={() => removeNode(row.id)}
-								>
-									-
-								</button>
-								<button
-									type="button"
-									class="ns-row-btn h-[22px] min-w-[22px] cursor-pointer rounded-md border bg-[var(--bg-panel)] text-xs text-[var(--text-secondary)] disabled:cursor-not-allowed disabled:opacity-50"
-									style="border-color: color-mix(in srgb, var(--text-muted) 25%, transparent)"
-									title="Add child node"
-									onclick={() => addChildNode(row.id)}
-								>
-									+
-								</button>
-								<button
-									type="button"
-									class="ns-row-btn h-[22px] min-w-[22px] cursor-pointer rounded-md border bg-[var(--bg-panel)] text-xs text-[var(--text-secondary)] disabled:cursor-not-allowed disabled:opacity-50"
-									style="border-color: color-mix(in srgb, var(--text-muted) 25%, transparent)"
-									title="Indent (make child of above)"
-									onclick={() => indentNode(row.id)}
-									disabled={row.index === 0}
-								>
-									&rsaquo;
-								</button>
-								<button
-									type="button"
-									class="ns-row-btn h-[22px] min-w-[22px] cursor-pointer rounded-md border bg-[var(--bg-panel)] text-xs text-[var(--text-secondary)] disabled:cursor-not-allowed disabled:opacity-50"
-									style="border-color: color-mix(in srgb, var(--text-muted) 25%, transparent)"
-									title="Outdent (to parent sibling)"
-									onclick={() => outdentNode(row.id)}
-									disabled={!row.parentId}
-								>
-									&lsaquo;
-								</button>
-							</div>
-							<div
-								class="ns-node-content relative flex w-full items-center gap-2.5 py-1 pr-2 pl-0"
-								style={`padding-left:${row.depth * 24}px`}
-							>
-								{#if row.depth > 0}
-									<div
-										class="tree-indent-guides"
-										style={`width:${row.depth * 18}px`}
-										aria-hidden="true"
-									>
-										{#each Array(row.depth) as _, i}
-											<span
-												class="tree-indent-guide-vertical"
-												style={`left:${i * 18 + 17}px`}
-											></span>
-										{/each}
-										<!-- Curved branch (upward at right) like reference tree lines -->
-										<svg
-											class="tree-indent-guide-branch"
-											style={`left:${(row.depth - 1) * 18}px;width:${18}px`}
-											viewBox="0 0 18 12"
-											preserveAspectRatio="none"
-											aria-hidden="true"
-										>
-											<path
-												class="tree-indent-guide-branch-path"
-												d="M 0 1.8 C 2 4.2 4.5 6 8 6 L 18 6"
-												fill="none"
-												vector-effect="non-scaling-stroke"
-											/>
-										</svg>
-									</div>
-								{/if}
-								{#if editingNodeId === row.id}
-									<input
-										id={`ns-name-${row.id}`}
-										name={`ns-name-${row.id}`}
-										bind:this={editingInputEl}
-										class="min-w-[180px] max-w-[320px] rounded-md border border-blue-600 bg-[var(--bg-muted)] px-1.5 py-0.5 text-[13px] text-[var(--text-primary)]"
-										bind:value={editingName}
-										onkeydown={(event) => {
-											if (event.key === 'Enter') {
-												event.preventDefault();
-												commitEditName(row.id);
-											}
-										}}
-										onblur={() => commitEditName(row.id)}
-									/>
-								{:else}
-									<button
-										type="button"
-										class="min-w-[150px] border-none bg-transparent py-0 text-left text-[13px] text-[var(--text-primary)] cursor-text"
-										ondblclick={() => startEditName(row.id)}
-									>
-										{row.node.name}
-									</button>
-								{/if}
-								<div class="flex flex-wrap items-center gap-1.5">
-									<input
-										id={`ns-${row.id}-rangeStart`}
-										name={`ns-${row.id}-rangeStart`}
-										class="w-[62px] rounded-md border bg-[var(--bg-muted)] px-1 py-0.5 text-[11px] text-[var(--text-primary)]"
-										style="border-color: color-mix(in srgb, var(--text-muted) 28%, transparent)"
-										placeholder="start"
-										value={row.node.rangeStart}
-										oninput={(event) =>
-											updateNodeRange(
-												row.id,
-												'rangeStart',
-												(event.currentTarget as HTMLInputElement).value
-											)}
-									/>
-									<input
-										id={`ns-${row.id}-rangeEnd`}
-										name={`ns-${row.id}-rangeEnd`}
-										class="w-[62px] rounded-md border bg-[var(--bg-muted)] px-1 py-0.5 text-[11px] text-[var(--text-primary)]"
-										style="border-color: color-mix(in srgb, var(--text-muted) 28%, transparent)"
-										placeholder="end"
-										value={row.node.rangeEnd}
-										oninput={(event) =>
-											updateNodeRange(
-												row.id,
-												'rangeEnd',
-												(event.currentTarget as HTMLInputElement).value
-											)}
-									/>
-									<input
-										id={`ns-${row.id}-rangeStep`}
-										name={`ns-${row.id}-rangeStep`}
-										class="w-[62px] rounded-md border bg-[var(--bg-muted)] px-1 py-0.5 text-[11px] text-[var(--text-primary)]"
-										style="border-color: color-mix(in srgb, var(--text-muted) 28%, transparent)"
-										placeholder="step"
-										value={row.node.rangeStep}
-										oninput={(event) =>
-											updateNodeRange(
-												row.id,
-												'rangeStep',
-												(event.currentTarget as HTMLInputElement).value
-											)}
-									/>
-									{#if row.node.children.length > 0}
-										<span class="ml-4 inline-flex items-center rounded-full bg-blue-900 px-2 py-0.5 text-[10px] text-blue-100">Folder</span>
-									{:else}
-										<div class="ml-4 inline-flex flex-wrap gap-0.5">
-											{#each allowedDataTypes as dataType}
-												<button
-													type="button"
-													class="cursor-pointer rounded-full border bg-[var(--bg-panel)] px-2 py-0.5 text-[10px] text-[var(--text-secondary)]"
-													style="border-color: color-mix(in srgb, var(--text-muted) 25%, transparent)"
-													class:!bg-blue-600={row.node.dataType === dataType}
-													class:!border-blue-600={row.node.dataType === dataType}
-													class:!text-white={row.node.dataType === dataType}
-													onclick={() => updateNodeType(row.id, dataType)}
-												>
-													{dataType}
-												</button>
-											{/each}
-										</div>
-									{/if}
-								</div>
-							</div>
-						</div>
+							<NamespaceBuilderTreeRow
+								{row}
+								{allowedDataTypes}
+								rowHeight={ROW_HEIGHT}
+								actionsDisabled={createLoading}
+								{draggedNodeId}
+								{dropTarget}
+								{editingNodeId}
+								bind:editingName
+								bind:editingInputEl
+								onPointerDownDrag={startPointerDrag}
+								onRemove={removeNode}
+								onAddChild={addChildNode}
+								onIndent={indentNode}
+								onOutdent={outdentNode}
+								onStartEditName={startEditName}
+								onCommitEditName={commitEditName}
+								onUpdateRange={updateNodeRange}
+								onUpdateType={updateNodeType}
+							/>
 						{/each}
 						<div
 							class="pointer-events-none shrink-0"
@@ -1410,84 +1108,12 @@
 			</div>
 		</div>
 		<div class="flex min-h-0 flex-1 flex-col overflow-hidden" hidden={mode !== 'code-yaml'}>
-			<div class="flex h-full min-h-0 flex-col">
-				<div bind:this={editorHost} class="h-full min-h-[520px]"></div>
-				{#if monacoInitError}
-					<div
-						class="border-t border-red-700 px-2 py-1.5 text-xs text-red-200"
-						style="background: color-mix(in srgb, #7f1d1d 50%, transparent)"
-					>
-						Monaco init error: {monacoInitError}
-					</div>
-				{/if}
-				{#if parseError}
-					<div
-						class="border-t border-red-700 px-2 py-1.5 text-xs text-red-200"
-						style="background: color-mix(in srgb, #7f1d1d 50%, transparent)"
-					>
-						{parseError}
-					</div>
-				{/if}
-			</div>
+			<NamespaceBuilderYamlPanel bind:editorHost {monacoInitError} parseError={yamlText.trim() !== '' ? parseError : ''} />
 		</div>
 	</section>
 </div>
 
 <style>
-	/* DnD drop targets — inset shadows + forbidden state (kept in CSS for clarity) */
-	.ns-drop-before {
-		box-shadow: inset 0 2px 0 0 #2563eb;
-	}
-	.ns-drop-child {
-		box-shadow: inset 0 -2px 0 0 #2563eb;
-		background: color-mix(in srgb, #2563eb 10%, transparent);
-	}
-	.ns-drop-forbidden {
-		cursor: not-allowed;
-		background: color-mix(in srgb, var(--text-muted) 22%, transparent);
-		box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-muted) 45%, transparent);
-		opacity: 0.72;
-	}
-
-	/* Indent guides: CSS variables + absolute layers (depth uses inline width/left) */
-	.tree-indent-guides {
-		position: absolute;
-		left: 0;
-		top: 0;
-		height: 100%;
-		pointer-events: none;
-		z-index: 0;
-		--tree-guide: color-mix(in srgb, var(--text-muted) 32%, transparent);
-	}
-	.tree-indent-guide-vertical {
-		position: absolute;
-		top: -4px;
-		height: calc(100% + 4px);
-		width: 1px;
-		background: var(--tree-guide);
-	}
-	.tree-indent-guide-branch {
-		position: absolute;
-		top: 50%;
-		height: 12px;
-		margin-top: -6px;
-		overflow: visible;
-		pointer-events: none;
-		color: color-mix(in srgb, var(--text-muted) 48%, transparent);
-		opacity: 0.9;
-	}
-	.tree-indent-guide-branch-path {
-		stroke: currentColor;
-		stroke-width: 1;
-		stroke-linecap: round;
-		stroke-linejoin: round;
-	}
-	/* Stack inputs/buttons above guide layer */
-	.ns-node-content > :not(.tree-indent-guides) {
-		position: relative;
-		z-index: 1;
-	}
-
 	/* Hide Command Palette in Monaco context menus — multiple selectors (Monaco varies by version) */
 	:global([data-command-id="editor.action.quickCommand"]),
 	:global([data-command-id="workbench.action.showCommands"]),

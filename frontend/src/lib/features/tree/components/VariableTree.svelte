@@ -1,6 +1,7 @@
 <script lang="ts">
   import { get } from "svelte/store";
   import { onMount } from "svelte";
+  import { Button } from "$lib/components/Button";
   import { Circle, LoaderCircle } from "lucide-svelte";
   import TreeRow from "./TreeRow.svelte";
   import { fetchTreeChildren } from "../server-adapter";
@@ -24,7 +25,6 @@
       name: string;
       itemType: ItemType;
       varType: VarDataType | undefined;
-      defaultValue?: TagScalarValue;
     }) => Promise<void>;
   }
 
@@ -58,7 +58,6 @@
   let addName = $state("");
   let addKind = $state<ItemType>(ItemType.ITEM_TYPE_VARIABLE);
   let addDataType = $state<VarDataType>(VarDataType.VAR_DATA_TYPE_TEXT);
-  let addDefaultValue = $state<string | number>("");
   let addError = $state("");
   let addSubmitting = $state(false);
   let addParentId = $state<string | null | undefined>(undefined);
@@ -233,7 +232,6 @@
     addName = "";
     addKind = ItemType.ITEM_TYPE_VARIABLE;
     addDataType = VarDataType.VAR_DATA_TYPE_TEXT;
-    addDefaultValue = "";
     addError = "";
     addDialog.showModal();
   }
@@ -243,67 +241,6 @@
     if (addDialog?.open) {
       addDialog.close();
     }
-  }
-
-  function resolveDefaultInputType(dataType: VarDataType): "text" | "number" {
-    return dataType === VarDataType.VAR_DATA_TYPE_INTEGER ||
-      dataType === VarDataType.VAR_DATA_TYPE_FLOAT
-      ? "number"
-      : "text";
-  }
-
-  function resolveDefaultInputStep(dataType: VarDataType): string | undefined {
-    if (dataType === VarDataType.VAR_DATA_TYPE_INTEGER) {
-      return "1";
-    }
-    if (dataType === VarDataType.VAR_DATA_TYPE_FLOAT) {
-      return "0.01";
-    }
-    return undefined;
-  }
-
-  function resolveDefaultInputMin(dataType: VarDataType): string | undefined {
-    if (
-      dataType === VarDataType.VAR_DATA_TYPE_INTEGER ||
-      dataType === VarDataType.VAR_DATA_TYPE_FLOAT
-    ) {
-      return "0";
-    }
-    return undefined;
-  }
-
-  function parseDefaultValue(
-    raw: string | number | null | undefined,
-    dataType: VarDataType,
-  ): TagScalarValue | undefined {
-    const normalized = typeof raw === "number" ? String(raw) : (raw ?? "");
-    if (!normalized.trim()) {
-      return undefined;
-    }
-    if (dataType === VarDataType.VAR_DATA_TYPE_TEXT) {
-      return normalized;
-    }
-    if (dataType === VarDataType.VAR_DATA_TYPE_BOOLEAN) {
-      const booleanValue = normalized.trim().toLowerCase();
-      if (booleanValue === "true") {
-        return true;
-      }
-      if (booleanValue === "false") {
-        return false;
-      }
-      throw new Error("Boolean default must be true or false");
-    }
-    const num = Number(normalized);
-    if (!Number.isFinite(num)) {
-      throw new Error("Default value must be numeric");
-    }
-    if (
-      dataType === VarDataType.VAR_DATA_TYPE_INTEGER &&
-      !Number.isInteger(num)
-    ) {
-      throw new Error("Integer default must be a whole number");
-    }
-    return num;
   }
 
   function resolveParentIdForCreate(): string | null {
@@ -328,15 +265,6 @@
     return snapshot.rootIds[0] ?? null;
   }
 
-  function resolveRefreshTargetForCreate(parentId: string): string | null {
-    const snapshot = get(treeState);
-    if (snapshot.rootIds.includes(parentId)) {
-      return parentId;
-    }
-    const parent = snapshot.nodes[parentId];
-    return parent?.parentId ? parentId : parentId;
-  }
-
   async function submitAddDialog(event: SubmitEvent): Promise<void> {
     event.preventDefault();
     addError = "";
@@ -356,18 +284,12 @@
       const itemType: ItemType = addKind;
       const varType: VarDataType | undefined =
         itemType === ItemType.ITEM_TYPE_VARIABLE ? addDataType : undefined;
-      const defaultValue =
-        itemType === ItemType.ITEM_TYPE_VARIABLE
-          ? parseDefaultValue(addDefaultValue, addDataType)
-          : undefined;
       await onCreateItem({
         parentId,
         name: addName.trim(),
         itemType,
         varType,
-        defaultValue,
       });
-      await tree.refreshNode(resolveRefreshTargetForCreate(parentId));
       closeAddDialog();
     } catch (error) {
       addError =
@@ -467,11 +389,11 @@
 
 <dialog
   bind:this={addDialog}
-  class="fixed inset-0 m-auto h-[450px] w-[420px] rounded-md border border-black/10 bg-(--bg-panel) p-0 text-(--text-primary) shadow-xl backdrop:bg-black/50 dark:border-white/10"
+  class="fixed inset-0 m-auto h-[380px] w-[420px] rounded-md border border-black/10 bg-(--bg-panel) p-0 text-(--text-primary) shadow-xl backdrop:bg-black/50 dark:border-white/10"
 >
   <form class="flex h-full flex-col p-4" onsubmit={submitAddDialog}>
     <div class="flex items-center justify-between pb-4">
-      <h2 class="text-sm font-semibold">Add Node</h2>
+      <h2 class="text-sm font-semibold">Add Variable/Folder</h2>
     </div>
 
     <div class="space-y-4">
@@ -519,37 +441,6 @@
           <option value={VarDataType.VAR_DATA_TYPE_BOOLEAN}>Boolean</option>
         </select>
       </div>
-
-      <div
-        class={`space-y-1 ${addKind !== ItemType.ITEM_TYPE_VARIABLE ? "invisible" : ""}`}
-      >
-        <label class="text-xs text-(--text-muted)" for="add-defaultValue"
-          >Default Value</label
-        >
-        {#if addDataType === VarDataType.VAR_DATA_TYPE_BOOLEAN}
-          <select
-            id="add-defaultValue"
-            class="w-full rounded border border-black/15 bg-(--bg-muted) px-2 py-1.5 text-sm outline-none ring-0 focus:border-blue-500 dark:border-white/10"
-            bind:value={addDefaultValue}
-          >
-            <option value="">Optional boolean value</option>
-            <option value="true">True</option>
-            <option value="false">False</option>
-          </select>
-        {:else}
-          <input
-            id="add-defaultValue"
-            type={resolveDefaultInputType(addDataType)}
-            class="w-full rounded border border-black/15 bg-(--bg-muted) px-2 py-1.5 text-sm outline-none ring-0 focus:border-blue-500 dark:border-white/10"
-            bind:value={addDefaultValue}
-            step={resolveDefaultInputStep(addDataType)}
-            min={resolveDefaultInputMin(addDataType)}
-            placeholder={addDataType === VarDataType.VAR_DATA_TYPE_TEXT
-              ? "Optional text value"
-              : "Optional numeric value"}
-          />
-        {/if}
-      </div>
     </div>
 
     {#if addError}
@@ -559,20 +450,21 @@
     <div
       class="mt-auto flex justify-end gap-2 border-t border-black/10 pt-4 dark:border-white/10"
     >
-      <button
-        type="button"
-        class="cursor-pointer rounded border border-black/15 px-3 py-1.5 text-xs hover:bg-(--bg-hover) dark:border-white/10"
+      <Button
+        variant="outline-muted"
+        label="Cancel"
+        title="Cancel"
         onclick={closeAddDialog}
-      >
-        Cancel
-      </button>
-      <button
+      />
+      <Button
         type="submit"
-        class="cursor-pointer rounded bg-blue-600 px-3 py-1.5 text-xs text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+        variant="filled-accent"
+        label="Save"
+        title="Save"
+        loading={addSubmitting}
+        loadingLabel="Saving…"
         disabled={addSubmitting || !isConnected}
-      >
-        Save
-      </button>
+      />
     </div>
   </form>
 </dialog>

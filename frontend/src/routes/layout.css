@@ -24,6 +24,7 @@
   --scrollbar-track: #eef1f5;
   --scrollbar-thumb: #a8b4c7;
   --scrollbar-thumb-hover: #7d8ca3;
+  --snackbar-bg: #ffffff;
   color-scheme: light;
 }
 
@@ -39,6 +40,7 @@
   --scrollbar-track: #1a232d;
   --scrollbar-thumb: #3c4b5e;
   --scrollbar-thumb-hover: #556982;
+  --snackbar-bg: #161c23;
   color-scheme: dark;
 }
 

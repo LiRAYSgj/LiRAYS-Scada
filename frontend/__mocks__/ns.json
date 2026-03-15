@@ -1,33 +1,33 @@
 {
-    "Area_[:20]": {
-        "Line_[:4]": {
-            "Motor_[:2]": {
-                "Power": "Float",
-                "Speed": "Float",
-                "Direction": "Float",
-                "Temperature": "Float",
-                "Current": "Float",
-                "Voltage": "Float"
-            },
-            "Valve_[:4]": {
-                "Position": "Float",
-                "Flow": "Float",
-                "Pressure": "Float",
-                "Temperature": "Float",
-                "Current": "Float",
-                "Voltage": "Float"
-            },
-            "Pump_[:2]": {
-                "Power": "Float",
-                "Speed": "Float",
-                "Direction": "Float",
-                "Temperature": "Float",
-                "Current": "Float",
-                "Voltage": "Float"
-            },
-            "PGA": {
-                "Var_[0:100]": "Float"
-            }
-        }
+  "Area_[:20]": {
+    "Line_[:4]": {
+      "Motor_[:2]": {
+        "Power": "Float",
+        "Speed": "Float",
+        "Direction": "Float",
+        "Temperature": "Float",
+        "Current": "Float",
+        "Voltage": "Float"
+      },
+      "Valve_[:4]": {
+        "Position": "Float",
+        "Flow": "Float",
+        "Pressure": "Float",
+        "Temperature": "Float",
+        "Current": "Float",
+        "Voltage": "Float"
+      },
+      "Pump_[:2]": {
+        "Power": "Float",
+        "Speed": "Float",
+        "Direction": "Float",
+        "Temperature": "Float",
+        "Current": "Float",
+        "Voltage": "Float"
+      },
+      "PGA": {
+        "Var_[0:100]": "Float"
+      }
     }
+  }
 }

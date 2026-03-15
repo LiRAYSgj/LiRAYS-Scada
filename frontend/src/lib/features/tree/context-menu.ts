@@ -10,6 +10,8 @@ export interface MenuContext {
 export interface MenuOption {
   id: string;
   label: string;
+  /** When true, render as a visual divider (label and other props ignored). */
+  separator?: boolean;
   disabled?: boolean;
   onSelect?: (context: MenuContext) => void | Promise<void>;
   children?: MenuOption[];

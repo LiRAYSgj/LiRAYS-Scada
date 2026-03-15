@@ -39,7 +39,11 @@ export interface TagRealtimeClient {
   start: (endpoint: string) => void;
   stop: () => void;
   setTrackedIds: (ids: string[]) => void;
-  sendWriteValue: (id: string, value: TagScalarValue) => void;
+  sendWriteValue: (
+    id: string,
+    value: TagScalarValue,
+    endpoint?: string,
+  ) => Promise<void>;
   addItem: (
     parentId: string,
     name: string,
@@ -88,7 +92,7 @@ export function createPageTagRealtimeProvider(
       desiredIds.set(ids);
     },
     sendWriteValue: (id: string, value: TagScalarValue) => {
-      client.sendWriteValue(id, value);
+      return client.sendWriteValue(id, value, endpoint);
     },
     addItem: (
       parentId: string,

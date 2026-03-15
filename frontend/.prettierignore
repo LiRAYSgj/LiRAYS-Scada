@@ -1,0 +1,4 @@
+# Generated / adapter output — exclude from format (and lint’s prettier --check)
+.svelte-kit
+build
+coverage

@@ -16,10 +16,11 @@
     type Viewport,
   } from "@xyflow/svelte";
   import "@xyflow/svelte/dist/style.css";
+  import { Button } from "$lib/components/Button";
   import VariableTree from "$lib/features/tree/components/VariableTree.svelte";
   import ContextMenu from "$lib/features/tree/components/ContextMenu.svelte";
   import PageToolbar from "$lib/features/workspace/components/PageToolbar.svelte";
-  import UnifiedNamespaceBuilder from "$lib/features/namespace-builder/components/UnifiedNamespaceBuilder.svelte";
+  import NamespaceBuilder from "$lib/features/namespace-builder/components/NamespaceBuilder.svelte";
   import PlantAssetNode from "$lib/features/graph/components/PlantAssetNode.svelte";
   import { getRegisteredAssetDefinitions } from "$lib/features/graph/assets/registry";
   import { PlantAssetKind } from "$lib/features/graph/assets/types";
@@ -29,8 +30,10 @@
     normalizePipeEdges,
   } from "$lib/features/graph/live-utils";
   import { createPageTagRealtimeProvider } from "$lib/features/realtime/page-tag-realtime-provider";
-  import { createThemeVars, type ThemeMode } from "$lib/core/theme/theme-utils";
+  import { createThemeVars } from "$lib/core/theme/theme-utils";
   import { tagStreamClient } from "$lib/core/ws/tag-stream-client";
+  import { snackbarStore } from "$lib/stores/snackbar";
+  import { themeStore } from "$lib/stores/theme";
   import type { TagScalarValue } from "$lib/core/ws/types";
   import { ItemType, type VarDataType } from "$lib/proto/namespace/enums";
   import type {
@@ -57,7 +60,16 @@
   const DEMO_WS_ENDPOINT = env.PUBLIC_DEMO_WS_ENDPOINT || "ws://127.0.0.1:1236";
   const PIPE_EDGE_TYPE = "step";
   const PIPE_EDGE_STYLE = "stroke:#5b708a;stroke-width:8;";
-  const theme = writable<ThemeMode>("dark");
+  const theme = themeStore;
+
+  // Apply theme to <html> only after it has been loaded from storage (or default); no theme until then.
+  $: if (browser && $theme !== null) {
+    const themeClass = $theme === "dark" ? "theme-dark" : "theme-light";
+    const other = $theme === "dark" ? "theme-light" : "theme-dark";
+    document.documentElement.classList.remove(other);
+    document.documentElement.classList.add(themeClass);
+  }
+
   const realtimeProvider = createPageTagRealtimeProvider(DEMO_WS_ENDPOINT);
   const nodeTypes = {
     plantAsset: PlantAssetNode,
@@ -78,9 +90,12 @@
   let subscribedTagIds: string[] = [];
   let removeDialog: HTMLDialogElement | null = null;
   let namespaceBuilderDialog: HTMLDialogElement | null = null;
-  let namespaceBuilderRef: UnifiedNamespaceBuilder | null = null;
+  let namespaceBuilderRef: NamespaceBuilder | null = null;
   let namespaceBuilderValid = true;
   let namespaceBuilderCreateLoading = false;
+  /** When opening from toolbar: "" and "Root"; from folder context: folder id and folder name. */
+  let namespaceBuilderParentId = "";
+  let namespaceBuilderParentName = "Root";
   let removeTargetNode: TreeNode | null = null;
   let removeSubmitting = false;
   let removeError = "";
@@ -157,6 +172,14 @@
             },
           ]
         : []),
+      { id: "folder-sep-ns", label: "", separator: true },
+      {
+        id: "folder-namespace-builder",
+        label: "Namespace Template Builder",
+        onSelect: () => {
+          openNamespaceBuilderDialog(context.node.id, context.node.name);
+        },
+      },
     ],
     tag: (context) => [
       /* {
@@ -222,31 +245,17 @@
     name: string;
     itemType: ItemType;
     varType: VarDataType | undefined;
-    defaultValue?: TagScalarValue;
   }): Promise<void> {
-    const created = await realtimeProvider.addItem(
+    await realtimeProvider.addItem(
       input.parentId,
       input.name,
       input.itemType,
       input.varType,
     );
-
-    if (
-      input.itemType === ItemType.ITEM_TYPE_VARIABLE &&
-      input.defaultValue &&
-      created[0]
-    ) {
-      realtimeProvider.sendWriteValue(created[0], input.defaultValue);
-    }
   }
 
   async function removeTreeNode(node: TreeNode): Promise<void> {
     await realtimeProvider.removeItems([node.id]);
-    window.dispatchEvent(
-      new CustomEvent<{ parentId?: string | null }>("tree:refresh", {
-        detail: { parentId: node.parentId ?? null },
-      }),
-    );
   }
 
   function openRemoveDialog(node: TreeNode): void {
@@ -461,12 +470,31 @@
   }
 
   function toggleTheme(): void {
-    theme.update((current) => (current === "dark" ? "light" : "dark"));
+    themeStore.update((current) => (current === "dark" ? "light" : "dark"));
   }
 
+  /** Opens the Add Variable/Folder dialog (same as tree context menu) at root. */
   function openTreeAddDialog(): void {
+    window.dispatchEvent(
+      new CustomEvent<{ parentId?: string | null }>("tree:open-add-dialog", {
+        detail: { parentId: null },
+      }),
+    );
+  }
+
+  /** Opens the Namespace Template Builder at root (used by toolbar). */
+  function openNamespaceBuilderFromToolbar(): void {
+    openNamespaceBuilderDialog("", "root");
+  }
+
+  /** Opens the Namespace Template Builder dialog (bulk add from YAML). parentId: "" for root, or folder id. parentName: "Root" or folder name for dialog title. */
+  function openNamespaceBuilderDialog(
+    parentId: string,
+    parentName: string,
+  ): void {
+    namespaceBuilderParentId = parentId;
+    namespaceBuilderParentName = parentName;
     namespaceBuilderDialog?.showModal();
-    // Sync Create button state with current YAML validity (event keeps it updated while editing)
     if (
       namespaceBuilderRef &&
       typeof namespaceBuilderRef.getValidity === "function"
@@ -503,21 +531,25 @@
       >;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      alert(`Invalid namespace YAML:\n${msg}`);
+      snackbarStore.error(`Invalid namespace YAML: ${msg}`);
       return;
     }
     namespaceBuilderCreateLoading = true;
     try {
-      await tagStreamClient.addBulkNamespace("", json, DEMO_WS_ENDPOINT);
+      await tagStreamClient.addBulkNamespace(
+        namespaceBuilderParentId,
+        json,
+        DEMO_WS_ENDPOINT,
+      );
       if (browser) {
         (
           window as unknown as { __lastNamespaceJson?: unknown }
         ).__lastNamespaceJson = json;
       }
       closeNamespaceBuilderDialog();
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      alert(`Create request failed:\n${msg}`);
+    } catch {
+      /* Error already shown via snackbar; re-enable actions immediately so user can retry without waiting for snackbar to dismiss */
+      namespaceBuilderCreateLoading = false;
     } finally {
       namespaceBuilderCreateLoading = false;
     }
@@ -606,19 +638,20 @@
     }
   }
 
-  $: themeVars = createThemeVars($theme);
+  $: themeVars = $theme !== null ? createThemeVars($theme) : "";
 </script>
 
 <main
-  class={`h-screen w-full p-4 ${$theme === "dark" ? "theme-dark" : "theme-light"} bg-(--bg-app)`}
+  class={`h-screen w-full p-4 ${$theme !== null ? ($theme === "dark" ? "theme-dark" : "theme-light") : ""} bg-(--bg-app)`}
   style={`background-color: var(--bg-app); color: var(--text-primary); ${themeVars}`}
 >
   <PageToolbar
-    theme={$theme}
+    theme={$theme ?? "light"}
     {canvasMode}
     onToggleCanvasMode={toggleCanvasMode}
     onToggleTheme={toggleTheme}
     onOpenAddDialog={openTreeAddDialog}
+    onOpenNamespaceBuilder={openNamespaceBuilderFromToolbar}
     isAddDisabled={false}
   />
 
@@ -651,7 +684,7 @@
           minZoom={0.4}
           maxZoom={1.6}
           zoomOnDoubleClick={false}
-          colorMode={$theme}
+          colorMode={$theme ?? "light"}
           class="h-full w-full rounded-md"
           style="background-color: var(--bg-muted);"
           nodesDraggable={canvasMode === "edit"}
@@ -725,23 +758,23 @@
       <div
         class="mt-4 flex justify-end gap-2 border-t border-black/10 pt-4 dark:border-white/10"
       >
-        <button
-          type="button"
-          class="cursor-pointer rounded border border-black/15 px-3 py-1.5 text-xs hover:bg-(--bg-hover) dark:border-white/10"
-          onclick={() => closeRemoveDialog()}
+        <Button
+          variant="outline-muted"
+          label="Cancel"
+          title="Cancel"
           disabled={removeSubmitting}
-        >
-          Cancel
-        </button>
-        <button
+          onclick={() => closeRemoveDialog()}
+        />
+        <Button
           type="submit"
-          class="cursor-pointer rounded bg-red-600 px-3 py-1.5 text-xs text-white hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-60"
+          variant="filled-warn"
+          label="Remove"
+          loadingLabel="Removing..."
+          loading={removeSubmitting}
           disabled={removeSubmitting ||
             $wsStatus !== "connected" ||
             !removeTargetNode}
-        >
-          {removeSubmitting ? "Removing..." : "Remove"}
-        </button>
+        />
       </div>
     </form>
   </dialog>
@@ -753,43 +786,37 @@
     <div class="flex h-full flex-col p-3">
       <div class="mb-2 flex items-center justify-between">
         <h2 class="text-sm font-semibold">
-          Unified Namespace Template Builder
+          Namespace Template Builder — {namespaceBuilderParentName}
         </h2>
       </div>
       <div class="min-h-0 flex-1">
-        <UnifiedNamespaceBuilder
+        <NamespaceBuilder
           bind:this={namespaceBuilderRef}
-          colorMode={$theme}
+          colorMode={$theme ?? "light"}
+          createLoading={namespaceBuilderCreateLoading}
           onValidityChange={(v) => (namespaceBuilderValid = v)}
         />
       </div>
       <div
         class="mt-2 flex justify-end gap-2 border-t border-black/10 pt-3 dark:border-white/10"
       >
-        <button
-          type="button"
-          class="cursor-pointer rounded border border-black/15 px-3 py-1.5 text-xs hover:bg-(--bg-hover) disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10"
-          disabled={namespaceBuilderCreateLoading}
-          onclick={closeNamespaceBuilderDialog}
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          class="inline-flex cursor-pointer items-center justify-center gap-2 rounded bg-blue-600 px-3 py-1.5 text-xs text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+        {#if !namespaceBuilderCreateLoading}
+          <Button
+            variant="outline-muted"
+            label="Cancel"
+            title="Cancel"
+            onclick={closeNamespaceBuilderDialog}
+          />
+        {/if}
+        <Button
+          variant="filled-accent"
+          label="Create"
+          title="Create"
+          loading={namespaceBuilderCreateLoading}
+          loadingLabel="Creating…"
           disabled={!namespaceBuilderValid || namespaceBuilderCreateLoading}
           onclick={() => void onNamespaceBuilderCreate()}
-        >
-          {#if namespaceBuilderCreateLoading}
-            <span
-              class="inline-block size-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white"
-              aria-hidden="true"
-            ></span>
-            Creating…
-          {:else}
-            Create
-          {/if}
-        </button>
+        />
       </div>
     </div>
   </dialog>

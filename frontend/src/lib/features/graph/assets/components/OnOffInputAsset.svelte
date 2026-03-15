@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Button } from '$lib/components/Button';
 	import BaseAssetShell from './BaseAssetShell.svelte';
 	import { toBoolean } from '../controller';
 	import type { PlantAssetComponentProps } from '../types';
@@ -18,15 +19,13 @@
 		<div
 			class="flex h-[110px] w-full flex-col items-center justify-center gap-3 rounded border border-black/15 p-2 dark:border-white/15"
 		>
-			<button
-				type="button"
-				class={`inline-flex h-8 w-20 items-center justify-center rounded text-xs font-semibold transition ${
-					currentValue ? 'bg-emerald-600 text-white' : 'bg-slate-500 text-white'
-				}`}
+			<Button
+				variant="filled-accent"
+				label={currentValue ? 'ON' : 'OFF'}
+				title={currentValue ? 'ON' : 'OFF'}
 				onclick={toggle}
-			>
-				{currentValue ? 'ON' : 'OFF'}
-			</button>
+				class="h-8 w-20 text-xs font-semibold {currentValue ? 'bg-emerald-600!' : 'bg-slate-500!'}"
+			/>
 			<span class="text-[10px] text-(--text-muted)">Writes boolean via WebSocket</span>
 		</div>
 	{/snippet}

@@ -10,7 +10,7 @@ import {
 const start = vi.fn();
 const stop = vi.fn();
 const setTrackedIds = vi.fn();
-const sendWriteValue = vi.fn();
+const sendWriteValue = vi.fn().mockResolvedValue(undefined);
 const addItem = vi.fn().mockResolvedValue([]);
 const removeItems = vi.fn().mockResolvedValue(undefined);
 const fakeClient = {
@@ -98,7 +98,7 @@ describe("createPageTagRealtimeProvider", () => {
       fakeClient,
     );
     provider.sendWriteValue("cmd.tag", 67);
-    expect(sendWriteValue).toHaveBeenCalledWith("cmd.tag", 67);
+    expect(sendWriteValue).toHaveBeenCalledWith("cmd.tag", 67, "ws://localhost:8787");
   });
 
   it("delegates add/remove commands to websocket client", async () => {

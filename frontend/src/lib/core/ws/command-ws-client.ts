@@ -1,6 +1,11 @@
 import type { TagScalarValue } from "./types";
 import type { Command, ItemMeta } from "../../proto/namespace/commands";
-import type { NamespaceFolder, NamespaceNode, UnifiedNamespaceSchema, Value } from "../../proto/namespace/types";
+import type {
+  NamespaceFolder,
+  NamespaceNode,
+  UnifiedNamespaceSchema,
+  Value,
+} from "../../proto/namespace/types";
 import type { ItemType, VarDataType } from "../../proto/namespace/enums";
 
 export function createCommandId(prefix: string): string {
@@ -63,11 +68,14 @@ export function createSetCommand(
   id: string,
   value: TagScalarValue,
   cmdId = createCommandId("set"),
-): Command {
+): { cmdId: string; command: Command } {
   return {
-    set: {
-      cmdId,
-      varIdsValues: [{ varId: id, value: toBackendValue(value) }],
+    cmdId,
+    command: {
+      set: {
+        cmdId,
+        varIdsValues: [{ varId: id, value: toBackendValue(value) }],
+      },
     },
   };
 }
@@ -120,7 +128,7 @@ export function createDelCommand(
 }
 
 /** Builder export JSON: nested objects; leaves are type strings (e.g. "Float"). */
-export function namespaceJsonToUnifiedSchema(
+export function namespaceJsonToSchema(
   json: Record<string, unknown>,
 ): UnifiedNamespaceSchema {
   function nodeFromJson(val: unknown): NamespaceNode {
@@ -129,12 +137,16 @@ export function namespaceJsonToUnifiedSchema(
     }
     if (val !== null && typeof val === "object" && !Array.isArray(val)) {
       const children: { [key: string]: NamespaceNode } = {};
-      for (const [key, child] of Object.entries(val as Record<string, unknown>)) {
+      for (const [key, child] of Object.entries(
+        val as Record<string, unknown>,
+      )) {
         children[key] = nodeFromJson(child);
       }
       return { folder: { children } as NamespaceFolder };
     }
-    throw new Error(`Invalid namespace node (expected string or object): ${typeof val}`);
+    throw new Error(
+      `Invalid namespace node (expected string or object): ${typeof val}`,
+    );
   }
   const roots: { [key: string]: NamespaceNode } = {};
   for (const [key, val] of Object.entries(json)) {

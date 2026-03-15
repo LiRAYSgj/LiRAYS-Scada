@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { fetchTreeChildren } from "./server-adapter";
 import { tagStreamClient } from "$lib/core/ws/tag-stream-client";
+import { VarDataType } from "$lib/proto/namespace/enums";
 
 vi.mock("$lib/core/ws/tag-stream-client", () => ({
   tagStreamClient: {
@@ -23,15 +24,20 @@ describe("fetchTreeChildren", () => {
         name: "root",
         parentId: null,
         kind: "folder",
+        hasChildren: true,
+        childIds: null,
       }),
     ]);
   });
 
   it("maps folder and variable children for a parent", async () => {
+    // LIST payloads use VarDataType (int32); varDataTypeToJSON drives TreeNode.dataType
     vi.mocked(tagStreamClient.listChildren).mockResolvedValue({
       cmdId: "cmd-2",
       childrenFolders: { area: "folder-1" },
-      childrenVars: { pressure: { varId: "var-1", varDType: "Float" as any } },
+      childrenVars: {
+        pressure: { varId: "var-1", varDType: VarDataType.VAR_DATA_TYPE_FLOAT },
+      },
     });
 
     const parent = {
@@ -49,15 +55,21 @@ describe("fetchTreeChildren", () => {
       expect.objectContaining({
         id: "folder-1",
         name: "area",
+        parentId: "root-id",
         path: "root/area",
         kind: "folder",
+        hasChildren: true,
+        childIds: null,
       }),
       expect.objectContaining({
         id: "var-1",
         name: "pressure",
+        parentId: "root-id",
         path: "root/pressure",
         kind: "tag",
-        dataType: "Float",
+        hasChildren: false,
+        childIds: null,
+        dataType: "VAR_DATA_TYPE_FLOAT",
       }),
     ]);
     expect(tagStreamClient.listChildren).toHaveBeenCalledWith(
