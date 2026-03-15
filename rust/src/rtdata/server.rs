@@ -3,11 +3,10 @@ use tokio::{runtime::Runtime, sync::Mutex, net::TcpListener};
 use tokio_tungstenite::{accept_async, tungstenite::Message};
 use futures_util::{StreamExt, SinkExt};
 use std::{sync::Arc, thread};
-use heed::{BytesDecode, BytesEncode};
+use prost::Message as ProstMessage;
 use pyo3::prelude::*;
 use super::variable::{VariableManager};
-use super::proto::Proto;
-use super::namespace::{Command, Response};
+use super::namespace::Command;
 
 
 async fn run_server(host: &str, port: u16, db_dir: &str) {
@@ -28,26 +27,17 @@ async fn run_server(host: &str, port: u16, db_dir: &str) {
                                             Some(Ok(msg)) => {
                                                 match msg {
                                                     Message::Binary(bin) => {
-                                                        let command = match Proto::<Command>::bytes_decode(&bin) {
+                                                        let command = match Command::decode(&*bin) {
                                                             Ok(cmd) => cmd,
                                                             Err(_) => Command { command_type: None }
                                                         };
                                                         let vm = var_manager.lock().await;
-                                                        println!("=============================");
-                                                        debug!("{:?}", command);
                                                         let response = vm.exec_cmd(command);
-
-                                                        debug!("{:?}", response);
-                                                        println!("=============================");
-                                                        match Proto::<Response>::bytes_encode(&response) {
-                                                            Ok(resp) => {
-                                                                match ws_stream.send(Message::Binary(resp.into_owned().into())).await {
-                                                                    Ok(_) => (),
-                                                                    Err(e) => error!("Error sending response. Err: {e}")
-                                                                }
-                                                            },
-                                                            Err(e) => error!("Error encoding response. Err: {e}")
-                                                        };
+                                                        let resp_bytes = response.encode_to_vec();
+                                                        match ws_stream.send(Message::Binary(resp_bytes.into())).await {
+                                                            Ok(_) => (),
+                                                            Err(e) => error!("Error sending response. Err: {e}")
+                                                        }
                                                     }
                                                     _ => ()
                                                 }

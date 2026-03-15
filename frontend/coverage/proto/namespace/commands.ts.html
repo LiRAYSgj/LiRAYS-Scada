@@ -4676,7 +4676,7 @@ import {
   varDataTypeFromJSON,
   varDataTypeToJSON,
 } from "./enums";
-import { OptionalValue, UnifiedNamespaceSchema, Value } from "./types";
+import { OptionalValue, NamespaceSchema, Value } from "./types";
 &nbsp;
 export const protobufPackage = "namespace";
 &nbsp;
@@ -4709,7 +4709,7 @@ export interface AddResponse {
 export interface AddBulkCommand {
   cmdId: string;
   parentId: string;
-  schema: UnifiedNamespaceSchema | undefined;
+  schema: NamespaceSchema | undefined;
 }
 &nbsp;
 export interface AddBulkResponse {
@@ -5269,7 +5269,7 @@ export const AddBulkCommand: MessageFns&lt;AddBulkCommand&gt; = {
 <span class="cstat-no" title="statement not covered" >      writer.uint32(18).string(message.parentId);</span>
     }
     <span class="missing-if-branch" title="else path not taken" >E</span>if (message.schema !== undefined) {
-      UnifiedNamespaceSchema.encode(
+      NamespaceSchema.encode(
         message.schema,
         writer.uint32(26).fork(),
       ).join();
@@ -5306,7 +5306,7 @@ export const AddBulkCommand: MessageFns&lt;AddBulkCommand&gt; = {
 <span class="cstat-no" title="statement not covered" >            break;</span>
           }
 &nbsp;
-          message.schema = UnifiedNamespaceSchema.decode(
+          message.schema = NamespaceSchema.decode(
             reader,
             reader.uint32(),
           );
@@ -5334,7 +5334,7 @@ export const AddBulkCommand: MessageFns&lt;AddBulkCommand&gt; = {
           ? globalThis.String(object.parent_id)
           : "",
       schema: isSet(object.schema)
-        ? UnifiedNamespaceSchema.fromJSON(object.schema)
+        ? NamespaceSchema.fromJSON(object.schema)
         : undefined,
     };
   },
@@ -5348,7 +5348,7 @@ export const AddBulkCommand: MessageFns&lt;AddBulkCommand&gt; = {
 <span class="cstat-no" title="statement not covered" >      obj.parentId = message.parentId;</span>
     }
 <span class="cstat-no" title="statement not covered" >    if (message.schema !== undefined) {</span>
-<span class="cstat-no" title="statement not covered" >      obj.schema = UnifiedNamespaceSchema.toJSON(message.schema);</span>
+<span class="cstat-no" title="statement not covered" >      obj.schema = NamespaceSchema.toJSON(message.schema);</span>
     }
 <span class="cstat-no" title="statement not covered" >    return obj;</span>
   },
@@ -5366,7 +5366,7 @@ export const AddBulkCommand: MessageFns&lt;AddBulkCommand&gt; = {
 <span class="cstat-no" title="statement not covered" >    message.parentId = object.parentId ?? "";</span>
 <span class="cstat-no" title="statement not covered" >    message.schema =</span>
       object.schema !== undefined &amp;&amp; object.schema !== null
-        ? UnifiedNamespaceSchema.fromPartial(object.schema)
+        ? NamespaceSchema.fromPartial(object.schema)
         : undefined;
 <span class="cstat-no" title="statement not covered" >    return message;</span>
   },

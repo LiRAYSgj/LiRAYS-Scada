@@ -2847,11 +2847,11 @@ export interface Item_ChildrenEntry {
   value: ChildInfo | undefined;
 }
 &nbsp;
-export interface UnifiedNamespaceSchema {
+export interface NamespaceSchema {
   roots: { [key: string]: NamespaceNode };
 }
 &nbsp;
-export interface UnifiedNamespaceSchema_RootsEntry {
+export interface NamespaceSchema_RootsEntry {
   key: string;
   value: NamespaceNode | undefined;
 }
@@ -3582,18 +3582,18 @@ export const Item_ChildrenEntry: MessageFns&lt;Item_ChildrenEntry&gt; = {
   },
 };
 &nbsp;
-function createBaseUnifiedNamespaceSchema(): UnifiedNamespaceSchema {
+function createBaseNamespaceSchema(): NamespaceSchema {
   return { roots: {} };
 }
 &nbsp;
-export const UnifiedNamespaceSchema: MessageFns&lt;UnifiedNamespaceSchema&gt; = {
+export const NamespaceSchema: MessageFns&lt;NamespaceSchema&gt; = {
   encode(
-    message: UnifiedNamespaceSchema,
+    message: NamespaceSchema,
     writer: BinaryWriter = new BinaryWriter(),
   ): BinaryWriter {
     globalThis.Object.entries(message.roots).forEach(
       ([key, value]: [string, NamespaceNode]) =&gt; {
-        UnifiedNamespaceSchema_RootsEntry.encode(
+        NamespaceSchema_RootsEntry.encode(
           { key: key as any, value },
           writer.uint32(10).fork(),
         ).join();
@@ -3605,11 +3605,11 @@ export const UnifiedNamespaceSchema: MessageFns&lt;UnifiedNamespaceSchema&gt; = 
   decode(
     input: BinaryReader | Uint8Array,
     length?: number,
-  ): UnifiedNamespaceSchema {
+  ): NamespaceSchema {
     const reader =
       input instanceof BinaryReader ? input : <span class="branch-1 cbranch-no" title="branch not covered" >new BinaryReader(input);</span>
     const end = length === undefined ? <span class="branch-0 cbranch-no" title="branch not covered" >reader.len : r</span>eader.pos + length;
-    const message = createBaseUnifiedNamespaceSchema();
+    const message = createBaseNamespaceSchema();
     while (reader.pos &lt; end) {
       const tag = reader.uint32();
       switch (tag &gt;&gt;&gt; 3) {
@@ -3618,7 +3618,7 @@ export const UnifiedNamespaceSchema: MessageFns&lt;UnifiedNamespaceSchema&gt; = 
 <span class="cstat-no" title="statement not covered" >            break;</span>
           }
 &nbsp;
-          const entry1 = UnifiedNamespaceSchema_RootsEntry.decode(
+          const entry1 = NamespaceSchema_RootsEntry.decode(
             reader,
             reader.uint32(),
           );
@@ -3636,7 +3636,7 @@ export const UnifiedNamespaceSchema: MessageFns&lt;UnifiedNamespaceSchema&gt; = 
     return message;
   },
 &nbsp;
-<span class="fstat-no" title="function not covered" >  fromJSON(o</span>bject: any): UnifiedNamespaceSchema {
+<span class="fstat-no" title="function not covered" >  fromJSON(o</span>bject: any): NamespaceSchema {
 <span class="cstat-no" title="statement not covered" >    return {</span>
       roots: isObject(object.roots)
         ? (globalThis.Object.entries(object.roots) as [string, any][]).reduce(
@@ -3653,7 +3653,7 @@ export const UnifiedNamespaceSchema: MessageFns&lt;UnifiedNamespaceSchema&gt; = 
     };
   },
 &nbsp;
-<span class="fstat-no" title="function not covered" >  toJSON(m</span>essage: UnifiedNamespaceSchema): unknown {
+<span class="fstat-no" title="function not covered" >  toJSON(m</span>essage: NamespaceSchema): unknown {
     const obj: any = <span class="cstat-no" title="statement not covered" >{};</span>
 <span class="cstat-no" title="statement not covered" >    if (message.roots) {</span>
       const entries = <span class="cstat-no" title="statement not covered" >globalThis.Object.entries(message.roots) as [</span>
@@ -3670,15 +3670,15 @@ export const UnifiedNamespaceSchema: MessageFns&lt;UnifiedNamespaceSchema&gt; = 
 <span class="cstat-no" title="statement not covered" >    return obj;</span>
   },
 &nbsp;
-<span class="fstat-no" title="function not covered" >  create&lt;I extends Exact&lt;DeepPartial&lt;UnifiedNamespaceSchema&gt;, I&gt;&gt;(</span>
+<span class="fstat-no" title="function not covered" >  create&lt;I extends Exact&lt;DeepPartial&lt;NamespaceSchema&gt;, I&gt;&gt;(</span>
     base?: I,
-  ): UnifiedNamespaceSchema {
-<span class="cstat-no" title="statement not covered" >    return UnifiedNamespaceSchema.fromPartial(base ?? ({} as any));</span>
+  ): NamespaceSchema {
+<span class="cstat-no" title="statement not covered" >    return NamespaceSchema.fromPartial(base ?? ({} as any));</span>
   },
-<span class="fstat-no" title="function not covered" >  fromPartial&lt;I extends Exact&lt;DeepPartial&lt;UnifiedNamespaceSchema&gt;, I&gt;&gt;(</span>
+<span class="fstat-no" title="function not covered" >  fromPartial&lt;I extends Exact&lt;DeepPartial&lt;NamespaceSchema&gt;, I&gt;&gt;(</span>
     object: I,
-  ): UnifiedNamespaceSchema {
-    const message = <span class="cstat-no" title="statement not covered" >createBaseUnifiedNamespaceSchema();</span>
+  ): NamespaceSchema {
+    const message = <span class="cstat-no" title="statement not covered" >createBaseNamespaceSchema();</span>
 <span class="cstat-no" title="statement not covered" >    message.roots = (</span>
       globalThis.Object.entries(object.roots ?? {}) as [string, NamespaceNode][]
     ).reduce(
@@ -3697,14 +3697,14 @@ export const UnifiedNamespaceSchema: MessageFns&lt;UnifiedNamespaceSchema&gt; = 
   },
 };
 &nbsp;
-function createBaseUnifiedNamespaceSchema_RootsEntry(): UnifiedNamespaceSchema_RootsEntry {
+function createBaseNamespaceSchema_RootsEntry(): NamespaceSchema_RootsEntry {
   return { key: "", value: undefined };
 }
 &nbsp;
-export const UnifiedNamespaceSchema_RootsEntry: MessageFns&lt;UnifiedNamespaceSchema_RootsEntry&gt; =
+export const NamespaceSchema_RootsEntry: MessageFns&lt;NamespaceSchema_RootsEntry&gt; =
   {
     encode(
-      message: UnifiedNamespaceSchema_RootsEntry,
+      message: NamespaceSchema_RootsEntry,
       writer: BinaryWriter = new BinaryWriter(),
     ): BinaryWriter {
       <span class="missing-if-branch" title="else path not taken" >E</span>if (message.key !== "") {
@@ -3719,11 +3719,11 @@ export const UnifiedNamespaceSchema_RootsEntry: MessageFns&lt;UnifiedNamespaceSc
     decode(
       input: BinaryReader | Uint8Array,
       length?: number,
-    ): UnifiedNamespaceSchema_RootsEntry {
+    ): NamespaceSchema_RootsEntry {
       const reader =
         input instanceof BinaryReader ? input : <span class="branch-1 cbranch-no" title="branch not covered" >new BinaryReader(input);</span>
       const end = length === undefined ? <span class="branch-0 cbranch-no" title="branch not covered" >reader.len : r</span>eader.pos + length;
-      const message = createBaseUnifiedNamespaceSchema_RootsEntry();
+      const message = createBaseNamespaceSchema_RootsEntry();
       while (reader.pos &lt; end) {
         const tag = reader.uint32();
         switch (tag &gt;&gt;&gt; 3) {
@@ -3752,7 +3752,7 @@ export const UnifiedNamespaceSchema_RootsEntry: MessageFns&lt;UnifiedNamespaceSc
       return message;
     },
 &nbsp;
-<span class="fstat-no" title="function not covered" >    fromJSON(o</span>bject: any): UnifiedNamespaceSchema_RootsEntry {
+<span class="fstat-no" title="function not covered" >    fromJSON(o</span>bject: any): NamespaceSchema_RootsEntry {
 <span class="cstat-no" title="statement not covered" >      return {</span>
         key: isSet(object.key) ? globalThis.String(object.key) : "",
         value: isSet(object.value)
@@ -3761,7 +3761,7 @@ export const UnifiedNamespaceSchema_RootsEntry: MessageFns&lt;UnifiedNamespaceSc
       };
     },
 &nbsp;
-<span class="fstat-no" title="function not covered" >    toJSON(m</span>essage: UnifiedNamespaceSchema_RootsEntry): unknown {
+<span class="fstat-no" title="function not covered" >    toJSON(m</span>essage: NamespaceSchema_RootsEntry): unknown {
       const obj: any = <span class="cstat-no" title="statement not covered" >{};</span>
 <span class="cstat-no" title="statement not covered" >      if (message.key !== "") {</span>
 <span class="cstat-no" title="statement not covered" >        obj.key = message.key;</span>
@@ -3772,15 +3772,15 @@ export const UnifiedNamespaceSchema_RootsEntry: MessageFns&lt;UnifiedNamespaceSc
 <span class="cstat-no" title="statement not covered" >      return obj;</span>
     },
 &nbsp;
-<span class="fstat-no" title="function not covered" >    create&lt;I extends Exact&lt;DeepPartial&lt;UnifiedNamespaceSchema_RootsEntry&gt;, I&gt;&gt;(</span>
+<span class="fstat-no" title="function not covered" >    create&lt;I extends Exact&lt;DeepPartial&lt;NamespaceSchema_RootsEntry&gt;, I&gt;&gt;(</span>
       base?: I,
-    ): UnifiedNamespaceSchema_RootsEntry {
-<span class="cstat-no" title="statement not covered" >      return UnifiedNamespaceSchema_RootsEntry.fromPartial(base ?? ({} as any));</span>
+    ): NamespaceSchema_RootsEntry {
+<span class="cstat-no" title="statement not covered" >      return NamespaceSchema_RootsEntry.fromPartial(base ?? ({} as any));</span>
     },
 <span class="fstat-no" title="function not covered" >    fromPartial&lt;</span>
-      I extends Exact&lt;DeepPartial&lt;UnifiedNamespaceSchema_RootsEntry&gt;, I&gt;,
-    &gt;(object: I): UnifiedNamespaceSchema_RootsEntry {
-      const message = <span class="cstat-no" title="statement not covered" >createBaseUnifiedNamespaceSchema_RootsEntry();</span>
+      I extends Exact&lt;DeepPartial&lt;NamespaceSchema_RootsEntry&gt;, I&gt;,
+    &gt;(object: I): NamespaceSchema_RootsEntry {
+      const message = <span class="cstat-no" title="statement not covered" >createBaseNamespaceSchema_RootsEntry();</span>
 <span class="cstat-no" title="statement not covered" >      message.key = object.key ?? "";</span>
 <span class="cstat-no" title="statement not covered" >      message.value =</span>
         object.value !== undefined &amp;&amp; object.value !== null

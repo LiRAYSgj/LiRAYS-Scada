@@ -28,7 +28,7 @@ const RETRY_BASE_MS = 2000;
 const RETRY_MAX_MS = 10000;
 const POLL_MS = 2000;
 /** All commands use the same timeout; success/failure is determined by Response.status and optional error_msg. */
-const COMMAND_TIMEOUT_MS = 60_000;
+const COMMAND_TIMEOUT_MS = 3600_000;
 
 const TIMEOUT_USER_MESSAGE = "Requested operation timed out. Try again.";
 
@@ -383,6 +383,7 @@ export class TagStreamClient {
 
     try {
       const payload = Response.decode(new Uint8Array(rawData));
+      console.log(payload);
       const status = payload.status ?? OperationStatus.OPERATION_STATUS_INVALID;
       const errorMsg = payload.errorMsg ?? "";
 

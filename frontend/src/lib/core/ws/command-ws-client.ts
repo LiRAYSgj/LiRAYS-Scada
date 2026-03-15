@@ -3,7 +3,7 @@ import type { Command, ItemMeta } from "../../proto/namespace/commands";
 import type {
   NamespaceFolder,
   NamespaceNode,
-  UnifiedNamespaceSchema,
+  NamespaceSchema,
   Value,
 } from "../../proto/namespace/types";
 import type { ItemType, VarDataType } from "../../proto/namespace/enums";
@@ -130,7 +130,7 @@ export function createDelCommand(
 /** Builder export JSON: nested objects; leaves are type strings (e.g. "Float"). */
 export function namespaceJsonToSchema(
   json: Record<string, unknown>,
-): UnifiedNamespaceSchema {
+): NamespaceSchema {
   function nodeFromJson(val: unknown): NamespaceNode {
     if (typeof val === "string") {
       return { variableType: val };
@@ -157,7 +157,7 @@ export function namespaceJsonToSchema(
 
 export function createAddBulkCommand(
   parentId: string,
-  schema: UnifiedNamespaceSchema,
+  schema: NamespaceSchema,
   cmdId = createCommandId("add-bulk"),
 ): { cmdId: string; command: Command } {
   return {

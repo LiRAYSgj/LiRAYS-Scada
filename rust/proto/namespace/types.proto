@@ -40,7 +40,7 @@ message Item {
   optional Value value = 7;
 }
 
-message UnifiedNamespaceSchema {
+message NamespaceSchema {
   map<string, NamespaceNode> roots = 1;
 }
 

@@ -9,6 +9,7 @@ message ItemMeta {
   string name = 1;
   ItemType i_type = 2;
   optional VarDataType var_d_type = 3;
+  optional string uid = 4;
 }
 
 message VarInfo {
@@ -29,12 +30,13 @@ message AddCommand {
 
 message AddResponse {
   string cmd_id = 1;
+  repeated string item_ids = 2;
 }
 
 message AddBulkCommand {
   string cmd_id = 1;
   string parent_id = 2;
-  UnifiedNamespaceSchema schema = 3;
+  NamespaceSchema schema = 3;
 }
 
 message AddBulkResponse {
