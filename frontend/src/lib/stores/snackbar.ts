@@ -28,13 +28,25 @@ function createSnackbarStore() {
       set(entry);
     },
     success(message: string, duration?: number): void {
-      set({ message, type: "success", duration: duration ?? DEFAULT_DURATION_MS });
+      set({
+        message,
+        type: "success",
+        duration: duration ?? DEFAULT_DURATION_MS,
+      });
     },
     warning(message: string, duration?: number): void {
-      set({ message, type: "warning", duration: duration ?? DEFAULT_DURATION_MS });
+      set({
+        message,
+        type: "warning",
+        duration: duration ?? DEFAULT_DURATION_MS,
+      });
     },
     error(message: string, duration?: number): void {
-      set({ message, type: "error", duration: duration ?? DEFAULT_DURATION_MS });
+      set({
+        message,
+        type: "error",
+        duration: duration ?? DEFAULT_DURATION_MS,
+      });
     },
     hide(): void {
       set(null);

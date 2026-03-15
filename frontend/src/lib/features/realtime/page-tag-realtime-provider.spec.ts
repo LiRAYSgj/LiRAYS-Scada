@@ -98,7 +98,11 @@ describe("createPageTagRealtimeProvider", () => {
       fakeClient,
     );
     provider.sendWriteValue("cmd.tag", 67);
-    expect(sendWriteValue).toHaveBeenCalledWith("cmd.tag", 67, "ws://localhost:8787");
+    expect(sendWriteValue).toHaveBeenCalledWith(
+      "cmd.tag",
+      67,
+      "ws://localhost:8787",
+    );
   });
 
   it("delegates add/remove commands to websocket client", async () => {

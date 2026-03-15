@@ -400,8 +400,7 @@ export class TagStreamClient {
         status === OperationStatus.OPERATION_STATUS_ERR ||
         status === OperationStatus.OPERATION_STATUS_INVALID ||
         payload.inv != null;
-      const isTerminalSuccess =
-        status === OperationStatus.OPERATION_STATUS_OK;
+      const isTerminalSuccess = status === OperationStatus.OPERATION_STATUS_OK;
 
       if (isTerminalError && cmdId) {
         const pending = this.pendingByCmdId.get(cmdId);
