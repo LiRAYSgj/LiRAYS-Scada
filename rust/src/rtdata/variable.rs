@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use log::{debug, warn, info};
 use tokio::sync::broadcast;
@@ -8,7 +8,6 @@ use sled::{Db, Tree, Batch};
 
 use super::parser::{parse_repeated_name, clone_name};
 use super::namespace::{
-    Item,
     ItemType,
     ItemMeta,
     Value,
@@ -16,7 +15,6 @@ use super::namespace::{
     VarDataType,
     Command,
     Response,
-    ChildInfo,
     VarInfo,
     AddResponse,
     AddBulkResponse,
@@ -105,7 +103,11 @@ impl VariableManager {
         let components: Vec<&str> = trimmed.split('/').filter(|s| !s.is_empty()).collect();
         let mut base = format!("/{}", components.join("/"));
         match i_type {
-            ItemType::Folder => base.push('/'),
+            ItemType::Folder => {
+                if !base.ends_with('/') {
+                    base.push('/')
+                }
+            },
             _ => ()
         }
         base

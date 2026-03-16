@@ -1,5 +1,5 @@
 use log::{debug, error, info};
-use tokio::{runtime::Runtime, sync::Mutex, net::TcpListener};
+use tokio::{runtime::Runtime, net::TcpListener};
 use tokio_tungstenite::{accept_async, tungstenite::Message};
 use futures_util::{StreamExt, SinkExt};
 use std::{sync::Arc, thread};
@@ -10,7 +10,7 @@ use super::namespace::Command;
 
 
 async fn run_server(host: &str, port: u16, db_dir: &str) {
-    let var_manager = Arc::new(Mutex::new(VariableManager::new(db_dir)));
+    let var_manager = Arc::new(VariableManager::new(db_dir));
     match TcpListener::bind((host, port)).await {
         Ok(listener) => {
             info!("LiRAYS server listening on {}:{}", host, port);
@@ -18,7 +18,7 @@ async fn run_server(host: &str, port: u16, db_dir: &str) {
                 match listener.accept().await {
                     Ok((stream, addr)) => {
                         debug!("Accepting client from {addr}");
-                        let var_manager = Arc::clone(&var_manager);
+                        let vm = Arc::clone(&var_manager);
                         tokio::spawn(async move {
                             match accept_async(stream).await {
                                 Ok(mut ws_stream) => {
@@ -31,7 +31,6 @@ async fn run_server(host: &str, port: u16, db_dir: &str) {
                                                             Ok(cmd) => cmd,
                                                             Err(_) => Command { command_type: None }
                                                         };
-                                                        let vm = var_manager.lock().await;
                                                         let response = vm.exec_cmd(command);
                                                         let resp_bytes = response.encode_to_vec();
                                                         match ws_stream.send(Message::Binary(resp_bytes.into())).await {
