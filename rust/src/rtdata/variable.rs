@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use log::{debug, warn};
+use log::{debug, warn, info};
 use tokio::sync::broadcast;
 use uuid::Uuid;
 use prost::Message;
@@ -129,10 +129,11 @@ impl VariableManager {
         format!("H:{}/\0{}", parent, name)
     }
 
-    fn add_items(&self, parent_id: &str, items_meta: Vec<ItemMeta>, batch: &mut Batch) -> Result<(), String> {
+    fn add_items(&self, parent_id: &str, items_meta: Vec<ItemMeta>, batch: &mut Batch) -> Result<usize, String> {
         // Let's verify parent_id is an existing folder. Or create it otherwise
         let parent_path = VariableManager::normalize_path(parent_id, ItemType::Folder);
         let ancestors = VariableManager::get_ancestors(&parent_path);
+        let mut count = 0;
 
         for (parent, folder_name) in ancestors {
             let h_key = format!("H:{}\0{}", parent, folder_name);
@@ -144,6 +145,7 @@ impl VariableManager {
                         var_d_type: None,
                     };
                     batch.insert(h_key.as_bytes(), item.encode_to_vec());
+                    count += 1;
                 }
                 _ => ()
             }
@@ -152,8 +154,9 @@ impl VariableManager {
         for i_meta in items_meta {
             let h_key = format!("H:{}\0{}", parent_path, i_meta.name);
             batch.insert(h_key.as_bytes(), i_meta.encode_to_vec());
+            count += 1;
         }
-        Ok(())
+        Ok(count)
     }
 
     fn list_path(&self, parent_id: &str) -> Result<(Vec<ItemMeta>, Vec<ItemMeta>), String> {
@@ -176,56 +179,78 @@ impl VariableManager {
         Ok((children_folders, children_vars))
     }
 
-    fn add_bulk_recursive(&self, parent_id: &str, nodes: HashMap<String, NamespaceNode>, batch: &mut Batch) -> Result<(), String> {
-        for (key, val) in nodes {
-            let mut name_ = key.as_str();
-            let (start, stop, step) = parse_repeated_name(&mut name_);
-            let item_names = clone_name(name_, start, stop, step);
+    fn add_bulk_recursive(&self, root_parent_id: &str, root_nodes: HashMap<String, NamespaceNode>, batch: &mut Batch) -> Result<(), String> {
+        let mut stack = vec![(root_parent_id.to_string(), root_nodes)];
+        let mut total_count = 0usize;
 
-            let mut vars_to_create: Vec<ItemMeta> = vec![];
-            let mut folders_to_create: Vec<ItemMeta> = vec![];
-            let mut folder_children_to_create: Vec<(String, HashMap<String, NamespaceNode>)> = vec![];
+        while let Some((parent_id, nodes)) = stack.pop() {
+            for (key, val) in nodes {
+                let mut name_ = key.as_str();
+                let (start, stop, step) = parse_repeated_name(&mut name_);
+                let item_names = clone_name(name_, start, stop, step);
 
-            for name in item_names {
-                match &val.node {
-                    Some(Node::Folder(folder)) => {
-                        let i_meta = ItemMeta {
-                            name: name.clone(),
-                            i_type: ItemType::Folder as i32,
-                            var_d_type: None
-                        };
-                        folders_to_create.push(i_meta);
-                        let new_parent_id = format!("{}/{}", parent_id, name);
-                        folder_children_to_create.push((new_parent_id, folder.children.clone()));
+                let mut vars_to_create: Vec<ItemMeta> = vec![];
+                let mut folders_to_create: Vec<ItemMeta> = vec![];
+                let mut folder_children: Vec<(String, HashMap<String, NamespaceNode>)> = vec![];
+
+                for name in item_names {
+                    match &val.node {
+                        Some(Node::Folder(folder)) => {
+                            folders_to_create.push(ItemMeta {
+                                name: name.clone(),
+                                i_type: ItemType::Folder as i32,
+                                var_d_type: None,
+                            });
+                            let new_parent_path = if parent_id == "/" {
+                                format!("/{}", name)
+                            } else {
+                                format!("{}/{}", parent_id.trim_end_matches('/'), name)
+                            };
+                            folder_children.push((new_parent_path, folder.children.clone()));
+                        }
+                        Some(Node::VariableType(v_type)) => {
+                            let v_dtype = match v_type.to_lowercase().as_str() {
+                                "integer" | "int" | "i" => VarDataType::Integer as i32,
+                                "float" | "f" => VarDataType::Float as i32,
+                                "text" | "string" | "str" | "t" => VarDataType::Text as i32,
+                                "boolean" | "bool" | "b" => VarDataType::Boolean as i32,
+                                _ => {
+                                    warn!("Bulk ADD: Invalid variable type '{}' for '{}'", v_type, name);
+                                    VarDataType::Invalid as i32
+                                },
+                            };
+                            vars_to_create.push(ItemMeta {
+                                name: name.clone(),
+                                i_type: ItemType::Variable as i32,
+                                var_d_type: Some(v_dtype),
+                            });
+                        }
+                        None => {
+                            warn!("Bulk ADD: Node with key '{}' has no content defined", name);
+                        }
                     }
-                    Some(Node::VariableType(v_type)) => {
-                        debug!("Bulk ADD: Creating variable '{}' (type: {}) under parent '{}'", name, v_type, parent_id);
-                        let v_dtype = match v_type.to_lowercase().as_str() {
-                            "integer" | "int" | "i" => VarDataType::Integer as i32,
-                            "float" | "f" => VarDataType::Float as i32,
-                            "text" | "string" | "str" | "t" => VarDataType::Text as i32,
-                            "boolean" | "bool" | "b" => VarDataType::Boolean as i32,
-                            _ => {
-                                warn!("Bulk ADD: Invalid variable type '{}' for '{}'", v_type, name);
-                                VarDataType::Invalid as i32
-                            },
-                        };
-                        vars_to_create.push(ItemMeta {
-                            name: name.clone(),
-                            i_type: ItemType::Variable as i32,
-                            var_d_type: Some(v_dtype)
-                        });
-                    }
-                    None => {
-                        warn!("Bulk ADD: Node with key '{}' has no content defined", name);
-                    },
                 }
-            }
-            self.add_items(parent_id, vars_to_create, batch)?;
-            self.add_items(parent_id, folders_to_create, batch)?;
 
-            for (folder_id, children) in folder_children_to_create {
-                self.add_bulk_recursive(&folder_id, children, batch)?;
+                if !vars_to_create.is_empty() {
+                    let prev_m = total_count / 1_000_000;
+                    total_count += self.add_items(&parent_id, vars_to_create, batch)?;
+                    let curr_m = total_count / 1_000_000;
+                    if curr_m > prev_m {
+                        info!("Bulk ADD: {} million items added to batch", curr_m);
+                    }
+                }
+                if !folders_to_create.is_empty() {
+                    let prev_m = total_count / 1_000_000;
+                    total_count += self.add_items(&parent_id, folders_to_create, batch)?;
+                    let curr_m = total_count / 1_000_000;
+                    if curr_m > prev_m {
+                        debug!("Bulk ADD: {} million items added to batch", curr_m);
+                    }
+                }
+
+                for (child_path, children) in folder_children {
+                    stack.push((child_path, children));
+                }
             }
         }
         Ok(())
@@ -321,7 +346,7 @@ impl VariableManager {
                 let parent_id = add_cmd.parent_id.unwrap_or("/".to_string());
                 let mut batch = Batch::default();
                 let (status, error_msg) = match self.add_items(&parent_id, add_cmd.items_meta, &mut batch) {
-                    Ok(()) => {
+                    Ok(_) => {
                         match self.items_tree.apply_batch(batch).map_err(|e| format!("Error adding items: {e}")) {
                             Ok(_) => (OperationStatus::Ok as i32, None),
                             Err(e) => (OperationStatus::Err as i32, Some(format!("Applying batch error: {e}")))
