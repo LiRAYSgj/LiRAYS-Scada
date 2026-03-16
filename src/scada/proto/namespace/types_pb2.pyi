@@ -44,29 +44,44 @@ class ChildInfo(_message.Message):
     def __init__(self, child_id: _Optional[str] = ..., i_type: _Optional[_Union[_enums_pb2.ItemType, str]] = ..., var_d_type: _Optional[_Union[_enums_pb2.VarDataType, str]] = ...) -> None: ...
 
 class Item(_message.Message):
-    __slots__ = ("id", "name", "parent", "children", "i_type", "var_d_type", "value")
-    class ChildrenEntry(_message.Message):
-        __slots__ = ("key", "value")
-        KEY_FIELD_NUMBER: _ClassVar[int]
-        VALUE_FIELD_NUMBER: _ClassVar[int]
-        key: str
-        value: ChildInfo
-        def __init__(self, key: _Optional[str] = ..., value: _Optional[_Union[ChildInfo, _Mapping]] = ...) -> None: ...
+    __slots__ = ("id", "name", "i_type", "var_d_type", "value")
     ID_FIELD_NUMBER: _ClassVar[int]
     NAME_FIELD_NUMBER: _ClassVar[int]
-    PARENT_FIELD_NUMBER: _ClassVar[int]
-    CHILDREN_FIELD_NUMBER: _ClassVar[int]
     I_TYPE_FIELD_NUMBER: _ClassVar[int]
     VAR_D_TYPE_FIELD_NUMBER: _ClassVar[int]
     VALUE_FIELD_NUMBER: _ClassVar[int]
     id: str
     name: str
-    parent: str
-    children: _containers.MessageMap[str, ChildInfo]
     i_type: _enums_pb2.ItemType
     var_d_type: _enums_pb2.VarDataType
     value: Value
-    def __init__(self, id: _Optional[str] = ..., name: _Optional[str] = ..., parent: _Optional[str] = ..., children: _Optional[_Mapping[str, ChildInfo]] = ..., i_type: _Optional[_Union[_enums_pb2.ItemType, str]] = ..., var_d_type: _Optional[_Union[_enums_pb2.VarDataType, str]] = ..., value: _Optional[_Union[Value, _Mapping]] = ...) -> None: ...
+    def __init__(self, id: _Optional[str] = ..., name: _Optional[str] = ..., i_type: _Optional[_Union[_enums_pb2.ItemType, str]] = ..., var_d_type: _Optional[_Union[_enums_pb2.VarDataType, str]] = ..., value: _Optional[_Union[Value, _Mapping]] = ...) -> None: ...
+
+class ItemMeta(_message.Message):
+    __slots__ = ("name", "i_type", "var_d_type")
+    NAME_FIELD_NUMBER: _ClassVar[int]
+    I_TYPE_FIELD_NUMBER: _ClassVar[int]
+    VAR_D_TYPE_FIELD_NUMBER: _ClassVar[int]
+    name: str
+    i_type: _enums_pb2.ItemType
+    var_d_type: _enums_pb2.VarDataType
+    def __init__(self, name: _Optional[str] = ..., i_type: _Optional[_Union[_enums_pb2.ItemType, str]] = ..., var_d_type: _Optional[_Union[_enums_pb2.VarDataType, str]] = ...) -> None: ...
+
+class VarInfo(_message.Message):
+    __slots__ = ("var_id", "var_d_type")
+    VAR_ID_FIELD_NUMBER: _ClassVar[int]
+    VAR_D_TYPE_FIELD_NUMBER: _ClassVar[int]
+    var_id: str
+    var_d_type: _enums_pb2.VarDataType
+    def __init__(self, var_id: _Optional[str] = ..., var_d_type: _Optional[_Union[_enums_pb2.VarDataType, str]] = ...) -> None: ...
+
+class VarIdValue(_message.Message):
+    __slots__ = ("var_id", "value")
+    VAR_ID_FIELD_NUMBER: _ClassVar[int]
+    VALUE_FIELD_NUMBER: _ClassVar[int]
+    var_id: str
+    value: Value
+    def __init__(self, var_id: _Optional[str] = ..., value: _Optional[_Union[Value, _Mapping]] = ...) -> None: ...
 
 class NamespaceSchema(_message.Message):
     __slots__ = ("roots",)

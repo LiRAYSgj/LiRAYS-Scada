@@ -21,7 +21,7 @@ class VarMeta(BaseModel):
 
 class AddCommandModel(BaseModel):
     cmd_id: str = Field()
-    parent_id: str = Field()
+    parent_id: str | None = Field()
     items_meta: list[FolderMeta | VarMeta] = Field()
 
 

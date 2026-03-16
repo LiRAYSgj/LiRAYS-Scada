@@ -26,7 +26,7 @@ from . import enums_pb2 as namespace_dot_enums__pb2
 from . import types_pb2 as namespace_dot_types__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x18namespace/commands.proto\x12\tnamespace\x1a\x15namespace/enums.proto\x1a\x15namespace/types.proto\"\x97\x01\n\x08ItemMeta\x12\x0c\n\x04name\x18\x01 \x01(\t\x12#\n\x06i_type\x18\x02 \x01(\x0e\x32\x13.namespace.ItemType\x12/\n\nvar_d_type\x18\x03 \x01(\x0e\x32\x16.namespace.VarDataTypeH\x00\x88\x01\x01\x12\x10\n\x03uid\x18\x04 \x01(\tH\x01\x88\x01\x01\x42\r\n\x0b_var_d_typeB\x06\n\x04_uid\"E\n\x07VarInfo\x12\x0e\n\x06var_id\x18\x01 \x01(\t\x12*\n\nvar_d_type\x18\x02 \x01(\x0e\x32\x16.namespace.VarDataType\"=\n\nVarIdValue\x12\x0e\n\x06var_id\x18\x01 \x01(\t\x12\x1f\n\x05value\x18\x02 \x01(\x0b\x32\x10.namespace.Value\"X\n\nAddCommand\x12\x0e\n\x06\x63md_id\x18\x01 \x01(\t\x12\x11\n\tparent_id\x18\x02 \x01(\t\x12\'\n\nitems_meta\x18\x03 \x03(\x0b\x32\x13.namespace.ItemMeta\"/\n\x0b\x41\x64\x64Response\x12\x0e\n\x06\x63md_id\x18\x01 \x01(\t\x12\x10\n\x08item_ids\x18\x02 \x03(\t\"_\n\x0e\x41\x64\x64\x42ulkCommand\x12\x0e\n\x06\x63md_id\x18\x01 \x01(\t\x12\x11\n\tparent_id\x18\x02 \x01(\t\x12*\n\x06schema\x18\x03 \x01(\x0b\x32\x1a.namespace.NamespaceSchema\"!\n\x0f\x41\x64\x64\x42ulkResponse\x12\x0e\n\x06\x63md_id\x18\x01 \x01(\t\"C\n\x0bListCommand\x12\x0e\n\x06\x63md_id\x18\x01 \x01(\t\x12\x16\n\tfolder_id\x18\x02 \x01(\tH\x00\x88\x01\x01\x42\x0c\n\n_folder_id\"\xa9\x02\n\x0cListResponse\x12\x0e\n\x06\x63md_id\x18\x01 \x01(\t\x12\x46\n\x10\x63hildren_folders\x18\x02 \x03(\x0b\x32,.namespace.ListResponse.ChildrenFoldersEntry\x12@\n\rchildren_vars\x18\x03 \x03(\x0b\x32).namespace.ListResponse.ChildrenVarsEntry\x1a\x36\n\x14\x43hildrenFoldersEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\x1aG\n\x11\x43hildrenVarsEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12!\n\x05value\x18\x02 \x01(\x0b\x32\x12.namespace.VarInfo:\x02\x38\x01\"K\n\nSetCommand\x12\x0e\n\x06\x63md_id\x18\x01 \x01(\t\x12-\n\x0evar_ids_values\x18\x02 \x03(\x0b\x32\x15.namespace.VarIdValue\"\x1d\n\x0bSetResponse\x12\x0e\n\x06\x63md_id\x18\x01 \x01(\t\"-\n\nGetCommand\x12\x0e\n\x06\x63md_id\x18\x01 \x01(\t\x12\x0f\n\x07var_ids\x18\x02 \x03(\t\"K\n\x0bGetResponse\x12\x0e\n\x06\x63md_id\x18\x01 \x01(\t\x12,\n\nvar_values\x18\x02 \x03(\x0b\x32\x18.namespace.OptionalValue\".\n\nDelCommand\x12\x0e\n\x06\x63md_id\x18\x01 \x01(\t\x12\x10\n\x08item_ids\x18\x02 \x03(\t\"\x1d\n\x0b\x44\x65lResponse\x12\x0e\n\x06\x63md_id\x18\x01 \x01(\t\"$\n\x12InvalidCmdResponse\x12\x0e\n\x06\x63md_id\x18\x01 \x01(\t\"\x88\x02\n\x07\x43ommand\x12$\n\x03\x61\x64\x64\x18\x01 \x01(\x0b\x32\x15.namespace.AddCommandH\x00\x12&\n\x04list\x18\x02 \x01(\x0b\x32\x16.namespace.ListCommandH\x00\x12$\n\x03set\x18\x03 \x01(\x0b\x32\x15.namespace.SetCommandH\x00\x12$\n\x03get\x18\x04 \x01(\x0b\x32\x15.namespace.GetCommandH\x00\x12$\n\x03\x64\x65l\x18\x05 \x01(\x0b\x32\x15.namespace.DelCommandH\x00\x12-\n\x08\x61\x64\x64_bulk\x18\x06 \x01(\x0b\x32\x19.namespace.AddBulkCommandH\x00\x42\x0e\n\x0c\x63ommand_type\"\x90\x03\n\x08Response\x12%\n\x03\x61\x64\x64\x18\x01 \x01(\x0b\x32\x16.namespace.AddResponseH\x00\x12\'\n\x04list\x18\x02 \x01(\x0b\x32\x17.namespace.ListResponseH\x00\x12%\n\x03set\x18\x03 \x01(\x0b\x32\x16.namespace.SetResponseH\x00\x12%\n\x03get\x18\x04 \x01(\x0b\x32\x16.namespace.GetResponseH\x00\x12%\n\x03\x64\x65l\x18\x05 \x01(\x0b\x32\x16.namespace.DelResponseH\x00\x12,\n\x03inv\x18\x06 \x01(\x0b\x32\x1d.namespace.InvalidCmdResponseH\x00\x12.\n\x08\x61\x64\x64_bulk\x18\x07 \x01(\x0b\x32\x1a.namespace.AddBulkResponseH\x00\x12*\n\x06status\x18\x08 \x01(\x0e\x32\x1a.namespace.OperationStatus\x12\x16\n\terror_msg\x18\t \x01(\tH\x01\x88\x01\x01\x42\x0f\n\rresponse_typeB\x0c\n\n_error_msgb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x18namespace/commands.proto\x12\tnamespace\x1a\x15namespace/enums.proto\x1a\x15namespace/types.proto\"X\n\nAddCommand\x12\x0e\n\x06\x63md_id\x18\x01 \x01(\t\x12\x11\n\tparent_id\x18\x02 \x01(\t\x12\'\n\nitems_meta\x18\x03 \x03(\x0b\x32\x13.namespace.ItemMeta\"\x1d\n\x0b\x41\x64\x64Response\x12\x0e\n\x06\x63md_id\x18\x01 \x01(\t\"_\n\x0e\x41\x64\x64\x42ulkCommand\x12\x0e\n\x06\x63md_id\x18\x01 \x01(\t\x12\x11\n\tparent_id\x18\x02 \x01(\t\x12*\n\x06schema\x18\x03 \x01(\x0b\x32\x1a.namespace.NamespaceSchema\"!\n\x0f\x41\x64\x64\x42ulkResponse\x12\x0e\n\x06\x63md_id\x18\x01 \x01(\t\"C\n\x0bListCommand\x12\x0e\n\x06\x63md_id\x18\x01 \x01(\t\x12\x16\n\tfolder_id\x18\x02 \x01(\tH\x00\x88\x01\x01\x42\x0c\n\n_folder_id\"\xa9\x02\n\x0cListResponse\x12\x0e\n\x06\x63md_id\x18\x01 \x01(\t\x12\x46\n\x10\x63hildren_folders\x18\x02 \x03(\x0b\x32,.namespace.ListResponse.ChildrenFoldersEntry\x12@\n\rchildren_vars\x18\x03 \x03(\x0b\x32).namespace.ListResponse.ChildrenVarsEntry\x1a\x36\n\x14\x43hildrenFoldersEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\x1aG\n\x11\x43hildrenVarsEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12!\n\x05value\x18\x02 \x01(\x0b\x32\x12.namespace.VarInfo:\x02\x38\x01\"K\n\nSetCommand\x12\x0e\n\x06\x63md_id\x18\x01 \x01(\t\x12-\n\x0evar_ids_values\x18\x02 \x03(\x0b\x32\x15.namespace.VarIdValue\"\x1d\n\x0bSetResponse\x12\x0e\n\x06\x63md_id\x18\x01 \x01(\t\"-\n\nGetCommand\x12\x0e\n\x06\x63md_id\x18\x01 \x01(\t\x12\x0f\n\x07var_ids\x18\x02 \x03(\t\"K\n\x0bGetResponse\x12\x0e\n\x06\x63md_id\x18\x01 \x01(\t\x12,\n\nvar_values\x18\x02 \x03(\x0b\x32\x18.namespace.OptionalValue\".\n\nDelCommand\x12\x0e\n\x06\x63md_id\x18\x01 \x01(\t\x12\x10\n\x08item_ids\x18\x02 \x03(\t\"\x1d\n\x0b\x44\x65lResponse\x12\x0e\n\x06\x63md_id\x18\x01 \x01(\t\"$\n\x12InvalidCmdResponse\x12\x0e\n\x06\x63md_id\x18\x01 \x01(\t\"\x88\x02\n\x07\x43ommand\x12$\n\x03\x61\x64\x64\x18\x01 \x01(\x0b\x32\x15.namespace.AddCommandH\x00\x12&\n\x04list\x18\x02 \x01(\x0b\x32\x16.namespace.ListCommandH\x00\x12$\n\x03set\x18\x03 \x01(\x0b\x32\x15.namespace.SetCommandH\x00\x12$\n\x03get\x18\x04 \x01(\x0b\x32\x15.namespace.GetCommandH\x00\x12$\n\x03\x64\x65l\x18\x05 \x01(\x0b\x32\x15.namespace.DelCommandH\x00\x12-\n\x08\x61\x64\x64_bulk\x18\x06 \x01(\x0b\x32\x19.namespace.AddBulkCommandH\x00\x42\x0e\n\x0c\x63ommand_type\"\x90\x03\n\x08Response\x12%\n\x03\x61\x64\x64\x18\x01 \x01(\x0b\x32\x16.namespace.AddResponseH\x00\x12\'\n\x04list\x18\x02 \x01(\x0b\x32\x17.namespace.ListResponseH\x00\x12%\n\x03set\x18\x03 \x01(\x0b\x32\x16.namespace.SetResponseH\x00\x12%\n\x03get\x18\x04 \x01(\x0b\x32\x16.namespace.GetResponseH\x00\x12%\n\x03\x64\x65l\x18\x05 \x01(\x0b\x32\x16.namespace.DelResponseH\x00\x12,\n\x03inv\x18\x06 \x01(\x0b\x32\x1d.namespace.InvalidCmdResponseH\x00\x12.\n\x08\x61\x64\x64_bulk\x18\x07 \x01(\x0b\x32\x1a.namespace.AddBulkResponseH\x00\x12*\n\x06status\x18\x08 \x01(\x0e\x32\x1a.namespace.OperationStatus\x12\x16\n\terror_msg\x18\t \x01(\tH\x01\x88\x01\x01\x42\x0f\n\rresponse_typeB\x0c\n\n_error_msgb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -37,44 +37,38 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_LISTRESPONSE_CHILDRENFOLDERSENTRY']._serialized_options = b'8\001'
   _globals['_LISTRESPONSE_CHILDRENVARSENTRY']._loaded_options = None
   _globals['_LISTRESPONSE_CHILDRENVARSENTRY']._serialized_options = b'8\001'
-  _globals['_ITEMMETA']._serialized_start=86
-  _globals['_ITEMMETA']._serialized_end=237
-  _globals['_VARINFO']._serialized_start=239
-  _globals['_VARINFO']._serialized_end=308
-  _globals['_VARIDVALUE']._serialized_start=310
-  _globals['_VARIDVALUE']._serialized_end=371
-  _globals['_ADDCOMMAND']._serialized_start=373
-  _globals['_ADDCOMMAND']._serialized_end=461
-  _globals['_ADDRESPONSE']._serialized_start=463
-  _globals['_ADDRESPONSE']._serialized_end=510
-  _globals['_ADDBULKCOMMAND']._serialized_start=512
-  _globals['_ADDBULKCOMMAND']._serialized_end=607
-  _globals['_ADDBULKRESPONSE']._serialized_start=609
-  _globals['_ADDBULKRESPONSE']._serialized_end=642
-  _globals['_LISTCOMMAND']._serialized_start=644
-  _globals['_LISTCOMMAND']._serialized_end=711
-  _globals['_LISTRESPONSE']._serialized_start=714
-  _globals['_LISTRESPONSE']._serialized_end=1011
-  _globals['_LISTRESPONSE_CHILDRENFOLDERSENTRY']._serialized_start=884
-  _globals['_LISTRESPONSE_CHILDRENFOLDERSENTRY']._serialized_end=938
-  _globals['_LISTRESPONSE_CHILDRENVARSENTRY']._serialized_start=940
-  _globals['_LISTRESPONSE_CHILDRENVARSENTRY']._serialized_end=1011
-  _globals['_SETCOMMAND']._serialized_start=1013
-  _globals['_SETCOMMAND']._serialized_end=1088
-  _globals['_SETRESPONSE']._serialized_start=1090
-  _globals['_SETRESPONSE']._serialized_end=1119
-  _globals['_GETCOMMAND']._serialized_start=1121
-  _globals['_GETCOMMAND']._serialized_end=1166
-  _globals['_GETRESPONSE']._serialized_start=1168
-  _globals['_GETRESPONSE']._serialized_end=1243
-  _globals['_DELCOMMAND']._serialized_start=1245
-  _globals['_DELCOMMAND']._serialized_end=1291
-  _globals['_DELRESPONSE']._serialized_start=1293
-  _globals['_DELRESPONSE']._serialized_end=1322
-  _globals['_INVALIDCMDRESPONSE']._serialized_start=1324
-  _globals['_INVALIDCMDRESPONSE']._serialized_end=1360
-  _globals['_COMMAND']._serialized_start=1363
-  _globals['_COMMAND']._serialized_end=1627
-  _globals['_RESPONSE']._serialized_start=1630
-  _globals['_RESPONSE']._serialized_end=2030
+  _globals['_ADDCOMMAND']._serialized_start=85
+  _globals['_ADDCOMMAND']._serialized_end=173
+  _globals['_ADDRESPONSE']._serialized_start=175
+  _globals['_ADDRESPONSE']._serialized_end=204
+  _globals['_ADDBULKCOMMAND']._serialized_start=206
+  _globals['_ADDBULKCOMMAND']._serialized_end=301
+  _globals['_ADDBULKRESPONSE']._serialized_start=303
+  _globals['_ADDBULKRESPONSE']._serialized_end=336
+  _globals['_LISTCOMMAND']._serialized_start=338
+  _globals['_LISTCOMMAND']._serialized_end=405
+  _globals['_LISTRESPONSE']._serialized_start=408
+  _globals['_LISTRESPONSE']._serialized_end=705
+  _globals['_LISTRESPONSE_CHILDRENFOLDERSENTRY']._serialized_start=578
+  _globals['_LISTRESPONSE_CHILDRENFOLDERSENTRY']._serialized_end=632
+  _globals['_LISTRESPONSE_CHILDRENVARSENTRY']._serialized_start=634
+  _globals['_LISTRESPONSE_CHILDRENVARSENTRY']._serialized_end=705
+  _globals['_SETCOMMAND']._serialized_start=707
+  _globals['_SETCOMMAND']._serialized_end=782
+  _globals['_SETRESPONSE']._serialized_start=784
+  _globals['_SETRESPONSE']._serialized_end=813
+  _globals['_GETCOMMAND']._serialized_start=815
+  _globals['_GETCOMMAND']._serialized_end=860
+  _globals['_GETRESPONSE']._serialized_start=862
+  _globals['_GETRESPONSE']._serialized_end=937
+  _globals['_DELCOMMAND']._serialized_start=939
+  _globals['_DELCOMMAND']._serialized_end=985
+  _globals['_DELRESPONSE']._serialized_start=987
+  _globals['_DELRESPONSE']._serialized_end=1016
+  _globals['_INVALIDCMDRESPONSE']._serialized_start=1018
+  _globals['_INVALIDCMDRESPONSE']._serialized_end=1054
+  _globals['_COMMAND']._serialized_start=1057
+  _globals['_COMMAND']._serialized_end=1321
+  _globals['_RESPONSE']._serialized_start=1324
+  _globals['_RESPONSE']._serialized_end=1724
 # @@protoc_insertion_point(module_scope)

@@ -8,34 +8,6 @@ from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
 
 DESCRIPTOR: _descriptor.FileDescriptor
 
-class ItemMeta(_message.Message):
-    __slots__ = ("name", "i_type", "var_d_type", "uid")
-    NAME_FIELD_NUMBER: _ClassVar[int]
-    I_TYPE_FIELD_NUMBER: _ClassVar[int]
-    VAR_D_TYPE_FIELD_NUMBER: _ClassVar[int]
-    UID_FIELD_NUMBER: _ClassVar[int]
-    name: str
-    i_type: _enums_pb2.ItemType
-    var_d_type: _enums_pb2.VarDataType
-    uid: str
-    def __init__(self, name: _Optional[str] = ..., i_type: _Optional[_Union[_enums_pb2.ItemType, str]] = ..., var_d_type: _Optional[_Union[_enums_pb2.VarDataType, str]] = ..., uid: _Optional[str] = ...) -> None: ...
-
-class VarInfo(_message.Message):
-    __slots__ = ("var_id", "var_d_type")
-    VAR_ID_FIELD_NUMBER: _ClassVar[int]
-    VAR_D_TYPE_FIELD_NUMBER: _ClassVar[int]
-    var_id: str
-    var_d_type: _enums_pb2.VarDataType
-    def __init__(self, var_id: _Optional[str] = ..., var_d_type: _Optional[_Union[_enums_pb2.VarDataType, str]] = ...) -> None: ...
-
-class VarIdValue(_message.Message):
-    __slots__ = ("var_id", "value")
-    VAR_ID_FIELD_NUMBER: _ClassVar[int]
-    VALUE_FIELD_NUMBER: _ClassVar[int]
-    var_id: str
-    value: _types_pb2.Value
-    def __init__(self, var_id: _Optional[str] = ..., value: _Optional[_Union[_types_pb2.Value, _Mapping]] = ...) -> None: ...
-
 class AddCommand(_message.Message):
     __slots__ = ("cmd_id", "parent_id", "items_meta")
     CMD_ID_FIELD_NUMBER: _ClassVar[int]
@@ -43,16 +15,14 @@ class AddCommand(_message.Message):
     ITEMS_META_FIELD_NUMBER: _ClassVar[int]
     cmd_id: str
     parent_id: str
-    items_meta: _containers.RepeatedCompositeFieldContainer[ItemMeta]
-    def __init__(self, cmd_id: _Optional[str] = ..., parent_id: _Optional[str] = ..., items_meta: _Optional[_Iterable[_Union[ItemMeta, _Mapping]]] = ...) -> None: ...
+    items_meta: _containers.RepeatedCompositeFieldContainer[_types_pb2.ItemMeta]
+    def __init__(self, cmd_id: _Optional[str] = ..., parent_id: _Optional[str] = ..., items_meta: _Optional[_Iterable[_Union[_types_pb2.ItemMeta, _Mapping]]] = ...) -> None: ...
 
 class AddResponse(_message.Message):
-    __slots__ = ("cmd_id", "item_ids")
+    __slots__ = ("cmd_id",)
     CMD_ID_FIELD_NUMBER: _ClassVar[int]
-    ITEM_IDS_FIELD_NUMBER: _ClassVar[int]
     cmd_id: str
-    item_ids: _containers.RepeatedScalarFieldContainer[str]
-    def __init__(self, cmd_id: _Optional[str] = ..., item_ids: _Optional[_Iterable[str]] = ...) -> None: ...
+    def __init__(self, cmd_id: _Optional[str] = ...) -> None: ...
 
 class AddBulkCommand(_message.Message):
     __slots__ = ("cmd_id", "parent_id", "schema")
@@ -92,23 +62,23 @@ class ListResponse(_message.Message):
         KEY_FIELD_NUMBER: _ClassVar[int]
         VALUE_FIELD_NUMBER: _ClassVar[int]
         key: str
-        value: VarInfo
-        def __init__(self, key: _Optional[str] = ..., value: _Optional[_Union[VarInfo, _Mapping]] = ...) -> None: ...
+        value: _types_pb2.VarInfo
+        def __init__(self, key: _Optional[str] = ..., value: _Optional[_Union[_types_pb2.VarInfo, _Mapping]] = ...) -> None: ...
     CMD_ID_FIELD_NUMBER: _ClassVar[int]
     CHILDREN_FOLDERS_FIELD_NUMBER: _ClassVar[int]
     CHILDREN_VARS_FIELD_NUMBER: _ClassVar[int]
     cmd_id: str
     children_folders: _containers.ScalarMap[str, str]
-    children_vars: _containers.MessageMap[str, VarInfo]
-    def __init__(self, cmd_id: _Optional[str] = ..., children_folders: _Optional[_Mapping[str, str]] = ..., children_vars: _Optional[_Mapping[str, VarInfo]] = ...) -> None: ...
+    children_vars: _containers.MessageMap[str, _types_pb2.VarInfo]
+    def __init__(self, cmd_id: _Optional[str] = ..., children_folders: _Optional[_Mapping[str, str]] = ..., children_vars: _Optional[_Mapping[str, _types_pb2.VarInfo]] = ...) -> None: ...
 
 class SetCommand(_message.Message):
     __slots__ = ("cmd_id", "var_ids_values")
     CMD_ID_FIELD_NUMBER: _ClassVar[int]
     VAR_IDS_VALUES_FIELD_NUMBER: _ClassVar[int]
     cmd_id: str
-    var_ids_values: _containers.RepeatedCompositeFieldContainer[VarIdValue]
-    def __init__(self, cmd_id: _Optional[str] = ..., var_ids_values: _Optional[_Iterable[_Union[VarIdValue, _Mapping]]] = ...) -> None: ...
+    var_ids_values: _containers.RepeatedCompositeFieldContainer[_types_pb2.VarIdValue]
+    def __init__(self, cmd_id: _Optional[str] = ..., var_ids_values: _Optional[_Iterable[_Union[_types_pb2.VarIdValue, _Mapping]]] = ...) -> None: ...
 
 class SetResponse(_message.Message):
     __slots__ = ("cmd_id",)
