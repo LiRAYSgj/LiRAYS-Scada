@@ -6,12 +6,18 @@
   import TreeRow from "./TreeRow.svelte";
   import { fetchTreeChildren } from "../server-adapter";
   import { createTreeStore } from "../tree-store";
+  import { getLoadedDescendantIds } from "../tree-selection";
   import type { TreeNode } from "../types";
   import {
     type TagScalarValue,
     WebSocketConnectionStatus,
   } from "$lib/core/ws/types";
   import { ItemType, VarDataType } from "$lib/proto/namespace/enums";
+
+  export interface SelectionChangePayload {
+    add: string[];
+    remove: string[];
+  }
 
   interface Props {
     onNodeContextMenu: (event: MouseEvent, node: TreeNode) => void;
@@ -28,6 +34,21 @@
       itemType: ItemType;
       varType: VarDataType | undefined;
     }) => Promise<void>;
+    /** When true, show checkboxes and use multi-selection instead of single select/drag/context. */
+    multiSelectMode?: boolean;
+    /** Set of selected node ids (used when multiSelectMode is true). */
+    selection?: Set<string>;
+    /** When true, checking a parent adds all loaded descendants; unchecking removes them. */
+    propagateDown?: boolean;
+    /** When true, checking a node adds parent (and ancestors) if all siblings are selected. */
+    propagateUp?: boolean;
+    /** Called when user toggles selection (checkbox). */
+    onSelectionChange?: (payload: SelectionChangePayload) => void;
+    /** Called when tree state changes so parent can compute minimal set for delete (nodes, rootIds). */
+    onTreeStateSnapshot?: (
+      nodes: Record<string, TreeNode>,
+      rootIds: string[],
+    ) => void;
   }
 
   let {
@@ -39,6 +60,12 @@
     liveTagValues = {},
     onRootId,
     onCreateItem,
+    multiSelectMode = false,
+    selection = new Set<string>(),
+    propagateDown = true,
+    propagateUp = true,
+    onSelectionChange,
+    onTreeStateSnapshot,
   }: Props = $props();
 
   const tree = createTreeStore({
@@ -77,6 +104,70 @@
       onRootId(null);
     }
   });
+
+  $effect(() => {
+    if (!onTreeStateSnapshot) return;
+    const state = $treeState;
+    onTreeStateSnapshot(state.nodes, state.rootIds);
+  });
+
+  /** When in multi-select with propagateDown: add newly loaded descendants of selected nodes to selection (e.g. after expanding a selected parent). */
+  $effect(() => {
+    if (
+      !multiSelectMode ||
+      !propagateDown ||
+      !onSelectionChange
+    ) return;
+    const state = $treeState;
+    const nodes = state.nodes;
+    const toAddSet = new Set<string>();
+    for (const selectedId of selection) {
+      for (const id of getLoadedDescendantIds(selectedId, nodes)) {
+        if (!selection.has(id)) toAddSet.add(id);
+      }
+    }
+    if (toAddSet.size > 0) {
+      onSelectionChange({ add: [...toAddSet], remove: [] });
+    }
+  });
+
+  function handleSelectionCheckClick(nodeId: string): void {
+    if (!onSelectionChange) return;
+    const state = get(treeState);
+    const nodes = state.nodes;
+    const currentlyChecked = selection.has(nodeId);
+    const newChecked = !currentlyChecked;
+
+    const add: string[] = [];
+    const remove: string[] = [];
+
+    if (newChecked) {
+      add.push(nodeId);
+      if (propagateDown) {
+        add.push(...getLoadedDescendantIds(nodeId, nodes));
+      }
+      if (propagateUp) {
+        let parentId: string | null = nodes[nodeId]?.parentId ?? null;
+        while (parentId) {
+          const parent = nodes[parentId];
+          if (!parent?.childIds) break;
+          const allSiblingsSelected = parent.childIds.every((id) =>
+            id === nodeId || selection.has(id) || add.includes(id),
+          );
+          if (!allSiblingsSelected) break;
+          add.push(parentId);
+          parentId = parent.parentId ?? null;
+        }
+      }
+    } else {
+      remove.push(nodeId);
+      if (propagateDown) {
+        remove.push(...getLoadedDescendantIds(nodeId, nodes));
+      }
+    }
+
+    onSelectionChange({ add, remove });
+  }
 
   const totalRows = $derived($visibleRows.length);
   const startIndex = $derived(
@@ -369,6 +460,11 @@
             liveValue={realtimeEnabled && row.node.kind === "tag"
               ? liveTagValues[row.node.id]
               : undefined}
+            {multiSelectMode}
+            isChecked={multiSelectMode && selection.has(row.id)}
+            onCheckClick={
+              multiSelectMode ? () => handleSelectionCheckClick(row.id) : undefined
+            }
           />
         {/each}
         <div style={`height: ${bottomPadding}px`} aria-hidden="true"></div>
