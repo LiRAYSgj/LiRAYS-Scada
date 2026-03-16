@@ -181,6 +181,15 @@ impl VariableManager {
         Ok((children_folders, children_vars))
     }
 
+    pub fn list_keys_with_prefix(&self, prefix: &str) -> Result<Vec<String>, String> {
+        let mut keys = Vec::new();
+        for result in self.items_tree.scan_prefix(prefix) {
+            let (key, _) = result.map_err(|e| format!("Error reading tree: {e}"))?;
+            keys.push(String::from_utf8(key.to_vec()).map_err(|e| format!("Error decoding key: {e}"))?);
+        }
+        Ok(keys)
+    }
+
     fn add_bulk_recursive(&self, root_parent_id: &str, root_nodes: HashMap<String, NamespaceNode>, batch: &mut Batch) -> Result<(), String> {
         let mut stack = vec![(root_parent_id.to_string(), root_nodes)];
         let mut total_count = 0usize;

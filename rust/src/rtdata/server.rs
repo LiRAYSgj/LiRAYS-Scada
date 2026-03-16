@@ -11,6 +11,17 @@ use super::namespace::Command;
 
 async fn run_server(host: &str, port: u16, db_dir: &str) {
     let var_manager = Arc::new(VariableManager::new(db_dir));
+
+    // println!("------------------");
+    // for key in var_manager.list_keys_with_prefix("H:").unwrap() {
+    //     println!("{}", key);
+    // }
+    // println!("------------------");
+    // for key in var_manager.list_keys_with_prefix("D:").unwrap() {
+    //     println!("{}", key);
+    // }
+    // println!("------------------");
+
     match TcpListener::bind((host, port)).await {
         Ok(listener) => {
             info!("LiRAYS server listening on {}:{}", host, port);
