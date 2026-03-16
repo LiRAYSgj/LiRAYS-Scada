@@ -325,7 +325,8 @@ impl VariableManager {
     pub fn exec_cmd(&self, cmd: Command) -> Response {
         match cmd.command_type {
             Some(CommandType::Add(add_cmd)) => {
-                let (status, error_msg) = match self.add_items(&add_cmd.parent_id, add_cmd.items_meta) {
+                let parent_id = add_cmd.parent_id.unwrap_or("/".to_string());
+                let (status, error_msg) = match self.add_items(&parent_id, add_cmd.items_meta) {
                     Ok(()) => (OperationStatus::Ok as i32, None),
                     Err(e) => (OperationStatus::Err as i32, Some(format!("Inserting error: {e}")))
                 };
