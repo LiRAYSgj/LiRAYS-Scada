@@ -26,6 +26,8 @@
     multiSelectMode?: boolean;
     /** Whether this node is in the multi-selection (only when multiSelectMode). */
     isChecked?: boolean;
+    /** Partially selected: some but not all loaded children are selected (only when multiSelectMode). */
+    isIndeterminate?: boolean;
     /** Called when the selection checkbox is clicked (only when multiSelectMode). */
     onCheckClick?: (event: MouseEvent) => void;
   }
@@ -41,6 +43,7 @@
     liveValue,
     multiSelectMode = false,
     isChecked = false,
+    isIndeterminate = false,
     onCheckClick,
   }: Props = $props();
 
@@ -89,16 +92,21 @@
     {#if multiSelectMode}
       <button
         type="button"
-        class="flex h-5 w-5 shrink-0 items-center justify-center rounded border border-black/25 bg-(--bg-panel) text-(--text-primary) hover:border-black/40 dark:border-white/25 dark:hover:border-white/40"
-        aria-label={isChecked ? "Deselect" : "Select"}
-        aria-pressed={isChecked}
+        class="cursor-pointer flex h-5 w-5 shrink-0 items-center justify-center rounded border border-black/25 bg-(--bg-panel) text-(--text-primary) hover:border-black/40 dark:border-white/25 dark:hover:border-white/40"
+        role="checkbox"
+        aria-label={isIndeterminate ? "Partially selected" : isChecked ? "Deselect" : "Select"}
+        aria-checked={isChecked ? "true" : isIndeterminate ? "mixed" : "false"}
         onclick={(e) => {
           e.preventDefault();
           e.stopPropagation();
           onCheckClick?.(e);
         }}
       >
-        {#if isChecked}
+        {#if isIndeterminate}
+          <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+        {:else if isChecked}
           <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="20 6 9 17 4 12" />
           </svg>

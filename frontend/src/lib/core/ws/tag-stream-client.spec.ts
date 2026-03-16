@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TagStreamClient } from "./tag-stream-client";
 import { WebSocketConnectionStatus } from "./types";
 import { Command, Response } from "../../proto/namespace/commands";
-import { OperationStatus } from "../../proto/namespace/enums";
+import { ItemType, OperationStatus } from "../../proto/namespace/enums";
 
 vi.mock("$app/environment", () => ({
   browser: true,
@@ -213,6 +213,34 @@ describe("TagStreamClient", () => {
     ws.emit("message", { data: responseBytes.slice().buffer });
 
     await expect(bulkPromise).resolves.toBeUndefined();
+  });
+
+  it("sends add command with empty parentId when parentId is null (root creation)", async () => {
+    const client = new TagStreamClient();
+    client.start("ws://localhost:8787");
+    const ws = FakeWebSocket.instances[0];
+    ws.readyState = FakeWebSocket.OPEN;
+    ws.emit("open");
+
+    const addPromise = client.addItem(
+      null,
+      "newRoot",
+      ItemType.ITEM_TYPE_FOLDER,
+      undefined,
+      "ws://localhost:8787",
+    );
+    await Promise.resolve();
+    const addMsg = ws.sent.find((msg) => Command.decode(msg).add !== undefined);
+    expect(addMsg).toBeDefined();
+    const decoded = Command.decode(addMsg!);
+    expect(decoded.add?.parentId).toBe("");
+    const cmdId = decoded.add!.cmdId;
+    const responseBytes = Response.encode({
+      status: OperationStatus.OPERATION_STATUS_OK,
+      add: { cmdId },
+    }).finish();
+    ws.emit("message", { data: responseBytes.slice().buffer });
+    await expect(addPromise).resolves.toEqual([]);
   });
 
   it("enters reconnecting state after unexpected close", () => {

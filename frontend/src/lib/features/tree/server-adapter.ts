@@ -16,13 +16,11 @@ function toTreeNodes(
   parent: TreeNode | null,
   payload: ListResponse,
 ): TreeNode[] {
-  const basePath = parent?.path ?? "";
-
   const folders = Object.entries(payload.childrenFolders).map(([name, id]) => ({
     id,
     parentId: parent?.id ?? null,
     name,
-    path: basePath ? `${basePath}/${name}` : name,
+    path: id,
     kind: "folder" as const,
     hasChildren: true,
     childIds: null,
@@ -33,7 +31,7 @@ function toTreeNodes(
       id,
       parentId: parent?.id ?? null,
       name,
-      path: basePath ? `${basePath}/${name}` : name,
+      path: id,
       kind: "tag" as const,
       hasChildren: false,
       childIds: null,

@@ -121,4 +121,24 @@ describe("createPageTagRealtimeProvider", () => {
     );
     expect(removeItems).toHaveBeenCalledWith(["a"], "ws://localhost:8787");
   });
+
+  it("passes null parentId for root creation when add from toolbar", async () => {
+    const provider = createPageTagRealtimeProvider(
+      "ws://localhost:8787",
+      fakeClient,
+    );
+    await provider.addItem(
+      null,
+      "newRoot",
+      ItemType.ITEM_TYPE_FOLDER,
+      undefined,
+    );
+    expect(addItem).toHaveBeenCalledWith(
+      null,
+      "newRoot",
+      ItemType.ITEM_TYPE_FOLDER,
+      undefined,
+      "ws://localhost:8787",
+    );
+  });
 });

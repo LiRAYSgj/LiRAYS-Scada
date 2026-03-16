@@ -43,19 +43,19 @@
 			{#if multiSelectMode}
 				<Button
 					variant="icon"
-					icon={ListChecks}
-					title="Multi-selection mode (click to exit)"
-					ariaLabel="Multi-selection mode"
-					selected={true}
-					onclick={onToggleMultiSelect}
-				/>
-				<Button
-					variant="icon"
 					icon={Trash2}
 					title="Remove selected"
 					ariaLabel="Remove selected"
 					disabled={selectionCount === 0}
 					onclick={onRemoveSelection}
+				/>
+				<Button
+					variant="icon"
+					icon={ListChecks}
+					title="Multi-selection mode (click to exit)"
+					ariaLabel="Multi-selection mode"
+					selected={true}
+					onclick={onToggleMultiSelect}
 				/>
 			{:else}
 				<Button

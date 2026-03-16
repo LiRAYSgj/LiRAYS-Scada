@@ -158,14 +158,14 @@ export class TagStreamClient {
   }
 
   async addItem(
-    parentId: string,
+    parentId: string | null,
     name: string,
     itemType: ItemType,
     varType: VarDataType | undefined,
     endpoint?: string,
   ): Promise<string[]> {
     await this.ensureConnected(endpoint);
-    const { cmdId, command } = createAddCommand(parentId, [
+    const { cmdId, command } = createAddCommand(parentId ?? "", [
       createSingleItemMeta(
         name,
         itemType,
@@ -344,6 +344,7 @@ export class TagStreamClient {
   }
 
   private send(message: Command): void {
+    console.log("Sending message:", message);
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
       return;
     }

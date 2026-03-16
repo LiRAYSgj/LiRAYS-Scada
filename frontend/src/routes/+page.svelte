@@ -176,19 +176,15 @@
           );
         },
       },
-      ...(context.node.parentId
-        ? [
-            {
-              id: "folder-remove",
-              label: "Remove",
-              icon: Trash2,
-              disabled: get(wsStatus) !== "connected",
-              onSelect: () => {
-                openRemoveDialog(context.node);
-              },
-            },
-          ]
-        : []),
+      {
+        id: "folder-remove",
+        label: "Remove",
+        icon: Trash2,
+        disabled: get(wsStatus) !== "connected",
+        onSelect: () => {
+          openRemoveDialog(context.node);
+        },
+      },
       { id: "folder-sep-ns", label: "", separator: true },
       {
         id: "folder-namespace-builder",
@@ -263,7 +259,7 @@
   };
 
   async function createTreeItem(input: {
-    parentId: string;
+    parentId: string | null;
     name: string;
     itemType: ItemType;
     varType: VarDataType | undefined;
@@ -357,6 +353,7 @@
     if (minimalIds.length === 0) {
       closeRemoveMultipleDialog(true);
       treeSelection = new Set();
+      multiSelectMode = false;
       return;
     }
     removeMultipleSubmitting = true;
@@ -364,6 +361,7 @@
     try {
       await realtimeProvider.removeItems(minimalIds);
       treeSelection = new Set();
+      multiSelectMode = false;
       closeRemoveMultipleDialog(true);
     } catch (error) {
       removeMultipleError =
@@ -553,16 +551,15 @@
     );
   }
 
-  /** Path for dialog title: omit root segment and start with /. e.g. "root/Area_/Sub" → "/Area_/Sub". */
+  /** Path for dialog title: node path (id) with leading slash. Multiple roots: path is id from root to node. */
   function formatNamespaceBuilderPath(path: string): string {
-    const segments = path.split("/").filter(Boolean);
-    const withoutRoot = segments.slice(1).join("/");
-    return withoutRoot ? `/${withoutRoot}` : "/";
+    if (!path.trim()) return "/";
+    return path.startsWith("/") ? path : `/${path}`;
   }
 
-  /** Opens the Namespace Template Builder at root (used by toolbar). Sends root node id as parentId when tree has loaded. */
+  /** Opens the Namespace Template Builder at root (used by toolbar). Sends "" as parentId for root-level bulk add. */
   function openNamespaceBuilderFromToolbar(): void {
-    openNamespaceBuilderDialog(treeRootId ?? "", "/");
+    openNamespaceBuilderDialog("", "/");
   }
 
   /** Opens the Namespace Template Builder dialog (bulk add from YAML). parentId: "" for root, or folder id. parentDisplay: "/" for root, or path like "/Area_/Sub" for dialog title. */
@@ -743,7 +740,10 @@
     onOpenNamespaceBuilder={openNamespaceBuilderFromToolbar}
     isAddDisabled={false}
     multiSelectMode={multiSelectMode}
-    onToggleMultiSelect={() => (multiSelectMode = !multiSelectMode)}
+    onToggleMultiSelect={() => {
+      multiSelectMode = !multiSelectMode;
+      if (!multiSelectMode) treeSelection = new Set();
+    }}
     selectionCount={treeSelection.size}
     onRemoveSelection={openRemoveMultipleDialog}
   />
@@ -896,7 +896,7 @@
       <div class="space-y-2">
         <h2 class="text-sm font-semibold">Remove selection</h2>
         <p class="text-xs text-(--text-muted)">
-          Remove {treeSelection.size} selected item(s)? This action cannot be
+          Remove selected item(s)? All descendants will also be removed. This action cannot be
           undone.
         </p>
         {#if removeMultipleError}

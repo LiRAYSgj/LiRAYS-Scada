@@ -3,7 +3,7 @@
 <html lang="en">
 
 <head>
-    <title>Code coverage report for features/tree/server-adapter.ts</title>
+    <title>Code coverage report for features/tree/tree-selection.ts</title>
     <meta charset="utf-8" />
     <link rel="stylesheet" href="../../prettify.css" />
     <link rel="stylesheet" href="../../base.css" />
@@ -19,34 +19,34 @@
 <body>
 <div class='wrapper'>
     <div class='pad1'>
-        <h1><a href="../../index.html">All files</a> / <a href="index.html">features/tree</a> server-adapter.ts</h1>
+        <h1><a href="../../index.html">All files</a> / <a href="index.html">features/tree</a> tree-selection.ts</h1>
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>10/10</span>
+                <span class='fraction'>31/31</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">75% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>6/8</span>
+                <span class='fraction'>14/14</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>5/5</span>
+                <span class='fraction'>6/6</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>9/9</span>
+                <span class='fraction'>25/25</span>
             </div>
         
             
@@ -117,36 +117,31 @@
 <a name='L52'></a><a href='#L52'>52</a>
 <a name='L53'></a><a href='#L53'>53</a>
 <a name='L54'></a><a href='#L54'>54</a>
-<a name='L55'></a><a href='#L55'>55</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">2x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">2x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">2x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">2x</span>
-<span class="cline-any cline-yes">1x</span>
+<a name='L55'></a><a href='#L55'>55</a>
+<a name='L56'></a><a href='#L56'>56</a>
+<a name='L57'></a><a href='#L57'>57</a>
+<a name='L58'></a><a href='#L58'>58</a>
+<a name='L59'></a><a href='#L59'>59</a>
+<a name='L60'></a><a href='#L60'>60</a>
+<a name='L61'></a><a href='#L61'>61</a>
+<a name='L62'></a><a href='#L62'>62</a>
+<a name='L63'></a><a href='#L63'>63</a>
+<a name='L64'></a><a href='#L64'>64</a>
+<a name='L65'></a><a href='#L65'>65</a>
+<a name='L66'></a><a href='#L66'>66</a>
+<a name='L67'></a><a href='#L67'>67</a>
+<a name='L68'></a><a href='#L68'>68</a>
+<a name='L69'></a><a href='#L69'>69</a>
+<a name='L70'></a><a href='#L70'>70</a>
+<a name='L71'></a><a href='#L71'>71</a>
+<a name='L72'></a><a href='#L72'>72</a>
+<a name='L73'></a><a href='#L73'>73</a>
+<a name='L74'></a><a href='#L74'>74</a>
+<a name='L75'></a><a href='#L75'>75</a>
+<a name='L76'></a><a href='#L76'>76</a>
+<a name='L77'></a><a href='#L77'>77</a>
+<a name='L78'></a><a href='#L78'>78</a>
+<a name='L79'></a><a href='#L79'>79</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -158,72 +153,149 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">73x</span>
+<span class="cline-any cline-yes">73x</span>
+<span class="cline-any cline-yes">31x</span>
+<span class="cline-any cline-yes">31x</span>
+<span class="cline-any cline-yes">37x</span>
+<span class="cline-any cline-yes">37x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">31x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import type { TreeNode } from "./types";
-import { tagStreamClient } from "$lib/core/ws/tag-stream-client";
-import type { ListResponse } from "$lib/proto/namespace/commands";
-import { varDataTypeToJSON } from "$lib/proto/namespace/enums";
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">30x</span>
+<span class="cline-any cline-yes">30x</span>
+<span class="cline-any cline-yes">21x</span>
+<span class="cline-any cline-yes">32x</span>
+<span class="cline-any cline-yes">20x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">27x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-yes">17x</span>
+<span class="cline-any cline-yes">15x</span>
+<span class="cline-any cline-yes">15x</span>
+<span class="cline-any cline-yes">15x</span>
+<span class="cline-any cline-yes">10x</span>
+<span class="cline-any cline-yes">6x</span>
+<span class="cline-any cline-yes">6x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">15x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">/**
+ * Multi-selection state for the variable tree.
+ * Selection is a Set of node ids; only nodes in this set are considered selected.
+ */
 &nbsp;
-const DEFAULT_WS_ENDPOINT = "ws://127.0.0.1:1236";
+import type { TreeNode } from "./types";
 &nbsp;
-function resolveWsEndpoint(): string {
-  const configured = import.meta.env.PUBLIC_DEMO_WS_ENDPOINT as
-    | string
-    | undefined;
-  return configured || DEFAULT_WS_ENDPOINT;
+/** Collect all loaded descendant ids of a node (recursive, uses nodes map). */
+export function getLoadedDescendantIds(
+  nodeId: string,
+  nodes: Record&lt;string, TreeNode&gt;,
+): string[] {
+  const node = nodes[nodeId];
+  if (!node?.childIds) return [];
+  const ids: string[] = [];
+  for (const childId of node.childIds) {
+    ids.push(childId);
+    ids.push(...getLoadedDescendantIds(childId, nodes));
+  }
+  return ids;
 }
 &nbsp;
-function toTreeNodes(
-  parent: TreeNode | null,
-  payload: ListResponse,
-): TreeNode[] {
-  const folders = Object.entries(payload.childrenFolders).map(([name, id]) =&gt; ({
-    id,
-    parentId: parent?.id ?? null,
-    name,
-    path: id,
-    kind: "folder" as const,
-    hasChildren: true,
-    childIds: null,
-  }));
-&nbsp;
-  const vars = Object.entries(payload.childrenVars).map(
-    ([name, { varId: id, varDType: dataType }]) =&gt; ({
-      id,
-      parentId: parent?.id ?? <span class="branch-1 cbranch-no" title="branch not covered" >null,</span>
-      name,
-      path: id,
-      kind: "tag" as const,
-      hasChildren: false,
-      childIds: null,
-      dataType:
-        dataType !== undefined ? varDataTypeToJSON(dataType) : <span class="branch-1 cbranch-no" title="branch not covered" >undefined,</span>
-    }),
-  );
-&nbsp;
-  return [...folders, ...vars];
+/**
+ * True if this node has both selected and unselected loaded descendants (partial selection).
+ * Used so indeterminate state propagates up: ancestors show indeterminate when any descendant does.
+ */
+export function hasPartialSelectionInSubtree(
+  nodeId: string,
+  nodes: Record&lt;string, TreeNode&gt;,
+  selection: Set&lt;string&gt;,
+): boolean {
+  const descendantIds = getLoadedDescendantIds(nodeId, nodes);
+  if (descendantIds.length === 0) return false;
+  const someSelected = descendantIds.some((id) =&gt; selection.has(id));
+  const someUnselected = descendantIds.some((id) =&gt; !selection.has(id));
+  return someSelected &amp;&amp; someUnselected;
 }
 &nbsp;
-export async function fetchTreeChildren(
-  parent: TreeNode | null,
-): Promise&lt;TreeNode[]&gt; {
-  const list = await tagStreamClient.listChildren(
-    parent?.id,
-    resolveWsEndpoint(),
+/** True if node is fully selected (in selection and not partially selected). */
+function isFullySelected(
+  nodeId: string,
+  nodes: Record&lt;string, TreeNode&gt;,
+  selection: Set&lt;string&gt;,
+): boolean {
+  return (
+    selection.has(nodeId) &amp;&amp;
+    !hasPartialSelectionInSubtree(nodeId, nodes, selection)
   );
-  return toTreeNodes(parent, list);
+}
+&nbsp;
+/**
+ * Ids to send to delete: only superior/higher-level selected nodes.
+ * - Root nodes can be removed and count as superior (no parent).
+ * - Partially selected nodes are not sent (only their fully-selected descendants are).
+ * - A fully selected node is sent only if it has no fully selected ancestor.
+ * So: variable selected + parent partially selected → send variable only; folder + all children selected → send folder only unless its parent is also fully selected.
+ */
+export function getMinimalAncestorSet(
+  selection: Set&lt;string&gt;,
+  nodes: Record&lt;string, TreeNode&gt;,
+  _rootId: string | null,
+): string[] {
+  const result: string[] = [];
+  for (const id of selection) {
+    if (!isFullySelected(id, nodes, selection)) continue;
+    let current: TreeNode | undefined = nodes[id];
+    let hasFullySelectedAncestor = false;
+    while (current?.parentId) {
+      if (isFullySelected(current.parentId, nodes, selection)) {
+        hasFullySelectedAncestor = true;
+        break;
+      }
+      current = nodes[current.parentId];
+    }
+    if (!hasFullySelectedAncestor) result.push(id);
+  }
+  return result;
 }
 &nbsp;</pre></td></tr></table></pre>
 

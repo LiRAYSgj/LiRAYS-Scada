@@ -45,7 +45,7 @@ export interface TagRealtimeClient {
     endpoint?: string,
   ) => Promise<void>;
   addItem: (
-    parentId: string,
+    parentId: string | null,
     name: string,
     itemType: ItemType,
     varType: VarDataType | undefined,
@@ -95,7 +95,7 @@ export function createPageTagRealtimeProvider(
       return client.sendWriteValue(id, value, endpoint);
     },
     addItem: (
-      parentId: string,
+      parentId: string | null,
       name: string,
       itemType: ItemType,
       varType: VarDataType | undefined,

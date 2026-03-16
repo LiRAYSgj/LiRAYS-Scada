@@ -1,12 +1,15 @@
 <script lang="ts">
   import { get } from "svelte/store";
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import { Button } from "$lib/components/Button";
   import { Circle, LoaderCircle } from "lucide-svelte";
   import TreeRow from "./TreeRow.svelte";
   import { fetchTreeChildren } from "../server-adapter";
   import { createTreeStore } from "../tree-store";
-  import { getLoadedDescendantIds } from "../tree-selection";
+  import {
+    getLoadedDescendantIds,
+    hasPartialSelectionInSubtree,
+  } from "../tree-selection";
   import type { TreeNode } from "../types";
   import {
     type TagScalarValue,
@@ -29,7 +32,7 @@
     /** Called when root node id(s) are known (e.g. for namespace builder parentId at root). */
     onRootId?: (id: string | null) => void;
     onCreateItem: (input: {
-      parentId: string;
+      parentId: string | null;
       name: string;
       itemType: ItemType;
       varType: VarDataType | undefined;
@@ -111,7 +114,7 @@
     onTreeStateSnapshot(state.nodes, state.rootIds);
   });
 
-  /** When in multi-select with propagateDown: add newly loaded descendants of selected nodes to selection (e.g. after expanding a selected parent). */
+  /** When in multi-select with propagateDown: add newly loaded descendants of selected nodes (e.g. after expanding). Only depends on tree state so user unchecking a child does not re-add it. */
   $effect(() => {
     if (
       !multiSelectMode ||
@@ -120,10 +123,11 @@
     ) return;
     const state = $treeState;
     const nodes = state.nodes;
+    const sel = untrack(() => selection);
     const toAddSet = new Set<string>();
-    for (const selectedId of selection) {
+    for (const selectedId of sel) {
       for (const id of getLoadedDescendantIds(selectedId, nodes)) {
-        if (!selection.has(id)) toAddSet.add(id);
+        if (!sel.has(id)) toAddSet.add(id);
       }
     }
     if (toAddSet.size > 0) {
@@ -349,10 +353,6 @@
 
   function resolveParentIdForCreate(): string | null {
     if (addParentId !== undefined) {
-      if (addParentId === null) {
-        const snapshot = get(treeState);
-        return snapshot.rootIds[0] ?? null;
-      }
       return addParentId;
     }
 
@@ -378,7 +378,7 @@
     }
 
     const parentId = resolveParentIdForCreate();
-    if (!parentId) {
+    if (parentId === null && addParentId !== null) {
       addError = "Cannot resolve parent folder";
       return;
     }
@@ -389,7 +389,7 @@
       const varType: VarDataType | undefined =
         itemType === ItemType.ITEM_TYPE_VARIABLE ? addDataType : undefined;
       await onCreateItem({
-        parentId,
+        parentId: parentId ?? null,
         name: addName.trim(),
         itemType,
         varType,
@@ -462,6 +462,7 @@
               : undefined}
             {multiSelectMode}
             isChecked={multiSelectMode && selection.has(row.id)}
+            isIndeterminate={multiSelectMode && hasPartialSelectionInSubtree(row.id, $treeState.nodes, selection)}
             onCheckClick={
               multiSelectMode ? () => handleSelectionCheckClick(row.id) : undefined
             }

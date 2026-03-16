@@ -21,29 +21,58 @@ export function getLoadedDescendantIds(
 }
 
 /**
- * From a selection set, compute the minimal set of "greatest ancestors" to send to delete:
- * selected nodes that have no other selected ancestor (root is never sent and is not
- * counted as an ancestor for this purpose, so the root's selected children are included).
+ * True if this node has both selected and unselected loaded descendants (partial selection).
+ * Used so indeterminate state propagates up: ancestors show indeterminate when any descendant does.
+ */
+export function hasPartialSelectionInSubtree(
+  nodeId: string,
+  nodes: Record<string, TreeNode>,
+  selection: Set<string>,
+): boolean {
+  const descendantIds = getLoadedDescendantIds(nodeId, nodes);
+  if (descendantIds.length === 0) return false;
+  const someSelected = descendantIds.some((id) => selection.has(id));
+  const someUnselected = descendantIds.some((id) => !selection.has(id));
+  return someSelected && someUnselected;
+}
+
+/** True if node is fully selected (in selection and not partially selected). */
+function isFullySelected(
+  nodeId: string,
+  nodes: Record<string, TreeNode>,
+  selection: Set<string>,
+): boolean {
+  return (
+    selection.has(nodeId) &&
+    !hasPartialSelectionInSubtree(nodeId, nodes, selection)
+  );
+}
+
+/**
+ * Ids to send to delete: only superior/higher-level selected nodes.
+ * - Root nodes can be removed and count as superior (no parent).
+ * - Partially selected nodes are not sent (only their fully-selected descendants are).
+ * - A fully selected node is sent only if it has no fully selected ancestor.
+ * So: variable selected + parent partially selected → send variable only; folder + all children selected → send folder only unless its parent is also fully selected.
  */
 export function getMinimalAncestorSet(
   selection: Set<string>,
   nodes: Record<string, TreeNode>,
-  rootId: string | null,
+  _rootId: string | null,
 ): string[] {
   const result: string[] = [];
   for (const id of selection) {
-    if (rootId !== null && id === rootId) continue;
+    if (!isFullySelected(id, nodes, selection)) continue;
     let current: TreeNode | undefined = nodes[id];
-    let hasSelectedAncestorOtherThanRoot = false;
+    let hasFullySelectedAncestor = false;
     while (current?.parentId) {
-      const parentId = current.parentId;
-      if (parentId !== rootId && selection.has(parentId)) {
-        hasSelectedAncestorOtherThanRoot = true;
+      if (isFullySelected(current.parentId, nodes, selection)) {
+        hasFullySelectedAncestor = true;
         break;
       }
-      current = nodes[parentId];
+      current = nodes[current.parentId];
     }
-    if (!hasSelectedAncestorOtherThanRoot) result.push(id);
+    if (!hasFullySelectedAncestor) result.push(id);
   }
   return result;
 }
