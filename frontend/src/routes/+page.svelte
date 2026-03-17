@@ -42,7 +42,10 @@
     MenuResolverByKind,
   } from "$lib/features/tree/context-menu";
   import type { TreeNode } from "$lib/features/tree/types";
-  import { getMinimalAncestorSet } from "$lib/features/tree/tree-selection";
+  import {
+    getLoadedDescendantIds,
+    getMinimalAncestorSet,
+  } from "$lib/features/tree/tree-selection";
   import { Layers, Plus, Trash2 } from "lucide-svelte";
 
   interface ActiveMenuState {
@@ -328,6 +331,17 @@
     for (const id of payload.remove) next.delete(id);
     for (const id of payload.add) next.add(id);
     treeSelection = next;
+  }
+
+  function selectAllSelection(): void {
+    const toAdd: string[] = [];
+    for (const rootId of treeRootIds) {
+      toAdd.push(rootId);
+      toAdd.push(...getLoadedDescendantIds(rootId, treeNodes));
+    }
+    if (toAdd.length > 0) {
+      applySelectionChange({ add: toAdd, remove: [] });
+    }
   }
 
   function openRemoveMultipleDialog(): void {
@@ -746,6 +760,7 @@
     }}
     selectionCount={treeSelection.size}
     onRemoveSelection={openRemoveMultipleDialog}
+    onSelectAll={selectAllSelection}
   />
 
   <div class="flex h-[calc(100vh-5rem)] gap-4">

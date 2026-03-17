@@ -1,0 +1,148 @@
+import { describe, expect, it } from "vitest";
+import { ItemType, VarDataType } from "$lib/proto/namespace/enums";
+import {
+  createAddBulkCommand,
+  createAddCommand,
+  createCommandId,
+  createDelCommand,
+  createGetCommand,
+  createListCommand,
+  createSetCommand,
+  createSingleItemMeta,
+  fromBackendValue,
+  namespaceJsonToSchema,
+  toBackendValue,
+} from "./command-ws-client";
+
+describe("command-ws-client", () => {
+  describe("createCommandId", () => {
+    it("returns string with prefix and unique suffix", () => {
+      const id = createCommandId("list");
+      expect(id).toMatch(/^list-\d+-[a-f0-9]+$/);
+    });
+  });
+
+  describe("toBackendValue", () => {
+    it("maps string to textValue", () => {
+      expect(toBackendValue("hello")).toEqual({ textValue: "hello" });
+    });
+    it("maps boolean to booleanValue", () => {
+      expect(toBackendValue(true)).toEqual({ booleanValue: true });
+    });
+    it("maps integer to integerValue", () => {
+      expect(toBackendValue(42)).toEqual({ integerValue: 42 });
+    });
+    it("maps float to floatValue", () => {
+      expect(toBackendValue(3.14)).toEqual({ floatValue: 3.14 });
+    });
+  });
+
+  describe("fromBackendValue", () => {
+    it("returns undefined for null or undefined", () => {
+      expect(fromBackendValue(null)).toBeUndefined();
+      expect(fromBackendValue(undefined)).toBeUndefined();
+    });
+    it("extracts integerValue", () => {
+      expect(fromBackendValue({ integerValue: 10 })).toBe(10);
+    });
+    it("extracts floatValue", () => {
+      expect(fromBackendValue({ floatValue: 1.5 })).toBe(1.5);
+    });
+    it("extracts textValue", () => {
+      expect(fromBackendValue({ textValue: "x" })).toBe("x");
+    });
+    it("extracts booleanValue", () => {
+      expect(fromBackendValue({ booleanValue: false })).toBe(false);
+    });
+  });
+
+  describe("createListCommand", () => {
+    it("includes folderId when provided", () => {
+      const { cmdId, command } = createListCommand("folder-1");
+      expect(command.list?.folderId).toBe("folder-1");
+      expect(cmdId).toBeDefined();
+    });
+    it("omits folderId when undefined (roots)", () => {
+      const { command } = createListCommand(undefined);
+      expect(command.list).toBeDefined();
+      expect(command.list?.folderId).toBeUndefined();
+    });
+  });
+
+  describe("createAddCommand", () => {
+    it("sets parentId and itemsMeta", () => {
+      const meta = createSingleItemMeta(
+        "x",
+        ItemType.ITEM_TYPE_FOLDER,
+        undefined,
+      );
+      const { command } = createAddCommand("parent-id", [meta]);
+      expect(command.add?.parentId).toBe("parent-id");
+      expect(command.add?.itemsMeta).toHaveLength(1);
+      expect(command.add?.itemsMeta?.[0].name).toBe("x");
+    });
+  });
+
+  describe("createDelCommand", () => {
+    it("sets itemIds array", () => {
+      const { command } = createDelCommand(["id1", "id2"]);
+      expect(command.del?.itemIds).toEqual(["id1", "id2"]);
+    });
+  });
+
+  describe("createGetCommand", () => {
+    it("sets varIds", () => {
+      const { command } = createGetCommand(["a", "b"]);
+      expect(command.get?.varIds).toEqual(["a", "b"]);
+    });
+  });
+
+  describe("createSetCommand", () => {
+    it("sets varIdsValues with toBackendValue", () => {
+      const { command } = createSetCommand("tag-1", 100);
+      expect(command.set?.varIdsValues).toHaveLength(1);
+      expect(command.set?.varIdsValues?.[0].varId).toBe("tag-1");
+      expect(command.set?.varIdsValues?.[0].value?.integerValue).toBe(100);
+    });
+  });
+
+  describe("createAddBulkCommand", () => {
+    it("sets parentId and schema", () => {
+      const schema = namespaceJsonToSchema({ Area: { P: "Float" } });
+      const { command } = createAddBulkCommand("", schema);
+      expect(command.addBulk?.parentId).toBe("");
+      expect(command.addBulk?.schema).toBe(schema);
+    });
+  });
+
+  describe("namespaceJsonToSchema", () => {
+    it("converts leaf string to variableType", () => {
+      const schema = namespaceJsonToSchema({ P: "Float" });
+      expect(schema.roots.P).toEqual({ variableType: "Float" });
+    });
+    it("converts nested object to folder with children", () => {
+      const schema = namespaceJsonToSchema({ Area: { P: "Float" } });
+      expect(schema.roots.Area).toEqual({
+        folder: { children: { P: { variableType: "Float" } } },
+      });
+    });
+    it("throws on invalid node type", () => {
+      expect(() => namespaceJsonToSchema({ x: 123 } as any)).toThrow(
+        /Invalid namespace node/,
+      );
+    });
+  });
+
+  describe("createSingleItemMeta", () => {
+    it("returns meta with name, item type, and optional var type", () => {
+      const meta = createSingleItemMeta(
+        "node1",
+        ItemType.ITEM_TYPE_VARIABLE,
+        VarDataType.VAR_DATA_TYPE_FLOAT,
+      );
+      expect(meta.name).toBe("node1");
+      expect(meta.iType).toBe(ItemType.ITEM_TYPE_VARIABLE);
+      expect(meta.varDType).toBe(VarDataType.VAR_DATA_TYPE_FLOAT);
+    });
+  });
+});

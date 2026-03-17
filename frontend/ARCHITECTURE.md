@@ -16,8 +16,9 @@ This document describes the **current** architecture implemented in the Svelte f
 The page composes three coordinated subsystems:
 
 1. **Tree subsystem**
-   - Browses namespace nodes from backend with `LIST`
-   - Supports contextual actions (`Add`, `Remove`) through `ADD`/`DEL`
+   - Browses namespace nodes from backend with `LIST` (multiple roots; node path used as id)
+   - Supports contextual actions (`Add`, `Remove`, Namespace Template Builder) through `ADD`/`DEL`/`ADD_BULK`
+   - Multi-selection mode: checkboxes, select all, remove selection (superior nodes only), propagate down/up
 2. **Graph subsystem**
    - Accepts dropped tree nodes and instantiates plant assets
    - Shows live values and supports write actions (`SET`) on interactive assets
@@ -47,6 +48,7 @@ src/
         types.ts
         flatten.ts
         tree-store.ts
+        tree-selection.ts
         server-adapter.ts
         context-menu.ts
         components/
@@ -63,20 +65,36 @@ src/
           types.ts
           controller.ts
           components/*.svelte
+      namespace-builder/
+        namespace-yaml.ts
+        monaco-yaml-config.ts
+        components/
+          NamespaceBuilder.svelte
+          NamespaceBuilderTreeRow.svelte
+          ...
       workspace/components/PageToolbar.svelte
+    components/
+      Button/
+      Snackbar/
+    stores/
+      theme.ts
+      snackbar.ts
 ```
 
 ## WebSocket Architecture
 
 ### Protocol
 
-The frontend uses command envelopes defined in `src/lib/core/ws/types.ts`:
+The frontend uses command envelopes defined in `src/lib/core/ws/types.ts` and built in `command-ws-client.ts`:
 
-- `LIST` for tree children fetch
+- `LIST` for tree children fetch (optional `folderId`; undefined for roots)
 - `GET` for polling live values
 - `SET` for writing values
-- `ADD` for creating nodes
-- `DEL` for deleting nodes
+- `ADD` for creating nodes (`parentId`; empty string for root)
+- `ADD_BULK` for namespace template (YAML) bulk create under a parent
+- `DEL` for deleting one or more nodes by id
+
+All commands use a global timeout (e.g. 60s); success/failure is determined by response `status` and optional `error_msg`. Command builders live in `src/lib/core/ws/command-ws-client.ts`.
 
 ### Shared Client
 
@@ -85,8 +103,9 @@ The frontend uses command envelopes defined in `src/lib/core/ws/types.ts`:
 - Maintains one socket instance (including `CONNECTING` reuse protection)
 - Correlates responses by `cmd_id`
 - Manages reconnect/backoff state
-- Provides request helpers (`listChildren`, `addItem`, `removeItems`)
+- Provides request helpers (`listChildren`, `addItem`, `addBulkNamespace`, `removeItems`, etc.)
 - Performs 2s polling for tracked IDs with `GET`
+- Surfaces errors via a global snackbar store on timeout or non-OK status
 
 `src/lib/features/realtime/page-tag-realtime-provider.ts` wraps this client for route consumption and adds:
 
@@ -98,22 +117,28 @@ The frontend uses command envelopes defined in `src/lib/core/ws/types.ts`:
 ### Data and state
 
 - Data source adapter: `src/lib/features/tree/server-adapter.ts`
-  - Fetches children with `tagStreamClient.listChildren(...)`
+  - Fetches children with `tagStreamClient.listChildren(parent?.id)`; `null` parent for roots
+  - Node `id` and `path` come from backend (path-as-id from root ancestor to node)
 - Store: `src/lib/features/tree/tree-store.ts`
   - normalized node cache
   - expand/collapse
   - row flattening
   - branch refresh support (`refreshNode`)
+- Multi-selection: `src/lib/features/tree/tree-selection.ts`
+  - `getLoadedDescendantIds(nodeId, nodes)` for propagation
+  - `hasPartialSelectionInSubtree(nodeId, nodes, selection)` for indeterminate state
+  - `getMinimalAncestorSet(selection, nodes, rootId)` for delete: returns only superior/fully-selected nodes (roots can be removed; partially selected nodes are not sent)
 
 ### UI
 
 - Main tree component: `src/lib/features/tree/components/VariableTree.svelte`
-- Context menu system: `ContextMenu.svelte` + resolver contracts in `context-menu.ts`
+  - In multi-select mode: checkboxes (between chevron and icon), propagate down/up (configurable), selection from global set; single-select, drag, and context menu disabled
+  - Add dialog opened from toolbar or folder context; toolbar "Select all" adds all root ids and their loaded descendants to selection
+- Context menu system: `ContextMenu.svelte` + resolver contracts in `context-menu.ts`; options can include icons and dividers; Remove is available for all folders (including root nodes)
 - Add dialog:
-  - opened from toolbar or folder context menu
-  - supports root or folder parent target
-  - fields: name, node type, and variable data-type/default value behavior
-  - submit triggers `onCreateItem` (mapped in page route to WS `ADD`)
+  - opened from toolbar (parent `null` = create root) or folder context menu
+  - fields: name, node type, variable data type (no default value; backend defaults to null)
+  - submit triggers `onCreateItem` with `parentId: string | null` (mapped to WS `ADD`; empty string for root)
 
 ## Graph Subsystem
 
@@ -159,6 +184,7 @@ The route coordinates feature modules:
 - wires tree context actions to WS commands
 - wires drop menu to asset factory
 - handles graph delete of selected nodes/edges
+- multi-selection: toolbar toggle, select all, remove selection (confirmation dialog; sends minimal superior set via `DEL`), clears selection and exits multi-select on successful remove or on toggle off
 
 ## Canvas Interaction Rules
 
@@ -171,19 +197,28 @@ Configured in `SvelteFlow` usage within `+page.svelte`:
 
 ## Theme and UI State
 
-- Theme mode store in `+page.svelte`
+- Theme: `src/lib/stores/theme.ts`; persisted in `localStorage`; initialized in `+layout.svelte` on mount so no theme is applied until loaded (avoids SSR flash). Default when none stored is light.
 - CSS variable generation: `src/lib/core/theme/theme-utils.ts`
-- Top controls in `src/lib/features/workspace/components/PageToolbar.svelte`
+- Top controls in `src/lib/features/workspace/components/PageToolbar.svelte` (Add, Namespace Template Builder, Multi-selection toggle; in multi-select mode: Remove selection, Select all, Multi-selection toggle)
+- Reusable `Button` component: `src/lib/components/Button/` (variants: icon, outline-muted, outline-accent, filled-accent, filled-warn; states: disabled, loading, selected; optional icon and tooltip)
+- Global snackbar: `src/lib/stores/snackbar.ts` + `src/lib/components/Snackbar/`; success/warning/error messages; used for command timeouts and failures
+
+## Namespace Template Builder
+
+- Bulk create from YAML: `src/lib/features/namespace-builder/` (NamespaceBuilder, YAML editor via Monaco, visual tree, validation). Opened from toolbar (parent `""`, title "/") or from folder context (parent = folder id, title = path). Create sends `ADD_BULK` with parent and schema; loading and readonly state during request; success/error via snackbar.
 
 ## Testing
 
-Current automated tests cover core subsystems:
+Unit tests (Vitest) cover core subsystems and utilities:
 
-- `src/lib/core/ws/tag-stream-client.spec.ts`
-- `src/lib/features/realtime/page-tag-realtime-provider.spec.ts`
-- `src/lib/features/tree/server-adapter.spec.ts`
-- `src/lib/features/tree/tree-store.spec.ts`
-- `src/lib/features/tree/flatten.spec.ts`
+- **WS and commands:** `src/lib/core/ws/tag-stream-client.spec.ts`, `src/lib/core/ws/command-ws-client.spec.ts` (command builders, value conversion, list/add/del/get/set, addItem with null parentId)
+- **Realtime:** `src/lib/features/realtime/page-tag-realtime-provider.spec.ts`
+- **Tree:** `src/lib/features/tree/server-adapter.spec.ts`, `src/lib/features/tree/tree-store.spec.ts`, `src/lib/features/tree/flatten.spec.ts`, `src/lib/features/tree/tree-selection.spec.ts` (getLoadedDescendantIds, hasPartialSelectionInSubtree, getMinimalAncestorSet)
+- **Graph:** `src/lib/features/graph/live-utils.spec.ts` (getTrackedTagIds, applyLiveValuesToGraphNodes, normalizePipeEdges)
+- **Theme:** `src/lib/core/theme/theme-utils.spec.ts`
+- **Namespace builder:** `src/lib/features/namespace-builder/namespace-yaml.spec.ts`, `src/lib/features/namespace-builder/monaco-yaml-config.spec.ts`, `src/lib/features/namespace-builder/components/namespace-tree-helpers.spec.ts`
+
+Run: `npm run test` or `npm run test:coverage`.
 
 ## Known Intentional Constraints
 

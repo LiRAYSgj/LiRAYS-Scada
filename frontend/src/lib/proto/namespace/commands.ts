@@ -6,8 +6,18 @@
 
 /* eslint-disable */
 import { BinaryReader, BinaryWriter } from "@bufbuild/protobuf/wire";
-import { OperationStatus, operationStatusFromJSON, operationStatusToJSON } from "./enums";
-import { ItemMeta, NamespaceSchema, OptionalValue, VarIdValue, VarInfo } from "./types";
+import {
+  OperationStatus,
+  operationStatusFromJSON,
+  operationStatusToJSON,
+} from "./enums";
+import {
+  ItemMeta,
+  NamespaceSchema,
+  OptionalValue,
+  VarIdValue,
+  VarInfo,
+} from "./types";
 
 export const protobufPackage = "namespace";
 
@@ -111,7 +121,10 @@ function createBaseAddCommand(): AddCommand {
 }
 
 export const AddCommand: MessageFns<AddCommand> = {
-  encode(message: AddCommand, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+  encode(
+    message: AddCommand,
+    writer: BinaryWriter = new BinaryWriter(),
+  ): BinaryWriter {
     if (message.cmdId !== "") {
       writer.uint32(10).string(message.cmdId);
     }
@@ -125,7 +138,8 @@ export const AddCommand: MessageFns<AddCommand> = {
   },
 
   decode(input: BinaryReader | Uint8Array, length?: number): AddCommand {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const reader =
+      input instanceof BinaryReader ? input : new BinaryReader(input);
     const end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseAddCommand();
     while (reader.pos < end) {
@@ -169,18 +183,18 @@ export const AddCommand: MessageFns<AddCommand> = {
       cmdId: isSet(object.cmdId)
         ? globalThis.String(object.cmdId)
         : isSet(object.cmd_id)
-        ? globalThis.String(object.cmd_id)
-        : "",
+          ? globalThis.String(object.cmd_id)
+          : "",
       parentId: isSet(object.parentId)
         ? globalThis.String(object.parentId)
         : isSet(object.parent_id)
-        ? globalThis.String(object.parent_id)
-        : undefined,
+          ? globalThis.String(object.parent_id)
+          : undefined,
       itemsMeta: globalThis.Array.isArray(object?.itemsMeta)
         ? object.itemsMeta.map((e: any) => ItemMeta.fromJSON(e))
         : globalThis.Array.isArray(object?.items_meta)
-        ? object.items_meta.map((e: any) => ItemMeta.fromJSON(e))
-        : [],
+          ? object.items_meta.map((e: any) => ItemMeta.fromJSON(e))
+          : [],
     };
   },
 
@@ -201,11 +215,14 @@ export const AddCommand: MessageFns<AddCommand> = {
   create<I extends Exact<DeepPartial<AddCommand>, I>>(base?: I): AddCommand {
     return AddCommand.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<AddCommand>, I>>(object: I): AddCommand {
+  fromPartial<I extends Exact<DeepPartial<AddCommand>, I>>(
+    object: I,
+  ): AddCommand {
     const message = createBaseAddCommand();
     message.cmdId = object.cmdId ?? "";
     message.parentId = object.parentId ?? undefined;
-    message.itemsMeta = object.itemsMeta?.map((e) => ItemMeta.fromPartial(e)) || [];
+    message.itemsMeta =
+      object.itemsMeta?.map((e) => ItemMeta.fromPartial(e)) || [];
     return message;
   },
 };
@@ -215,7 +232,10 @@ function createBaseAddResponse(): AddResponse {
 }
 
 export const AddResponse: MessageFns<AddResponse> = {
-  encode(message: AddResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+  encode(
+    message: AddResponse,
+    writer: BinaryWriter = new BinaryWriter(),
+  ): BinaryWriter {
     if (message.cmdId !== "") {
       writer.uint32(10).string(message.cmdId);
     }
@@ -223,7 +243,8 @@ export const AddResponse: MessageFns<AddResponse> = {
   },
 
   decode(input: BinaryReader | Uint8Array, length?: number): AddResponse {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const reader =
+      input instanceof BinaryReader ? input : new BinaryReader(input);
     const end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseAddResponse();
     while (reader.pos < end) {
@@ -251,8 +272,8 @@ export const AddResponse: MessageFns<AddResponse> = {
       cmdId: isSet(object.cmdId)
         ? globalThis.String(object.cmdId)
         : isSet(object.cmd_id)
-        ? globalThis.String(object.cmd_id)
-        : "",
+          ? globalThis.String(object.cmd_id)
+          : "",
     };
   },
 
@@ -267,7 +288,9 @@ export const AddResponse: MessageFns<AddResponse> = {
   create<I extends Exact<DeepPartial<AddResponse>, I>>(base?: I): AddResponse {
     return AddResponse.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<AddResponse>, I>>(object: I): AddResponse {
+  fromPartial<I extends Exact<DeepPartial<AddResponse>, I>>(
+    object: I,
+  ): AddResponse {
     const message = createBaseAddResponse();
     message.cmdId = object.cmdId ?? "";
     return message;
@@ -279,7 +302,10 @@ function createBaseAddBulkCommand(): AddBulkCommand {
 }
 
 export const AddBulkCommand: MessageFns<AddBulkCommand> = {
-  encode(message: AddBulkCommand, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+  encode(
+    message: AddBulkCommand,
+    writer: BinaryWriter = new BinaryWriter(),
+  ): BinaryWriter {
     if (message.cmdId !== "") {
       writer.uint32(10).string(message.cmdId);
     }
@@ -293,7 +319,8 @@ export const AddBulkCommand: MessageFns<AddBulkCommand> = {
   },
 
   decode(input: BinaryReader | Uint8Array, length?: number): AddBulkCommand {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const reader =
+      input instanceof BinaryReader ? input : new BinaryReader(input);
     const end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseAddBulkCommand();
     while (reader.pos < end) {
@@ -337,14 +364,16 @@ export const AddBulkCommand: MessageFns<AddBulkCommand> = {
       cmdId: isSet(object.cmdId)
         ? globalThis.String(object.cmdId)
         : isSet(object.cmd_id)
-        ? globalThis.String(object.cmd_id)
-        : "",
+          ? globalThis.String(object.cmd_id)
+          : "",
       parentId: isSet(object.parentId)
         ? globalThis.String(object.parentId)
         : isSet(object.parent_id)
-        ? globalThis.String(object.parent_id)
-        : "",
-      schema: isSet(object.schema) ? NamespaceSchema.fromJSON(object.schema) : undefined,
+          ? globalThis.String(object.parent_id)
+          : "",
+      schema: isSet(object.schema)
+        ? NamespaceSchema.fromJSON(object.schema)
+        : undefined,
     };
   },
 
@@ -362,16 +391,21 @@ export const AddBulkCommand: MessageFns<AddBulkCommand> = {
     return obj;
   },
 
-  create<I extends Exact<DeepPartial<AddBulkCommand>, I>>(base?: I): AddBulkCommand {
+  create<I extends Exact<DeepPartial<AddBulkCommand>, I>>(
+    base?: I,
+  ): AddBulkCommand {
     return AddBulkCommand.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<AddBulkCommand>, I>>(object: I): AddBulkCommand {
+  fromPartial<I extends Exact<DeepPartial<AddBulkCommand>, I>>(
+    object: I,
+  ): AddBulkCommand {
     const message = createBaseAddBulkCommand();
     message.cmdId = object.cmdId ?? "";
     message.parentId = object.parentId ?? "";
-    message.schema = (object.schema !== undefined && object.schema !== null)
-      ? NamespaceSchema.fromPartial(object.schema)
-      : undefined;
+    message.schema =
+      object.schema !== undefined && object.schema !== null
+        ? NamespaceSchema.fromPartial(object.schema)
+        : undefined;
     return message;
   },
 };
@@ -381,7 +415,10 @@ function createBaseAddBulkResponse(): AddBulkResponse {
 }
 
 export const AddBulkResponse: MessageFns<AddBulkResponse> = {
-  encode(message: AddBulkResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+  encode(
+    message: AddBulkResponse,
+    writer: BinaryWriter = new BinaryWriter(),
+  ): BinaryWriter {
     if (message.cmdId !== "") {
       writer.uint32(10).string(message.cmdId);
     }
@@ -389,7 +426,8 @@ export const AddBulkResponse: MessageFns<AddBulkResponse> = {
   },
 
   decode(input: BinaryReader | Uint8Array, length?: number): AddBulkResponse {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const reader =
+      input instanceof BinaryReader ? input : new BinaryReader(input);
     const end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseAddBulkResponse();
     while (reader.pos < end) {
@@ -417,8 +455,8 @@ export const AddBulkResponse: MessageFns<AddBulkResponse> = {
       cmdId: isSet(object.cmdId)
         ? globalThis.String(object.cmdId)
         : isSet(object.cmd_id)
-        ? globalThis.String(object.cmd_id)
-        : "",
+          ? globalThis.String(object.cmd_id)
+          : "",
     };
   },
 
@@ -430,10 +468,14 @@ export const AddBulkResponse: MessageFns<AddBulkResponse> = {
     return obj;
   },
 
-  create<I extends Exact<DeepPartial<AddBulkResponse>, I>>(base?: I): AddBulkResponse {
+  create<I extends Exact<DeepPartial<AddBulkResponse>, I>>(
+    base?: I,
+  ): AddBulkResponse {
     return AddBulkResponse.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<AddBulkResponse>, I>>(object: I): AddBulkResponse {
+  fromPartial<I extends Exact<DeepPartial<AddBulkResponse>, I>>(
+    object: I,
+  ): AddBulkResponse {
     const message = createBaseAddBulkResponse();
     message.cmdId = object.cmdId ?? "";
     return message;
@@ -445,7 +487,10 @@ function createBaseListCommand(): ListCommand {
 }
 
 export const ListCommand: MessageFns<ListCommand> = {
-  encode(message: ListCommand, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+  encode(
+    message: ListCommand,
+    writer: BinaryWriter = new BinaryWriter(),
+  ): BinaryWriter {
     if (message.cmdId !== "") {
       writer.uint32(10).string(message.cmdId);
     }
@@ -456,7 +501,8 @@ export const ListCommand: MessageFns<ListCommand> = {
   },
 
   decode(input: BinaryReader | Uint8Array, length?: number): ListCommand {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const reader =
+      input instanceof BinaryReader ? input : new BinaryReader(input);
     const end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseListCommand();
     while (reader.pos < end) {
@@ -492,13 +538,13 @@ export const ListCommand: MessageFns<ListCommand> = {
       cmdId: isSet(object.cmdId)
         ? globalThis.String(object.cmdId)
         : isSet(object.cmd_id)
-        ? globalThis.String(object.cmd_id)
-        : "",
+          ? globalThis.String(object.cmd_id)
+          : "",
       folderId: isSet(object.folderId)
         ? globalThis.String(object.folderId)
         : isSet(object.folder_id)
-        ? globalThis.String(object.folder_id)
-        : undefined,
+          ? globalThis.String(object.folder_id)
+          : undefined,
     };
   },
 
@@ -516,7 +562,9 @@ export const ListCommand: MessageFns<ListCommand> = {
   create<I extends Exact<DeepPartial<ListCommand>, I>>(base?: I): ListCommand {
     return ListCommand.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<ListCommand>, I>>(object: I): ListCommand {
+  fromPartial<I extends Exact<DeepPartial<ListCommand>, I>>(
+    object: I,
+  ): ListCommand {
     const message = createBaseListCommand();
     message.cmdId = object.cmdId ?? "";
     message.folderId = object.folderId ?? undefined;
@@ -529,21 +577,35 @@ function createBaseListResponse(): ListResponse {
 }
 
 export const ListResponse: MessageFns<ListResponse> = {
-  encode(message: ListResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+  encode(
+    message: ListResponse,
+    writer: BinaryWriter = new BinaryWriter(),
+  ): BinaryWriter {
     if (message.cmdId !== "") {
       writer.uint32(10).string(message.cmdId);
     }
-    globalThis.Object.entries(message.childrenFolders).forEach(([key, value]: [string, string]) => {
-      ListResponse_ChildrenFoldersEntry.encode({ key: key as any, value }, writer.uint32(18).fork()).join();
-    });
-    globalThis.Object.entries(message.childrenVars).forEach(([key, value]: [string, VarInfo]) => {
-      ListResponse_ChildrenVarsEntry.encode({ key: key as any, value }, writer.uint32(26).fork()).join();
-    });
+    globalThis.Object.entries(message.childrenFolders).forEach(
+      ([key, value]: [string, string]) => {
+        ListResponse_ChildrenFoldersEntry.encode(
+          { key: key as any, value },
+          writer.uint32(18).fork(),
+        ).join();
+      },
+    );
+    globalThis.Object.entries(message.childrenVars).forEach(
+      ([key, value]: [string, VarInfo]) => {
+        ListResponse_ChildrenVarsEntry.encode(
+          { key: key as any, value },
+          writer.uint32(26).fork(),
+        ).join();
+      },
+    );
     return writer;
   },
 
   decode(input: BinaryReader | Uint8Array, length?: number): ListResponse {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const reader =
+      input instanceof BinaryReader ? input : new BinaryReader(input);
     const end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseListResponse();
     while (reader.pos < end) {
@@ -562,7 +624,10 @@ export const ListResponse: MessageFns<ListResponse> = {
             break;
           }
 
-          const entry2 = ListResponse_ChildrenFoldersEntry.decode(reader, reader.uint32());
+          const entry2 = ListResponse_ChildrenFoldersEntry.decode(
+            reader,
+            reader.uint32(),
+          );
           if (entry2.value !== undefined) {
             message.childrenFolders[entry2.key] = entry2.value;
           }
@@ -573,7 +638,10 @@ export const ListResponse: MessageFns<ListResponse> = {
             break;
           }
 
-          const entry3 = ListResponse_ChildrenVarsEntry.decode(reader, reader.uint32());
+          const entry3 = ListResponse_ChildrenVarsEntry.decode(
+            reader,
+            reader.uint32(),
+          );
           if (entry3.value !== undefined) {
             message.childrenVars[entry3.key] = entry3.value;
           }
@@ -593,42 +661,56 @@ export const ListResponse: MessageFns<ListResponse> = {
       cmdId: isSet(object.cmdId)
         ? globalThis.String(object.cmdId)
         : isSet(object.cmd_id)
-        ? globalThis.String(object.cmd_id)
-        : "",
+          ? globalThis.String(object.cmd_id)
+          : "",
       childrenFolders: isObject(object.childrenFolders)
-        ? (globalThis.Object.entries(object.childrenFolders) as [string, any][]).reduce(
-          (acc: { [key: string]: string }, [key, value]: [string, any]) => {
-            acc[key] = globalThis.String(value);
-            return acc;
-          },
-          {},
-        )
+        ? (
+            globalThis.Object.entries(object.childrenFolders) as [string, any][]
+          ).reduce(
+            (acc: { [key: string]: string }, [key, value]: [string, any]) => {
+              acc[key] = globalThis.String(value);
+              return acc;
+            },
+            {},
+          )
         : isObject(object.children_folders)
-        ? (globalThis.Object.entries(object.children_folders) as [string, any][]).reduce(
-          (acc: { [key: string]: string }, [key, value]: [string, any]) => {
-            acc[key] = globalThis.String(value);
-            return acc;
-          },
-          {},
-        )
-        : {},
+          ? (
+              globalThis.Object.entries(object.children_folders) as [
+                string,
+                any,
+              ][]
+            ).reduce(
+              (acc: { [key: string]: string }, [key, value]: [string, any]) => {
+                acc[key] = globalThis.String(value);
+                return acc;
+              },
+              {},
+            )
+          : {},
       childrenVars: isObject(object.childrenVars)
-        ? (globalThis.Object.entries(object.childrenVars) as [string, any][]).reduce(
-          (acc: { [key: string]: VarInfo }, [key, value]: [string, any]) => {
-            acc[key] = VarInfo.fromJSON(value);
-            return acc;
-          },
-          {},
-        )
+        ? (
+            globalThis.Object.entries(object.childrenVars) as [string, any][]
+          ).reduce(
+            (acc: { [key: string]: VarInfo }, [key, value]: [string, any]) => {
+              acc[key] = VarInfo.fromJSON(value);
+              return acc;
+            },
+            {},
+          )
         : isObject(object.children_vars)
-        ? (globalThis.Object.entries(object.children_vars) as [string, any][]).reduce(
-          (acc: { [key: string]: VarInfo }, [key, value]: [string, any]) => {
-            acc[key] = VarInfo.fromJSON(value);
-            return acc;
-          },
-          {},
-        )
-        : {},
+          ? (
+              globalThis.Object.entries(object.children_vars) as [string, any][]
+            ).reduce(
+              (
+                acc: { [key: string]: VarInfo },
+                [key, value]: [string, any],
+              ) => {
+                acc[key] = VarInfo.fromJSON(value);
+                return acc;
+              },
+              {},
+            )
+          : {},
     };
   },
 
@@ -638,7 +720,10 @@ export const ListResponse: MessageFns<ListResponse> = {
       obj.cmdId = message.cmdId;
     }
     if (message.childrenFolders) {
-      const entries = globalThis.Object.entries(message.childrenFolders) as [string, string][];
+      const entries = globalThis.Object.entries(message.childrenFolders) as [
+        string,
+        string,
+      ][];
       if (entries.length > 0) {
         obj.childrenFolders = {};
         entries.forEach(([k, v]) => {
@@ -647,7 +732,10 @@ export const ListResponse: MessageFns<ListResponse> = {
       }
     }
     if (message.childrenVars) {
-      const entries = globalThis.Object.entries(message.childrenVars) as [string, VarInfo][];
+      const entries = globalThis.Object.entries(message.childrenVars) as [
+        string,
+        VarInfo,
+      ][];
       if (entries.length > 0) {
         obj.childrenVars = {};
         entries.forEach(([k, v]) => {
@@ -658,13 +746,22 @@ export const ListResponse: MessageFns<ListResponse> = {
     return obj;
   },
 
-  create<I extends Exact<DeepPartial<ListResponse>, I>>(base?: I): ListResponse {
+  create<I extends Exact<DeepPartial<ListResponse>, I>>(
+    base?: I,
+  ): ListResponse {
     return ListResponse.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<ListResponse>, I>>(object: I): ListResponse {
+  fromPartial<I extends Exact<DeepPartial<ListResponse>, I>>(
+    object: I,
+  ): ListResponse {
     const message = createBaseListResponse();
     message.cmdId = object.cmdId ?? "";
-    message.childrenFolders = (globalThis.Object.entries(object.childrenFolders ?? {}) as [string, string][]).reduce(
+    message.childrenFolders = (
+      globalThis.Object.entries(object.childrenFolders ?? {}) as [
+        string,
+        string,
+      ][]
+    ).reduce(
       (acc: { [key: string]: string }, [key, value]: [string, string]) => {
         if (value !== undefined) {
           acc[key] = globalThis.String(value);
@@ -673,7 +770,12 @@ export const ListResponse: MessageFns<ListResponse> = {
       },
       {},
     );
-    message.childrenVars = (globalThis.Object.entries(object.childrenVars ?? {}) as [string, VarInfo][]).reduce(
+    message.childrenVars = (
+      globalThis.Object.entries(object.childrenVars ?? {}) as [
+        string,
+        VarInfo,
+      ][]
+    ).reduce(
       (acc: { [key: string]: VarInfo }, [key, value]: [string, VarInfo]) => {
         if (value !== undefined) {
           acc[key] = VarInfo.fromPartial(value);
@@ -690,168 +792,190 @@ function createBaseListResponse_ChildrenFoldersEntry(): ListResponse_ChildrenFol
   return { key: "", value: "" };
 }
 
-export const ListResponse_ChildrenFoldersEntry: MessageFns<ListResponse_ChildrenFoldersEntry> = {
-  encode(message: ListResponse_ChildrenFoldersEntry, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    if (message.key !== "") {
-      writer.uint32(10).string(message.key);
-    }
-    if (message.value !== "") {
-      writer.uint32(18).string(message.value);
-    }
-    return writer;
-  },
-
-  decode(input: BinaryReader | Uint8Array, length?: number): ListResponse_ChildrenFoldersEntry {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
-    const end = length === undefined ? reader.len : reader.pos + length;
-    const message = createBaseListResponse_ChildrenFoldersEntry();
-    while (reader.pos < end) {
-      const tag = reader.uint32();
-      switch (tag >>> 3) {
-        case 1: {
-          if (tag !== 10) {
-            break;
-          }
-
-          message.key = reader.string();
-          continue;
-        }
-        case 2: {
-          if (tag !== 18) {
-            break;
-          }
-
-          message.value = reader.string();
-          continue;
-        }
+export const ListResponse_ChildrenFoldersEntry: MessageFns<ListResponse_ChildrenFoldersEntry> =
+  {
+    encode(
+      message: ListResponse_ChildrenFoldersEntry,
+      writer: BinaryWriter = new BinaryWriter(),
+    ): BinaryWriter {
+      if (message.key !== "") {
+        writer.uint32(10).string(message.key);
       }
-      if ((tag & 7) === 4 || tag === 0) {
-        break;
+      if (message.value !== "") {
+        writer.uint32(18).string(message.value);
       }
-      reader.skip(tag & 7);
-    }
-    return message;
-  },
+      return writer;
+    },
 
-  fromJSON(object: any): ListResponse_ChildrenFoldersEntry {
-    return {
-      key: isSet(object.key) ? globalThis.String(object.key) : "",
-      value: isSet(object.value) ? globalThis.String(object.value) : "",
-    };
-  },
+    decode(
+      input: BinaryReader | Uint8Array,
+      length?: number,
+    ): ListResponse_ChildrenFoldersEntry {
+      const reader =
+        input instanceof BinaryReader ? input : new BinaryReader(input);
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseListResponse_ChildrenFoldersEntry();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 10) {
+              break;
+            }
 
-  toJSON(message: ListResponse_ChildrenFoldersEntry): unknown {
-    const obj: any = {};
-    if (message.key !== "") {
-      obj.key = message.key;
-    }
-    if (message.value !== "") {
-      obj.value = message.value;
-    }
-    return obj;
-  },
+            message.key = reader.string();
+            continue;
+          }
+          case 2: {
+            if (tag !== 18) {
+              break;
+            }
 
-  create<I extends Exact<DeepPartial<ListResponse_ChildrenFoldersEntry>, I>>(
-    base?: I,
-  ): ListResponse_ChildrenFoldersEntry {
-    return ListResponse_ChildrenFoldersEntry.fromPartial(base ?? ({} as any));
-  },
-  fromPartial<I extends Exact<DeepPartial<ListResponse_ChildrenFoldersEntry>, I>>(
-    object: I,
-  ): ListResponse_ChildrenFoldersEntry {
-    const message = createBaseListResponse_ChildrenFoldersEntry();
-    message.key = object.key ?? "";
-    message.value = object.value ?? "";
-    return message;
-  },
-};
+            message.value = reader.string();
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    },
+
+    fromJSON(object: any): ListResponse_ChildrenFoldersEntry {
+      return {
+        key: isSet(object.key) ? globalThis.String(object.key) : "",
+        value: isSet(object.value) ? globalThis.String(object.value) : "",
+      };
+    },
+
+    toJSON(message: ListResponse_ChildrenFoldersEntry): unknown {
+      const obj: any = {};
+      if (message.key !== "") {
+        obj.key = message.key;
+      }
+      if (message.value !== "") {
+        obj.value = message.value;
+      }
+      return obj;
+    },
+
+    create<I extends Exact<DeepPartial<ListResponse_ChildrenFoldersEntry>, I>>(
+      base?: I,
+    ): ListResponse_ChildrenFoldersEntry {
+      return ListResponse_ChildrenFoldersEntry.fromPartial(base ?? ({} as any));
+    },
+    fromPartial<
+      I extends Exact<DeepPartial<ListResponse_ChildrenFoldersEntry>, I>,
+    >(object: I): ListResponse_ChildrenFoldersEntry {
+      const message = createBaseListResponse_ChildrenFoldersEntry();
+      message.key = object.key ?? "";
+      message.value = object.value ?? "";
+      return message;
+    },
+  };
 
 function createBaseListResponse_ChildrenVarsEntry(): ListResponse_ChildrenVarsEntry {
   return { key: "", value: undefined };
 }
 
-export const ListResponse_ChildrenVarsEntry: MessageFns<ListResponse_ChildrenVarsEntry> = {
-  encode(message: ListResponse_ChildrenVarsEntry, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    if (message.key !== "") {
-      writer.uint32(10).string(message.key);
-    }
-    if (message.value !== undefined) {
-      VarInfo.encode(message.value, writer.uint32(18).fork()).join();
-    }
-    return writer;
-  },
-
-  decode(input: BinaryReader | Uint8Array, length?: number): ListResponse_ChildrenVarsEntry {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
-    const end = length === undefined ? reader.len : reader.pos + length;
-    const message = createBaseListResponse_ChildrenVarsEntry();
-    while (reader.pos < end) {
-      const tag = reader.uint32();
-      switch (tag >>> 3) {
-        case 1: {
-          if (tag !== 10) {
-            break;
-          }
-
-          message.key = reader.string();
-          continue;
-        }
-        case 2: {
-          if (tag !== 18) {
-            break;
-          }
-
-          message.value = VarInfo.decode(reader, reader.uint32());
-          continue;
-        }
+export const ListResponse_ChildrenVarsEntry: MessageFns<ListResponse_ChildrenVarsEntry> =
+  {
+    encode(
+      message: ListResponse_ChildrenVarsEntry,
+      writer: BinaryWriter = new BinaryWriter(),
+    ): BinaryWriter {
+      if (message.key !== "") {
+        writer.uint32(10).string(message.key);
       }
-      if ((tag & 7) === 4 || tag === 0) {
-        break;
+      if (message.value !== undefined) {
+        VarInfo.encode(message.value, writer.uint32(18).fork()).join();
       }
-      reader.skip(tag & 7);
-    }
-    return message;
-  },
+      return writer;
+    },
 
-  fromJSON(object: any): ListResponse_ChildrenVarsEntry {
-    return {
-      key: isSet(object.key) ? globalThis.String(object.key) : "",
-      value: isSet(object.value) ? VarInfo.fromJSON(object.value) : undefined,
-    };
-  },
+    decode(
+      input: BinaryReader | Uint8Array,
+      length?: number,
+    ): ListResponse_ChildrenVarsEntry {
+      const reader =
+        input instanceof BinaryReader ? input : new BinaryReader(input);
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseListResponse_ChildrenVarsEntry();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 10) {
+              break;
+            }
 
-  toJSON(message: ListResponse_ChildrenVarsEntry): unknown {
-    const obj: any = {};
-    if (message.key !== "") {
-      obj.key = message.key;
-    }
-    if (message.value !== undefined) {
-      obj.value = VarInfo.toJSON(message.value);
-    }
-    return obj;
-  },
+            message.key = reader.string();
+            continue;
+          }
+          case 2: {
+            if (tag !== 18) {
+              break;
+            }
 
-  create<I extends Exact<DeepPartial<ListResponse_ChildrenVarsEntry>, I>>(base?: I): ListResponse_ChildrenVarsEntry {
-    return ListResponse_ChildrenVarsEntry.fromPartial(base ?? ({} as any));
-  },
-  fromPartial<I extends Exact<DeepPartial<ListResponse_ChildrenVarsEntry>, I>>(
-    object: I,
-  ): ListResponse_ChildrenVarsEntry {
-    const message = createBaseListResponse_ChildrenVarsEntry();
-    message.key = object.key ?? "";
-    message.value = (object.value !== undefined && object.value !== null)
-      ? VarInfo.fromPartial(object.value)
-      : undefined;
-    return message;
-  },
-};
+            message.value = VarInfo.decode(reader, reader.uint32());
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    },
+
+    fromJSON(object: any): ListResponse_ChildrenVarsEntry {
+      return {
+        key: isSet(object.key) ? globalThis.String(object.key) : "",
+        value: isSet(object.value) ? VarInfo.fromJSON(object.value) : undefined,
+      };
+    },
+
+    toJSON(message: ListResponse_ChildrenVarsEntry): unknown {
+      const obj: any = {};
+      if (message.key !== "") {
+        obj.key = message.key;
+      }
+      if (message.value !== undefined) {
+        obj.value = VarInfo.toJSON(message.value);
+      }
+      return obj;
+    },
+
+    create<I extends Exact<DeepPartial<ListResponse_ChildrenVarsEntry>, I>>(
+      base?: I,
+    ): ListResponse_ChildrenVarsEntry {
+      return ListResponse_ChildrenVarsEntry.fromPartial(base ?? ({} as any));
+    },
+    fromPartial<
+      I extends Exact<DeepPartial<ListResponse_ChildrenVarsEntry>, I>,
+    >(object: I): ListResponse_ChildrenVarsEntry {
+      const message = createBaseListResponse_ChildrenVarsEntry();
+      message.key = object.key ?? "";
+      message.value =
+        object.value !== undefined && object.value !== null
+          ? VarInfo.fromPartial(object.value)
+          : undefined;
+      return message;
+    },
+  };
 
 function createBaseSetCommand(): SetCommand {
   return { cmdId: "", varIdsValues: [] };
 }
 
 export const SetCommand: MessageFns<SetCommand> = {
-  encode(message: SetCommand, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+  encode(
+    message: SetCommand,
+    writer: BinaryWriter = new BinaryWriter(),
+  ): BinaryWriter {
     if (message.cmdId !== "") {
       writer.uint32(10).string(message.cmdId);
     }
@@ -862,7 +986,8 @@ export const SetCommand: MessageFns<SetCommand> = {
   },
 
   decode(input: BinaryReader | Uint8Array, length?: number): SetCommand {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const reader =
+      input instanceof BinaryReader ? input : new BinaryReader(input);
     const end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseSetCommand();
     while (reader.pos < end) {
@@ -898,13 +1023,13 @@ export const SetCommand: MessageFns<SetCommand> = {
       cmdId: isSet(object.cmdId)
         ? globalThis.String(object.cmdId)
         : isSet(object.cmd_id)
-        ? globalThis.String(object.cmd_id)
-        : "",
+          ? globalThis.String(object.cmd_id)
+          : "",
       varIdsValues: globalThis.Array.isArray(object?.varIdsValues)
         ? object.varIdsValues.map((e: any) => VarIdValue.fromJSON(e))
         : globalThis.Array.isArray(object?.var_ids_values)
-        ? object.var_ids_values.map((e: any) => VarIdValue.fromJSON(e))
-        : [],
+          ? object.var_ids_values.map((e: any) => VarIdValue.fromJSON(e))
+          : [],
     };
   },
 
@@ -922,10 +1047,13 @@ export const SetCommand: MessageFns<SetCommand> = {
   create<I extends Exact<DeepPartial<SetCommand>, I>>(base?: I): SetCommand {
     return SetCommand.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<SetCommand>, I>>(object: I): SetCommand {
+  fromPartial<I extends Exact<DeepPartial<SetCommand>, I>>(
+    object: I,
+  ): SetCommand {
     const message = createBaseSetCommand();
     message.cmdId = object.cmdId ?? "";
-    message.varIdsValues = object.varIdsValues?.map((e) => VarIdValue.fromPartial(e)) || [];
+    message.varIdsValues =
+      object.varIdsValues?.map((e) => VarIdValue.fromPartial(e)) || [];
     return message;
   },
 };
@@ -935,7 +1063,10 @@ function createBaseSetResponse(): SetResponse {
 }
 
 export const SetResponse: MessageFns<SetResponse> = {
-  encode(message: SetResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+  encode(
+    message: SetResponse,
+    writer: BinaryWriter = new BinaryWriter(),
+  ): BinaryWriter {
     if (message.cmdId !== "") {
       writer.uint32(10).string(message.cmdId);
     }
@@ -943,7 +1074,8 @@ export const SetResponse: MessageFns<SetResponse> = {
   },
 
   decode(input: BinaryReader | Uint8Array, length?: number): SetResponse {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const reader =
+      input instanceof BinaryReader ? input : new BinaryReader(input);
     const end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseSetResponse();
     while (reader.pos < end) {
@@ -971,8 +1103,8 @@ export const SetResponse: MessageFns<SetResponse> = {
       cmdId: isSet(object.cmdId)
         ? globalThis.String(object.cmdId)
         : isSet(object.cmd_id)
-        ? globalThis.String(object.cmd_id)
-        : "",
+          ? globalThis.String(object.cmd_id)
+          : "",
     };
   },
 
@@ -987,7 +1119,9 @@ export const SetResponse: MessageFns<SetResponse> = {
   create<I extends Exact<DeepPartial<SetResponse>, I>>(base?: I): SetResponse {
     return SetResponse.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<SetResponse>, I>>(object: I): SetResponse {
+  fromPartial<I extends Exact<DeepPartial<SetResponse>, I>>(
+    object: I,
+  ): SetResponse {
     const message = createBaseSetResponse();
     message.cmdId = object.cmdId ?? "";
     return message;
@@ -999,7 +1133,10 @@ function createBaseGetCommand(): GetCommand {
 }
 
 export const GetCommand: MessageFns<GetCommand> = {
-  encode(message: GetCommand, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+  encode(
+    message: GetCommand,
+    writer: BinaryWriter = new BinaryWriter(),
+  ): BinaryWriter {
     if (message.cmdId !== "") {
       writer.uint32(10).string(message.cmdId);
     }
@@ -1010,7 +1147,8 @@ export const GetCommand: MessageFns<GetCommand> = {
   },
 
   decode(input: BinaryReader | Uint8Array, length?: number): GetCommand {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const reader =
+      input instanceof BinaryReader ? input : new BinaryReader(input);
     const end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseGetCommand();
     while (reader.pos < end) {
@@ -1046,13 +1184,13 @@ export const GetCommand: MessageFns<GetCommand> = {
       cmdId: isSet(object.cmdId)
         ? globalThis.String(object.cmdId)
         : isSet(object.cmd_id)
-        ? globalThis.String(object.cmd_id)
-        : "",
+          ? globalThis.String(object.cmd_id)
+          : "",
       varIds: globalThis.Array.isArray(object?.varIds)
         ? object.varIds.map((e: any) => globalThis.String(e))
         : globalThis.Array.isArray(object?.var_ids)
-        ? object.var_ids.map((e: any) => globalThis.String(e))
-        : [],
+          ? object.var_ids.map((e: any) => globalThis.String(e))
+          : [],
     };
   },
 
@@ -1070,7 +1208,9 @@ export const GetCommand: MessageFns<GetCommand> = {
   create<I extends Exact<DeepPartial<GetCommand>, I>>(base?: I): GetCommand {
     return GetCommand.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<GetCommand>, I>>(object: I): GetCommand {
+  fromPartial<I extends Exact<DeepPartial<GetCommand>, I>>(
+    object: I,
+  ): GetCommand {
     const message = createBaseGetCommand();
     message.cmdId = object.cmdId ?? "";
     message.varIds = object.varIds?.map((e) => e) || [];
@@ -1083,7 +1223,10 @@ function createBaseGetResponse(): GetResponse {
 }
 
 export const GetResponse: MessageFns<GetResponse> = {
-  encode(message: GetResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+  encode(
+    message: GetResponse,
+    writer: BinaryWriter = new BinaryWriter(),
+  ): BinaryWriter {
     if (message.cmdId !== "") {
       writer.uint32(10).string(message.cmdId);
     }
@@ -1094,7 +1237,8 @@ export const GetResponse: MessageFns<GetResponse> = {
   },
 
   decode(input: BinaryReader | Uint8Array, length?: number): GetResponse {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const reader =
+      input instanceof BinaryReader ? input : new BinaryReader(input);
     const end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseGetResponse();
     while (reader.pos < end) {
@@ -1130,13 +1274,13 @@ export const GetResponse: MessageFns<GetResponse> = {
       cmdId: isSet(object.cmdId)
         ? globalThis.String(object.cmdId)
         : isSet(object.cmd_id)
-        ? globalThis.String(object.cmd_id)
-        : "",
+          ? globalThis.String(object.cmd_id)
+          : "",
       varValues: globalThis.Array.isArray(object?.varValues)
         ? object.varValues.map((e: any) => OptionalValue.fromJSON(e))
         : globalThis.Array.isArray(object?.var_values)
-        ? object.var_values.map((e: any) => OptionalValue.fromJSON(e))
-        : [],
+          ? object.var_values.map((e: any) => OptionalValue.fromJSON(e))
+          : [],
     };
   },
 
@@ -1154,10 +1298,13 @@ export const GetResponse: MessageFns<GetResponse> = {
   create<I extends Exact<DeepPartial<GetResponse>, I>>(base?: I): GetResponse {
     return GetResponse.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<GetResponse>, I>>(object: I): GetResponse {
+  fromPartial<I extends Exact<DeepPartial<GetResponse>, I>>(
+    object: I,
+  ): GetResponse {
     const message = createBaseGetResponse();
     message.cmdId = object.cmdId ?? "";
-    message.varValues = object.varValues?.map((e) => OptionalValue.fromPartial(e)) || [];
+    message.varValues =
+      object.varValues?.map((e) => OptionalValue.fromPartial(e)) || [];
     return message;
   },
 };
@@ -1167,7 +1314,10 @@ function createBaseDelCommand(): DelCommand {
 }
 
 export const DelCommand: MessageFns<DelCommand> = {
-  encode(message: DelCommand, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+  encode(
+    message: DelCommand,
+    writer: BinaryWriter = new BinaryWriter(),
+  ): BinaryWriter {
     if (message.cmdId !== "") {
       writer.uint32(10).string(message.cmdId);
     }
@@ -1178,7 +1328,8 @@ export const DelCommand: MessageFns<DelCommand> = {
   },
 
   decode(input: BinaryReader | Uint8Array, length?: number): DelCommand {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const reader =
+      input instanceof BinaryReader ? input : new BinaryReader(input);
     const end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseDelCommand();
     while (reader.pos < end) {
@@ -1214,13 +1365,13 @@ export const DelCommand: MessageFns<DelCommand> = {
       cmdId: isSet(object.cmdId)
         ? globalThis.String(object.cmdId)
         : isSet(object.cmd_id)
-        ? globalThis.String(object.cmd_id)
-        : "",
+          ? globalThis.String(object.cmd_id)
+          : "",
       itemIds: globalThis.Array.isArray(object?.itemIds)
         ? object.itemIds.map((e: any) => globalThis.String(e))
         : globalThis.Array.isArray(object?.item_ids)
-        ? object.item_ids.map((e: any) => globalThis.String(e))
-        : [],
+          ? object.item_ids.map((e: any) => globalThis.String(e))
+          : [],
     };
   },
 
@@ -1238,7 +1389,9 @@ export const DelCommand: MessageFns<DelCommand> = {
   create<I extends Exact<DeepPartial<DelCommand>, I>>(base?: I): DelCommand {
     return DelCommand.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<DelCommand>, I>>(object: I): DelCommand {
+  fromPartial<I extends Exact<DeepPartial<DelCommand>, I>>(
+    object: I,
+  ): DelCommand {
     const message = createBaseDelCommand();
     message.cmdId = object.cmdId ?? "";
     message.itemIds = object.itemIds?.map((e) => e) || [];
@@ -1251,7 +1404,10 @@ function createBaseDelResponse(): DelResponse {
 }
 
 export const DelResponse: MessageFns<DelResponse> = {
-  encode(message: DelResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+  encode(
+    message: DelResponse,
+    writer: BinaryWriter = new BinaryWriter(),
+  ): BinaryWriter {
     if (message.cmdId !== "") {
       writer.uint32(10).string(message.cmdId);
     }
@@ -1259,7 +1415,8 @@ export const DelResponse: MessageFns<DelResponse> = {
   },
 
   decode(input: BinaryReader | Uint8Array, length?: number): DelResponse {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const reader =
+      input instanceof BinaryReader ? input : new BinaryReader(input);
     const end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseDelResponse();
     while (reader.pos < end) {
@@ -1287,8 +1444,8 @@ export const DelResponse: MessageFns<DelResponse> = {
       cmdId: isSet(object.cmdId)
         ? globalThis.String(object.cmdId)
         : isSet(object.cmd_id)
-        ? globalThis.String(object.cmd_id)
-        : "",
+          ? globalThis.String(object.cmd_id)
+          : "",
     };
   },
 
@@ -1303,7 +1460,9 @@ export const DelResponse: MessageFns<DelResponse> = {
   create<I extends Exact<DeepPartial<DelResponse>, I>>(base?: I): DelResponse {
     return DelResponse.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<DelResponse>, I>>(object: I): DelResponse {
+  fromPartial<I extends Exact<DeepPartial<DelResponse>, I>>(
+    object: I,
+  ): DelResponse {
     const message = createBaseDelResponse();
     message.cmdId = object.cmdId ?? "";
     return message;
@@ -1315,15 +1474,22 @@ function createBaseInvalidCmdResponse(): InvalidCmdResponse {
 }
 
 export const InvalidCmdResponse: MessageFns<InvalidCmdResponse> = {
-  encode(message: InvalidCmdResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+  encode(
+    message: InvalidCmdResponse,
+    writer: BinaryWriter = new BinaryWriter(),
+  ): BinaryWriter {
     if (message.cmdId !== "") {
       writer.uint32(10).string(message.cmdId);
     }
     return writer;
   },
 
-  decode(input: BinaryReader | Uint8Array, length?: number): InvalidCmdResponse {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+  decode(
+    input: BinaryReader | Uint8Array,
+    length?: number,
+  ): InvalidCmdResponse {
+    const reader =
+      input instanceof BinaryReader ? input : new BinaryReader(input);
     const end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseInvalidCmdResponse();
     while (reader.pos < end) {
@@ -1351,8 +1517,8 @@ export const InvalidCmdResponse: MessageFns<InvalidCmdResponse> = {
       cmdId: isSet(object.cmdId)
         ? globalThis.String(object.cmdId)
         : isSet(object.cmd_id)
-        ? globalThis.String(object.cmd_id)
-        : "",
+          ? globalThis.String(object.cmd_id)
+          : "",
     };
   },
 
@@ -1364,10 +1530,14 @@ export const InvalidCmdResponse: MessageFns<InvalidCmdResponse> = {
     return obj;
   },
 
-  create<I extends Exact<DeepPartial<InvalidCmdResponse>, I>>(base?: I): InvalidCmdResponse {
+  create<I extends Exact<DeepPartial<InvalidCmdResponse>, I>>(
+    base?: I,
+  ): InvalidCmdResponse {
     return InvalidCmdResponse.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<InvalidCmdResponse>, I>>(object: I): InvalidCmdResponse {
+  fromPartial<I extends Exact<DeepPartial<InvalidCmdResponse>, I>>(
+    object: I,
+  ): InvalidCmdResponse {
     const message = createBaseInvalidCmdResponse();
     message.cmdId = object.cmdId ?? "";
     return message;
@@ -1375,11 +1545,21 @@ export const InvalidCmdResponse: MessageFns<InvalidCmdResponse> = {
 };
 
 function createBaseCommand(): Command {
-  return { add: undefined, list: undefined, set: undefined, get: undefined, del: undefined, addBulk: undefined };
+  return {
+    add: undefined,
+    list: undefined,
+    set: undefined,
+    get: undefined,
+    del: undefined,
+    addBulk: undefined,
+  };
 }
 
 export const Command: MessageFns<Command> = {
-  encode(message: Command, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+  encode(
+    message: Command,
+    writer: BinaryWriter = new BinaryWriter(),
+  ): BinaryWriter {
     if (message.add !== undefined) {
       AddCommand.encode(message.add, writer.uint32(10).fork()).join();
     }
@@ -1402,7 +1582,8 @@ export const Command: MessageFns<Command> = {
   },
 
   decode(input: BinaryReader | Uint8Array, length?: number): Command {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const reader =
+      input instanceof BinaryReader ? input : new BinaryReader(input);
     const end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseCommand();
     while (reader.pos < end) {
@@ -1475,8 +1656,8 @@ export const Command: MessageFns<Command> = {
       addBulk: isSet(object.addBulk)
         ? AddBulkCommand.fromJSON(object.addBulk)
         : isSet(object.add_bulk)
-        ? AddBulkCommand.fromJSON(object.add_bulk)
-        : undefined,
+          ? AddBulkCommand.fromJSON(object.add_bulk)
+          : undefined,
     };
   },
 
@@ -1508,16 +1689,30 @@ export const Command: MessageFns<Command> = {
   },
   fromPartial<I extends Exact<DeepPartial<Command>, I>>(object: I): Command {
     const message = createBaseCommand();
-    message.add = (object.add !== undefined && object.add !== null) ? AddCommand.fromPartial(object.add) : undefined;
-    message.list = (object.list !== undefined && object.list !== null)
-      ? ListCommand.fromPartial(object.list)
-      : undefined;
-    message.set = (object.set !== undefined && object.set !== null) ? SetCommand.fromPartial(object.set) : undefined;
-    message.get = (object.get !== undefined && object.get !== null) ? GetCommand.fromPartial(object.get) : undefined;
-    message.del = (object.del !== undefined && object.del !== null) ? DelCommand.fromPartial(object.del) : undefined;
-    message.addBulk = (object.addBulk !== undefined && object.addBulk !== null)
-      ? AddBulkCommand.fromPartial(object.addBulk)
-      : undefined;
+    message.add =
+      object.add !== undefined && object.add !== null
+        ? AddCommand.fromPartial(object.add)
+        : undefined;
+    message.list =
+      object.list !== undefined && object.list !== null
+        ? ListCommand.fromPartial(object.list)
+        : undefined;
+    message.set =
+      object.set !== undefined && object.set !== null
+        ? SetCommand.fromPartial(object.set)
+        : undefined;
+    message.get =
+      object.get !== undefined && object.get !== null
+        ? GetCommand.fromPartial(object.get)
+        : undefined;
+    message.del =
+      object.del !== undefined && object.del !== null
+        ? DelCommand.fromPartial(object.del)
+        : undefined;
+    message.addBulk =
+      object.addBulk !== undefined && object.addBulk !== null
+        ? AddBulkCommand.fromPartial(object.addBulk)
+        : undefined;
     return message;
   },
 };
@@ -1537,7 +1732,10 @@ function createBaseResponse(): Response {
 }
 
 export const Response: MessageFns<Response> = {
-  encode(message: Response, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+  encode(
+    message: Response,
+    writer: BinaryWriter = new BinaryWriter(),
+  ): BinaryWriter {
     if (message.add !== undefined) {
       AddResponse.encode(message.add, writer.uint32(10).fork()).join();
     }
@@ -1569,7 +1767,8 @@ export const Response: MessageFns<Response> = {
   },
 
   decode(input: BinaryReader | Uint8Array, length?: number): Response {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const reader =
+      input instanceof BinaryReader ? input : new BinaryReader(input);
     const end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseResponse();
     while (reader.pos < end) {
@@ -1663,18 +1862,20 @@ export const Response: MessageFns<Response> = {
       set: isSet(object.set) ? SetResponse.fromJSON(object.set) : undefined,
       get: isSet(object.get) ? GetResponse.fromJSON(object.get) : undefined,
       del: isSet(object.del) ? DelResponse.fromJSON(object.del) : undefined,
-      inv: isSet(object.inv) ? InvalidCmdResponse.fromJSON(object.inv) : undefined,
+      inv: isSet(object.inv)
+        ? InvalidCmdResponse.fromJSON(object.inv)
+        : undefined,
       addBulk: isSet(object.addBulk)
         ? AddBulkResponse.fromJSON(object.addBulk)
         : isSet(object.add_bulk)
-        ? AddBulkResponse.fromJSON(object.add_bulk)
-        : undefined,
+          ? AddBulkResponse.fromJSON(object.add_bulk)
+          : undefined,
       status: isSet(object.status) ? operationStatusFromJSON(object.status) : 0,
       errorMsg: isSet(object.errorMsg)
         ? globalThis.String(object.errorMsg)
         : isSet(object.error_msg)
-        ? globalThis.String(object.error_msg)
-        : undefined,
+          ? globalThis.String(object.error_msg)
+          : undefined,
     };
   },
 
@@ -1715,36 +1916,65 @@ export const Response: MessageFns<Response> = {
   },
   fromPartial<I extends Exact<DeepPartial<Response>, I>>(object: I): Response {
     const message = createBaseResponse();
-    message.add = (object.add !== undefined && object.add !== null) ? AddResponse.fromPartial(object.add) : undefined;
-    message.list = (object.list !== undefined && object.list !== null)
-      ? ListResponse.fromPartial(object.list)
-      : undefined;
-    message.set = (object.set !== undefined && object.set !== null) ? SetResponse.fromPartial(object.set) : undefined;
-    message.get = (object.get !== undefined && object.get !== null) ? GetResponse.fromPartial(object.get) : undefined;
-    message.del = (object.del !== undefined && object.del !== null) ? DelResponse.fromPartial(object.del) : undefined;
-    message.inv = (object.inv !== undefined && object.inv !== null)
-      ? InvalidCmdResponse.fromPartial(object.inv)
-      : undefined;
-    message.addBulk = (object.addBulk !== undefined && object.addBulk !== null)
-      ? AddBulkResponse.fromPartial(object.addBulk)
-      : undefined;
+    message.add =
+      object.add !== undefined && object.add !== null
+        ? AddResponse.fromPartial(object.add)
+        : undefined;
+    message.list =
+      object.list !== undefined && object.list !== null
+        ? ListResponse.fromPartial(object.list)
+        : undefined;
+    message.set =
+      object.set !== undefined && object.set !== null
+        ? SetResponse.fromPartial(object.set)
+        : undefined;
+    message.get =
+      object.get !== undefined && object.get !== null
+        ? GetResponse.fromPartial(object.get)
+        : undefined;
+    message.del =
+      object.del !== undefined && object.del !== null
+        ? DelResponse.fromPartial(object.del)
+        : undefined;
+    message.inv =
+      object.inv !== undefined && object.inv !== null
+        ? InvalidCmdResponse.fromPartial(object.inv)
+        : undefined;
+    message.addBulk =
+      object.addBulk !== undefined && object.addBulk !== null
+        ? AddBulkResponse.fromPartial(object.addBulk)
+        : undefined;
     message.status = object.status ?? 0;
     message.errorMsg = object.errorMsg ?? undefined;
     return message;
   },
 };
 
-type Builtin = Date | Function | Uint8Array | string | number | boolean | undefined;
+type Builtin =
+  | Date
+  | Function
+  | Uint8Array
+  | string
+  | number
+  | boolean
+  | undefined;
 
-export type DeepPartial<T> = T extends Builtin ? T
-  : T extends globalThis.Array<infer U> ? globalThis.Array<DeepPartial<U>>
-  : T extends ReadonlyArray<infer U> ? ReadonlyArray<DeepPartial<U>>
-  : T extends {} ? { [K in keyof T]?: DeepPartial<T[K]> }
-  : Partial<T>;
+export type DeepPartial<T> = T extends Builtin
+  ? T
+  : T extends globalThis.Array<infer U>
+    ? globalThis.Array<DeepPartial<U>>
+    : T extends ReadonlyArray<infer U>
+      ? ReadonlyArray<DeepPartial<U>>
+      : T extends {}
+        ? { [K in keyof T]?: DeepPartial<T[K]> }
+        : Partial<T>;
 
 type KeysOfUnion<T> = T extends T ? keyof T : never;
-export type Exact<P, I extends P> = P extends Builtin ? P
-  : P & { [K in keyof P]: Exact<P[K], I[K]> } & { [K in Exclude<keyof I, KeysOfUnion<P>>]: never };
+export type Exact<P, I extends P> = P extends Builtin
+  ? P
+  : P & { [K in keyof P]: Exact<P[K], I[K]> } & {
+      [K in Exclude<keyof I, KeysOfUnion<P>>]: never;
+    };
 
 function isObject(value: any): boolean {
   return typeof value === "object" && value !== null;
