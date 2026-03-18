@@ -1,49 +1,57 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<coverage generated="1773624634452" clover="3.2.0">
-  <project timestamp="1773624634452" name="All files">
-    <metrics statements="2067" coveredstatements="1007" conditionals="1825" coveredconditionals="533" methods="407" coveredmethods="189" elements="4299" coveredelements="1729" complexity="0" loc="2067" ncloc="2067" packages="7" files="15" classes="15"/>
+<coverage generated="1773737570973" clover="3.2.0">
+  <project timestamp="1773737570973" name="All files">
+    <metrics statements="2095" coveredstatements="1051" conditionals="1858" coveredconditionals="579" methods="413" coveredmethods="196" elements="4366" coveredelements="1826" complexity="0" loc="2095" ncloc="2095" packages="9" files="17" classes="17"/>
+    <package name="core.theme">
+      <metrics statements="2" coveredstatements="2" conditionals="16" coveredconditionals="16" methods="1" coveredmethods="1"/>
+      <file name="theme-utils.ts" path="/Users/javierlazarocastellondorta/Documents/JAVIER/WORK/LiRAYS/SOFT/LiRAYS-Scada/frontend/src/lib/core/theme/theme-utils.ts">
+        <metrics statements="2" coveredstatements="2" conditionals="16" coveredconditionals="16" methods="1" coveredmethods="1"/>
+        <line num="4" count="3" type="stmt"/>
+        <line num="5" count="3" type="cond" truecount="16" falsecount="0"/>
+      </file>
+    </package>
     <package name="core.ws">
-      <metrics statements="273" coveredstatements="191" conditionals="152" coveredconditionals="95" methods="58" coveredmethods="44"/>
+      <metrics statements="273" coveredstatements="203" conditionals="152" coveredconditionals="107" methods="58" coveredmethods="45"/>
       <file name="command-ws-client.ts" path="/Users/javierlazarocastellondorta/Documents/JAVIER/WORK/LiRAYS/SOFT/LiRAYS-Scada/frontend/src/lib/core/ws/command-ws-client.ts">
-        <metrics statements="38" coveredstatements="25" conditionals="29" coveredconditionals="16" methods="12" coveredmethods="11"/>
-        <line num="12" count="6" type="stmt"/>
-        <line num="16" count="1" type="cond" truecount="1" falsecount="1"/>
-        <line num="17" count="0" type="stmt"/>
-        <line num="19" count="1" type="cond" truecount="1" falsecount="1"/>
-        <line num="20" count="0" type="stmt"/>
-        <line num="22" count="1" type="cond" truecount="1" falsecount="1"/>
-        <line num="23" count="1" type="stmt"/>
-        <line num="25" count="0" type="stmt"/>
-        <line num="31" count="1" type="cond" truecount="1" falsecount="1"/>
-        <line num="32" count="0" type="stmt"/>
-        <line num="34" count="1" type="cond" truecount="1" falsecount="1"/>
-        <line num="35" count="1" type="stmt"/>
-        <line num="37" count="0" type="cond" truecount="0" falsecount="2"/>
-        <line num="38" count="0" type="stmt"/>
-        <line num="40" count="0" type="cond" truecount="0" falsecount="2"/>
-        <line num="41" count="0" type="stmt"/>
-        <line num="43" count="0" type="cond" truecount="0" falsecount="2"/>
-        <line num="44" count="0" type="stmt"/>
+        <metrics statements="38" coveredstatements="37" conditionals="29" coveredconditionals="28" methods="12" coveredmethods="12"/>
+        <line num="12" count="14" type="stmt"/>
+        <line num="16" count="6" type="cond" truecount="2" falsecount="0"/>
+        <line num="17" count="1" type="stmt"/>
+        <line num="19" count="5" type="cond" truecount="2" falsecount="0"/>
+        <line num="20" count="1" type="stmt"/>
+        <line num="22" count="4" type="cond" truecount="2" falsecount="0"/>
+        <line num="23" count="3" type="stmt"/>
+        <line num="25" count="1" type="stmt"/>
+        <line num="31" count="7" type="cond" truecount="2" falsecount="0"/>
+        <line num="32" count="2" type="stmt"/>
+        <line num="34" count="5" type="cond" truecount="2" falsecount="0"/>
+        <line num="35" count="2" type="stmt"/>
+        <line num="37" count="3" type="cond" truecount="2" falsecount="0"/>
+        <line num="38" count="1" type="stmt"/>
+        <line num="40" count="2" type="cond" truecount="2" falsecount="0"/>
+        <line num="41" count="1" type="stmt"/>
+        <line num="43" count="1" type="cond" truecount="1" falsecount="1"/>
+        <line num="44" count="1" type="stmt"/>
         <line num="46" count="0" type="stmt"/>
-        <line num="56" count="2" type="stmt"/>
-        <line num="72" count="1" type="stmt"/>
-        <line num="87" count="1" type="stmt"/>
-        <line num="103" count="1" type="stmt"/>
-        <line num="119" count="0" type="stmt"/>
-        <line num="135" count="2" type="cond" truecount="2" falsecount="0"/>
-        <line num="136" count="1" type="stmt"/>
-        <line num="138" count="1" type="cond" truecount="4" falsecount="1"/>
-        <line num="139" count="1" type="stmt"/>
-        <line num="140" count="1" type="stmt"/>
-        <line num="143" count="1" type="stmt"/>
-        <line num="145" count="1" type="stmt"/>
-        <line num="147" count="0" type="stmt"/>
-        <line num="151" count="1" type="stmt"/>
-        <line num="152" count="1" type="stmt"/>
-        <line num="153" count="1" type="stmt"/>
-        <line num="155" count="1" type="stmt"/>
-        <line num="163" count="1" type="stmt"/>
-        <line num="180" count="1" type="stmt"/>
+        <line num="56" count="3" type="stmt"/>
+        <line num="72" count="2" type="stmt"/>
+        <line num="87" count="3" type="stmt"/>
+        <line num="103" count="2" type="stmt"/>
+        <line num="119" count="1" type="stmt"/>
+        <line num="135" count="8" type="cond" truecount="2" falsecount="0"/>
+        <line num="136" count="4" type="stmt"/>
+        <line num="138" count="4" type="cond" truecount="5" falsecount="0"/>
+        <line num="139" count="3" type="stmt"/>
+        <line num="140" count="3" type="stmt"/>
+        <line num="143" count="3" type="stmt"/>
+        <line num="145" count="3" type="stmt"/>
+        <line num="147" count="1" type="stmt"/>
+        <line num="151" count="5" type="stmt"/>
+        <line num="152" count="5" type="stmt"/>
+        <line num="153" count="5" type="stmt"/>
+        <line num="155" count="4" type="stmt"/>
+        <line num="163" count="2" type="stmt"/>
+        <line num="180" count="3" type="stmt"/>
       </file>
       <file name="tag-stream-client.ts" path="/Users/javierlazarocastellondorta/Documents/JAVIER/WORK/LiRAYS/SOFT/LiRAYS-Scada/frontend/src/lib/core/ws/tag-stream-client.ts">
         <metrics statements="230" coveredstatements="161" conditionals="121" coveredconditionals="77" methods="45" coveredmethods="32"/>
@@ -285,6 +293,38 @@
         <line num="5" count="2" type="stmt"/>
         <line num="6" count="2" type="stmt"/>
         <line num="7" count="2" type="stmt"/>
+      </file>
+    </package>
+    <package name="features.graph">
+      <metrics statements="26" coveredstatements="26" conditionals="17" coveredconditionals="16" methods="5" coveredmethods="5"/>
+      <file name="live-utils.ts" path="/Users/javierlazarocastellondorta/Documents/JAVIER/WORK/LiRAYS/SOFT/LiRAYS-Scada/frontend/src/lib/features/graph/live-utils.ts">
+        <metrics statements="26" coveredstatements="26" conditionals="17" coveredconditionals="16" methods="5" coveredmethods="5"/>
+        <line num="6" count="3" type="stmt"/>
+        <line num="7" count="3" type="stmt"/>
+        <line num="8" count="6" type="stmt"/>
+        <line num="9" count="6" type="stmt"/>
+        <line num="10" count="6" type="cond" truecount="2" falsecount="0"/>
+        <line num="11" count="4" type="stmt"/>
+        <line num="14" count="3" type="stmt"/>
+        <line num="21" count="4" type="stmt"/>
+        <line num="22" count="4" type="stmt"/>
+        <line num="23" count="4" type="stmt"/>
+        <line num="24" count="4" type="cond" truecount="4" falsecount="0"/>
+        <line num="25" count="1" type="stmt"/>
+        <line num="27" count="3" type="stmt"/>
+        <line num="28" count="3" type="cond" truecount="4" falsecount="0"/>
+        <line num="29" count="2" type="stmt"/>
+        <line num="32" count="1" type="stmt"/>
+        <line num="33" count="1" type="stmt"/>
+        <line num="42" count="4" type="stmt"/>
+        <line num="52" count="3" type="stmt"/>
+        <line num="53" count="3" type="stmt"/>
+        <line num="54" count="2" type="cond" truecount="1" falsecount="1"/>
+        <line num="55" count="2" type="cond" truecount="2" falsecount="0"/>
+        <line num="60" count="1" type="stmt"/>
+        <line num="62" count="1" type="stmt"/>
+        <line num="63" count="1" type="stmt"/>
+        <line num="70" count="3" type="stmt"/>
       </file>
     </package>
     <package name="features.namespace-builder">
@@ -585,23 +625,23 @@
       <metrics statements="162" coveredstatements="133" conditionals="79" coveredconditionals="60" methods="37" coveredmethods="32"/>
       <file name="flatten.ts" path="/Users/javierlazarocastellondorta/Documents/JAVIER/WORK/LiRAYS/SOFT/LiRAYS-Scada/frontend/src/lib/features/tree/flatten.ts">
         <metrics statements="17" coveredstatements="15" conditionals="9" coveredconditionals="7" methods="2" coveredmethods="2"/>
-        <line num="23" count="4" type="stmt"/>
-        <line num="24" count="4" type="stmt"/>
-        <line num="27" count="4" type="stmt"/>
-        <line num="29" count="4" type="stmt"/>
-        <line num="30" count="9" type="stmt"/>
-        <line num="31" count="9" type="cond" truecount="1" falsecount="1"/>
+        <line num="23" count="6" type="stmt"/>
+        <line num="24" count="6" type="stmt"/>
+        <line num="27" count="5" type="stmt"/>
+        <line num="29" count="6" type="stmt"/>
+        <line num="30" count="12" type="stmt"/>
+        <line num="31" count="12" type="cond" truecount="1" falsecount="1"/>
         <line num="32" count="0" type="stmt"/>
-        <line num="35" count="9" type="stmt"/>
-        <line num="36" count="9" type="cond" truecount="1" falsecount="1"/>
+        <line num="35" count="12" type="stmt"/>
+        <line num="36" count="12" type="cond" truecount="1" falsecount="1"/>
         <line num="37" count="0" type="stmt"/>
-        <line num="40" count="9" type="stmt"/>
-        <line num="41" count="9" type="stmt"/>
-        <line num="50" count="9" type="cond" truecount="5" falsecount="0"/>
-        <line num="51" count="5" type="stmt"/>
-        <line num="54" count="4" type="stmt"/>
-        <line num="55" count="5" type="stmt"/>
-        <line num="62" count="4" type="stmt"/>
+        <line num="40" count="12" type="stmt"/>
+        <line num="41" count="12" type="stmt"/>
+        <line num="50" count="12" type="cond" truecount="5" falsecount="0"/>
+        <line num="51" count="7" type="stmt"/>
+        <line num="54" count="5" type="stmt"/>
+        <line num="55" count="7" type="stmt"/>
+        <line num="62" count="6" type="stmt"/>
       </file>
       <file name="server-adapter.ts" path="/Users/javierlazarocastellondorta/Documents/JAVIER/WORK/LiRAYS/SOFT/LiRAYS-Scada/frontend/src/lib/features/tree/server-adapter.ts">
         <metrics statements="9" coveredstatements="9" conditionals="8" coveredconditionals="6" methods="5" coveredmethods="5"/>
@@ -759,16 +799,16 @@
       </file>
     </package>
     <package name="proto.namespace">
-      <metrics statements="1349" coveredstatements="487" conditionals="1331" coveredconditionals="223" methods="260" coveredmethods="74"/>
+      <metrics statements="1349" coveredstatements="491" conditionals="1331" coveredconditionals="225" methods="260" coveredmethods="74"/>
       <file name="commands.ts" path="/Users/javierlazarocastellondorta/Documents/JAVIER/WORK/LiRAYS/SOFT/LiRAYS-Scada/frontend/src/lib/proto/namespace/commands.ts">
-        <metrics statements="749" coveredstatements="290" conditionals="744" coveredconditionals="139" methods="149" coveredmethods="40"/>
+        <metrics statements="749" coveredstatements="294" conditionals="744" coveredconditionals="141" methods="149" coveredmethods="40"/>
         <line num="12" count="2" type="stmt"/>
         <line num="110" count="2" type="stmt"/>
         <line num="113" count="2" type="stmt"/>
         <line num="115" count="1" type="cond" truecount="1" falsecount="1"/>
         <line num="116" count="1" type="stmt"/>
         <line num="118" count="1" type="cond" truecount="1" falsecount="1"/>
-        <line num="119" count="0" type="stmt"/>
+        <line num="119" count="1" type="stmt"/>
         <line num="121" count="1" type="stmt"/>
         <line num="122" count="1" type="stmt"/>
         <line num="124" count="1" type="stmt"/>
@@ -776,16 +816,16 @@
         <line num="129" count="2" type="cond" truecount="1" falsecount="1"/>
         <line num="130" count="2" type="stmt"/>
         <line num="131" count="2" type="stmt"/>
-        <line num="132" count="4" type="stmt"/>
-        <line num="133" count="4" type="cond" truecount="2" falsecount="1"/>
+        <line num="132" count="6" type="stmt"/>
+        <line num="133" count="6" type="cond" truecount="3" falsecount="0"/>
         <line num="135" count="2" type="cond" truecount="1" falsecount="1"/>
         <line num="136" count="0" type="stmt"/>
         <line num="139" count="2" type="stmt"/>
         <line num="140" count="2" type="stmt"/>
-        <line num="143" count="0" type="cond" truecount="0" falsecount="2"/>
+        <line num="143" count="2" type="cond" truecount="1" falsecount="1"/>
         <line num="144" count="0" type="stmt"/>
-        <line num="147" count="0" type="stmt"/>
-        <line num="148" count="0" type="stmt"/>
+        <line num="147" count="2" type="stmt"/>
+        <line num="148" count="2" type="stmt"/>
         <line num="151" count="2" type="cond" truecount="1" falsecount="1"/>
         <line num="152" count="0" type="stmt"/>
         <line num="155" count="2" type="stmt"/>
@@ -1514,12 +1554,12 @@
       </file>
       <file name="enums.ts" path="/Users/javierlazarocastellondorta/Documents/JAVIER/WORK/LiRAYS/SOFT/LiRAYS-Scada/frontend/src/lib/proto/namespace/enums.ts">
         <metrics statements="52" coveredstatements="20" conditionals="54" coveredconditionals="7" methods="9" coveredmethods="4"/>
-        <line num="9" count="3" type="stmt"/>
-        <line num="12" count="3" type="cond" truecount="2" falsecount="0"/>
-        <line num="13" count="3" type="stmt"/>
-        <line num="14" count="3" type="stmt"/>
-        <line num="15" count="3" type="stmt"/>
-        <line num="16" count="3" type="stmt"/>
+        <line num="9" count="4" type="stmt"/>
+        <line num="12" count="4" type="cond" truecount="2" falsecount="0"/>
+        <line num="13" count="4" type="stmt"/>
+        <line num="14" count="4" type="stmt"/>
+        <line num="15" count="4" type="stmt"/>
+        <line num="16" count="4" type="stmt"/>
         <line num="20" count="0" type="cond" truecount="0" falsecount="9"/>
         <line num="23" count="0" type="stmt"/>
         <line num="26" count="0" type="stmt"/>
@@ -1530,13 +1570,13 @@
         <line num="42" count="0" type="stmt"/>
         <line num="44" count="0" type="stmt"/>
         <line num="47" count="0" type="stmt"/>
-        <line num="52" count="3" type="cond" truecount="2" falsecount="0"/>
-        <line num="53" count="3" type="stmt"/>
-        <line num="54" count="3" type="stmt"/>
-        <line num="55" count="3" type="stmt"/>
-        <line num="56" count="3" type="stmt"/>
-        <line num="57" count="3" type="stmt"/>
-        <line num="58" count="3" type="stmt"/>
+        <line num="52" count="4" type="cond" truecount="2" falsecount="0"/>
+        <line num="53" count="4" type="stmt"/>
+        <line num="54" count="4" type="stmt"/>
+        <line num="55" count="4" type="stmt"/>
+        <line num="56" count="4" type="stmt"/>
+        <line num="57" count="4" type="stmt"/>
+        <line num="58" count="4" type="stmt"/>
         <line num="62" count="0" type="cond" truecount="0" falsecount="13"/>
         <line num="65" count="0" type="stmt"/>
         <line num="68" count="0" type="stmt"/>
@@ -1551,11 +1591,11 @@
         <line num="94" count="0" type="stmt"/>
         <line num="96" count="0" type="stmt"/>
         <line num="99" count="0" type="stmt"/>
-        <line num="104" count="3" type="cond" truecount="2" falsecount="0"/>
-        <line num="105" count="3" type="stmt"/>
-        <line num="106" count="3" type="stmt"/>
-        <line num="107" count="3" type="stmt"/>
-        <line num="108" count="3" type="stmt"/>
+        <line num="104" count="4" type="cond" truecount="2" falsecount="0"/>
+        <line num="105" count="4" type="stmt"/>
+        <line num="106" count="4" type="stmt"/>
+        <line num="107" count="4" type="stmt"/>
+        <line num="108" count="4" type="stmt"/>
         <line num="112" count="0" type="cond" truecount="0" falsecount="9"/>
         <line num="115" count="0" type="stmt"/>
         <line num="118" count="0" type="stmt"/>

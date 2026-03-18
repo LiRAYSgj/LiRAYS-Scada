@@ -58,4 +58,32 @@ describe("flattenVisibleRows", () => {
     expect(rows[1].depth).toBe(2);
     expect(rows[2].depth).toBe(2);
   });
+
+  it("sets isLoading and isErrored from state", () => {
+    const rows = flattenVisibleRows({
+      nodes: { root, "child-a": childA, "child-b": childB },
+      rootIds: ["root"],
+      expanded: new Set<string>(["root"]),
+      loading: new Set<string>(["child-a"]),
+      errored: new Set<string>(["child-b"]),
+    });
+    expect(rows).toHaveLength(3);
+    expect(rows[0].isLoading).toBe(false);
+    expect(rows[0].isErrored).toBe(false);
+    expect(rows[1].isLoading).toBe(true);
+    expect(rows[1].isErrored).toBe(false);
+    expect(rows[2].isLoading).toBe(false);
+    expect(rows[2].isErrored).toBe(true);
+  });
+
+  it("returns empty when rootIds empty", () => {
+    const rows = flattenVisibleRows({
+      nodes: { root },
+      rootIds: [],
+      expanded: new Set(),
+      loading: new Set(),
+      errored: new Set(),
+    });
+    expect(rows).toEqual([]);
+  });
 });

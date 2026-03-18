@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Button } from "$lib/components/Button";
-	import { Layers, ListChecks, Moon, Play, Plus, Square, Sun, Trash2 } from "lucide-svelte";
+	import { CheckSquare, Layers, ListChecks, Moon, Play, Plus, Square, Sun, Trash2 } from "lucide-svelte";
 
 	type ThemeMode = "light" | "dark";
 	type CanvasMode = "edit" | "play";
@@ -19,6 +19,7 @@
 		/** Number of nodes in the multi-selection (when multiSelectMode is true). */
 		selectionCount: number;
 		onRemoveSelection: () => void;
+		onSelectAll: () => void;
 	}
 
 	let {
@@ -33,6 +34,7 @@
 		onToggleMultiSelect,
 		selectionCount,
 		onRemoveSelection,
+		onSelectAll,
 	}: Props = $props();
 </script>
 
@@ -48,6 +50,13 @@
 					ariaLabel="Remove selected"
 					disabled={selectionCount === 0}
 					onclick={onRemoveSelection}
+				/>
+				<Button
+					variant="icon"
+					icon={CheckSquare}
+					title="Select all"
+					ariaLabel="Select all"
+					onclick={onSelectAll}
 				/>
 				<Button
 					variant="icon"

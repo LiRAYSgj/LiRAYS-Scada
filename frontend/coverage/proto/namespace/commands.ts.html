@@ -23,16 +23,16 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">38.3% </span>
+                <span class="strong">38.83% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>290/757</span>
+                <span class='fraction'>294/757</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">18.68% </span>
+                <span class="strong">18.95% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>139/744</span>
+                <span class='fraction'>141/744</span>
             </div>
         
             
@@ -44,9 +44,9 @@
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">38.71% </span>
+                <span class="strong">39.25% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>290/749</span>
+                <span class='fraction'>294/749</span>
             </div>
         
             
@@ -1945,12 +1945,12 @@
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -1958,8 +1958,8 @@
 <span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-yes">2x</span>
-<span class="cline-any cline-yes">4x</span>
-<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">6x</span>
+<span class="cline-any cline-yes">6x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-no">&nbsp;</span>
@@ -1969,12 +1969,12 @@
 <span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">2x</span>
@@ -3606,7 +3606,7 @@ export const protobufPackage = "namespace";
 &nbsp;
 export interface AddCommand {
   cmdId: string;
-  parentId: string;
+  parentId?: string | undefined;
   itemsMeta: ItemMeta[];
 }
 &nbsp;
@@ -3700,7 +3700,7 @@ export interface Response {
 }
 &nbsp;
 function createBaseAddCommand(): AddCommand {
-  return { cmdId: "", parentId: "", itemsMeta: [] };
+  return { cmdId: "", parentId: undefined, itemsMeta: [] };
 }
 &nbsp;
 export const AddCommand: MessageFns&lt;AddCommand&gt; = {
@@ -3708,8 +3708,8 @@ export const AddCommand: MessageFns&lt;AddCommand&gt; = {
     <span class="missing-if-branch" title="else path not taken" >E</span>if (message.cmdId !== "") {
       writer.uint32(10).string(message.cmdId);
     }
-    <span class="missing-if-branch" title="if path not taken" >I</span>if (message.parentId !== "") {
-<span class="cstat-no" title="statement not covered" >      writer.uint32(18).string(message.parentId);</span>
+    <span class="missing-if-branch" title="else path not taken" >E</span>if (message.parentId !== undefined) {
+      writer.uint32(18).string(message.parentId);
     }
     for (const v of message.itemsMeta) {
       ItemMeta.encode(v!, writer.uint32(26).fork()).join();
@@ -3732,13 +3732,13 @@ export const AddCommand: MessageFns&lt;AddCommand&gt; = {
           message.cmdId = reader.string();
           continue;
         }
-<span class="branch-1 cbranch-no" title="branch not covered" >        case 2: {</span>
-<span class="cstat-no" title="statement not covered" >          if (tag !== 18) {</span>
+        case 2: {
+          <span class="missing-if-branch" title="if path not taken" >I</span>if (tag !== 18) {
 <span class="cstat-no" title="statement not covered" >            break;</span>
           }
 &nbsp;
-<span class="cstat-no" title="statement not covered" >          message.parentId = reader.string();</span>
-<span class="cstat-no" title="statement not covered" >          continue;</span>
+          message.parentId = reader.string();
+          continue;
         }
         case 3: {
           <span class="missing-if-branch" title="if path not taken" >I</span>if (tag !== 26) {
@@ -3768,7 +3768,7 @@ export const AddCommand: MessageFns&lt;AddCommand&gt; = {
         ? globalThis.String(object.parentId)
         : isSet(object.parent_id)
         ? globalThis.String(object.parent_id)
-        : "",
+        : undefined,
       itemsMeta: globalThis.Array.isArray(object?.itemsMeta)
         ? object.itemsMeta.map(<span class="fstat-no" title="function not covered" >(e</span>: any) =&gt; <span class="cstat-no" title="statement not covered" >ItemMeta.fromJSON(e))</span>
         : globalThis.Array.isArray(object?.items_meta)
@@ -3782,7 +3782,7 @@ export const AddCommand: MessageFns&lt;AddCommand&gt; = {
 <span class="cstat-no" title="statement not covered" >    if (message.cmdId !== "") {</span>
 <span class="cstat-no" title="statement not covered" >      obj.cmdId = message.cmdId;</span>
     }
-<span class="cstat-no" title="statement not covered" >    if (message.parentId !== "") {</span>
+<span class="cstat-no" title="statement not covered" >    if (message.parentId !== undefined) {</span>
 <span class="cstat-no" title="statement not covered" >      obj.parentId = message.parentId;</span>
     }
 <span class="cstat-no" title="statement not covered" >    if (message.itemsMeta?.length) {</span>
@@ -3797,7 +3797,7 @@ export const AddCommand: MessageFns&lt;AddCommand&gt; = {
 <span class="fstat-no" title="function not covered" >  fromPartial&lt;I extends Exact&lt;DeepPartial&lt;AddCommand&gt;, I&gt;&gt;(o</span>bject: I): AddCommand {
     const message = <span class="cstat-no" title="statement not covered" >createBaseAddCommand();</span>
 <span class="cstat-no" title="statement not covered" >    message.cmdId = object.cmdId ?? "";</span>
-<span class="cstat-no" title="statement not covered" >    message.parentId = object.parentId ?? "";</span>
+<span class="cstat-no" title="statement not covered" >    message.parentId = object.parentId ?? undefined;</span>
 <span class="cstat-no" title="statement not covered" >    message.itemsMeta = object.itemsMeta?.map(<span class="fstat-no" title="function not covered" >(e</span>) =&gt; <span class="cstat-no" title="statement not covered" >ItemMeta.fromPartial(e))</span> || [];</span>
 <span class="cstat-no" title="statement not covered" >    return message;</span>
   },
@@ -5362,7 +5362,7 @@ export interface MessageFns&lt;T&gt; {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-03-16T01:30:34.436Z
+                at 2026-03-17T08:52:50.948Z
             </div>
         <script src="../../prettify.js"></script>
         <script>
