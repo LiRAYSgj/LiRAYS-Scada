@@ -38,37 +38,6 @@ pub struct VariableManager {
     pub tx: broadcast::Sender<VarIdValue>,
 }
 
-pub struct Subscriber {
-    pub rx: broadcast::Receiver<VarIdValue>,
-    pub sub_ids: Vec<String>,
-}
-
-impl Subscriber {
-    pub async fn next_update(&mut self) -> Result<GetResponse, String> {
-        loop {
-            match self.rx.recv().await {
-                Ok(var_id_val) => {
-                    if let Some(index) = self.sub_ids.iter().position(|id| *id == var_id_val.var_id) {
-                        let mut var_values = vec![OptionalValue { value: None }; self.sub_ids.len()];
-                        var_values[index] = OptionalValue { value: var_id_val.value };
-                        return Ok(GetResponse {
-                            cmd_id: "".to_string(),
-                            var_values,
-                        });
-                    }
-                }
-                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                    return Err("Channel closed".to_string());
-                }
-                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
-                    // Missed some messages, but we can keep trying
-                    continue;
-                }
-            }
-        }
-    }
-}
-
 impl VariableManager {
 
     pub fn new(files_dir: &str) -> Self {
@@ -177,6 +146,8 @@ impl VariableManager {
                 _ => return Err(format!("Invalid item type"))
             }
         }
+        // children_folders.sort_by(|a, b| a.name.cmp(&b.name));
+        // children_vars.sort_by(|a, b| a.name.cmp(&b.name));
 
         Ok((children_folders, children_vars))
     }
@@ -267,10 +238,10 @@ impl VariableManager {
         Ok(())
     }
 
-    fn set_vals(&self, var_id_vals: Vec<VarIdValue>) -> Result<((), Vec<VarIdValue>), String> {
+    fn set_vals(&self, var_id_vals: Vec<VarIdValue>) -> Result<Vec<VarIdValue>, String> {
         let base_err = format!("Error setting variable values.");
         let mut batch = Batch::default();
-        let mut successfully_set_vals = vec![];
+        let mut successfully_set_vals: Vec<VarIdValue> = vec![];
         for var_id_val in var_id_vals {
             let var_id = VariableManager::normalize_path(&var_id_val.var_id, ItemType::Variable);
             let h_key = VariableManager::get_hierarchy_key(&var_id_val.var_id);
@@ -286,24 +257,26 @@ impl VariableManager {
             match var_id_val.value {
                 Some(value) => {
                     let val = value.typed.ok_or_else(|| format!("None value"))?;
-                    match (i_type, v_dtype, val) {
-                        (ItemType::Variable, VarDataType::Integer, Typed::IntegerValue(v)) => batch.insert(d_key, Value {typed: Some(Typed::IntegerValue(v))}.encode_to_vec()),
-                        (ItemType::Variable, VarDataType::Integer, Typed::FloatValue(v)) => batch.insert(d_key, Value {typed: Some(Typed::IntegerValue(v as i64))}.encode_to_vec()),
-                        (ItemType::Variable, VarDataType::Float, Typed::FloatValue(v)) => batch.insert(d_key, Value {typed: Some(Typed::FloatValue(v))}.encode_to_vec()),
-                        (ItemType::Variable, VarDataType::Float, Typed::IntegerValue(v)) => batch.insert(d_key, Value {typed: Some(Typed::FloatValue(v as f64))}.encode_to_vec()),
-                        (ItemType::Variable, VarDataType::Text, Typed::TextValue(v)) => batch.insert(d_key, Value {typed: Some(Typed::TextValue(v))}.encode_to_vec()),
-                        (ItemType::Variable, VarDataType::Boolean, Typed::BooleanValue(v)) => batch.insert(d_key, Value {typed: Some(Typed::BooleanValue(v))}.encode_to_vec()),
+                    let value_ = match (i_type, v_dtype, val) {
+                        (ItemType::Variable, VarDataType::Integer, Typed::IntegerValue(v)) => Value {typed: Some(Typed::IntegerValue(v))},
+                        (ItemType::Variable, VarDataType::Integer, Typed::FloatValue(v)) => Value {typed: Some(Typed::IntegerValue(v as i64))},
+                        (ItemType::Variable, VarDataType::Float, Typed::FloatValue(v)) => Value {typed: Some(Typed::FloatValue(v))},
+                        (ItemType::Variable, VarDataType::Float, Typed::IntegerValue(v)) => Value {typed: Some(Typed::FloatValue(v as f64))},
+                        (ItemType::Variable, VarDataType::Text, Typed::TextValue(v)) => Value {typed: Some(Typed::TextValue(v))},
+                        (ItemType::Variable, VarDataType::Boolean, Typed::BooleanValue(v)) => Value {typed: Some(Typed::BooleanValue(v))},
                         (ItemType::Variable, VarDataType::Invalid, _) => return Err(format!("Invalid var data type.")),
                         (ItemType::Variable, _, _) => return Err(format!("Mismatch data type.")),
                         (ItemType::Folder, _, _) => return Err(format!("Can't write value to a folder.")),
                         (ItemType::Invalid, _, _) => return Err(format!("Invalid item type.")),
-                    }
+                    };
+                    batch.insert(d_key, value_.encode_to_vec());
+                    successfully_set_vals.push(VarIdValue { var_id, value: Some(value_)});
                 }
                 None => return Err(format!("{base_err} Can't set a null value"))
             }
         }
         self.items_tree.apply_batch(batch).map_err(|e| format!("Error Applying batch op: {e}"))?;
-        Ok(((), successfully_set_vals))
+        Ok(successfully_set_vals)
     }
 
     fn get_vals(&self, var_ids: Vec<String>) -> Result<Vec<OptionalValue>, String> {
@@ -395,7 +368,7 @@ impl VariableManager {
             }
             Some(CommandType::Set(set_cmd)) => {
                 let (status, error_msg) = match self.set_vals(set_cmd.var_ids_values) {
-                    Ok((_do_commit, successfully_set_vals)) => {
+                    Ok(successfully_set_vals) => {
                         for v in successfully_set_vals {
                             let _ = self.tx.send(v);
                         }
@@ -435,22 +408,28 @@ impl VariableManager {
                 };
                 Response { response_type: Some(ResponseType::AddBulk(AddBulkResponse { cmd_id: addb_cmd.cmd_id })), status, error_msg }
             }
-            None => {
-                let uid = Uuid::new_v4().to_string();
-                Response { response_type: Some(ResponseType::Inv(InvalidCmdResponse {
-                    cmd_id: uid
-                })),
-                status: OperationStatus::Err as i32,
-                error_msg: Some("No valid command received".to_string())
+            Some(CommandType::Sub(sub_cmd)) => {
+                Response {
+                    response_type: Some(ResponseType::Inv(InvalidCmdResponse { cmd_id: sub_cmd.cmd_id })),
+                    status: OperationStatus::Err as i32,
+                    error_msg: Some("Subscribe command not allowed in this listener".to_string())
                 }
             }
-        }
-    }
-
-    pub fn subscribe(&self, var_ids: Vec<String>) -> Subscriber {
-        Subscriber {
-            rx: self.tx.subscribe(),
-            sub_ids: var_ids
+            Some(CommandType::Unsub(unsub_cmd)) => {
+                Response {
+                    response_type: Some(ResponseType::Inv(InvalidCmdResponse { cmd_id: unsub_cmd.cmd_id })),
+                    status: OperationStatus::Err as i32,
+                    error_msg: Some("Unsubscribe command not allowed in this listener".to_string())
+                }
+            }
+            None => {
+                let uid = Uuid::new_v4().to_string();
+                Response {
+                    response_type: Some(ResponseType::Inv(InvalidCmdResponse { cmd_id: uid })),
+                    status: OperationStatus::Err as i32,
+                    error_msg: Some("No valid command received".to_string())
+                }
+            }
         }
     }
 }

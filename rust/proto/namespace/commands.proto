@@ -55,6 +55,16 @@ message GetResponse {
   repeated OptionalValue var_values = 2;
 }
 
+message SubscribeCommand {
+  string cmd_id = 1;
+  repeated string var_ids = 2;
+}
+
+message UnsubscribeCommand {
+  string cmd_id = 1;
+  repeated string var_ids = 2;
+}
+
 message DelCommand {
   string cmd_id = 1;
   repeated string item_ids = 2;
@@ -77,6 +87,8 @@ message Command {
     GetCommand get = 4;
     DelCommand del = 5;
     AddBulkCommand add_bulk = 6;
+    SubscribeCommand sub = 7;
+    UnsubscribeCommand unsub = 8;
   }
 }
 
