@@ -9,6 +9,7 @@ use prost::Message as ProstMessage;
 use pyo3::prelude::*;
 use super::variable::{VariableManager};
 use super::namespace::Command;
+use serde_json;
 
 
 async fn handle_client_cmd(vm: Arc<VariableManager>, stream: TcpStream, addr: String) {
@@ -17,25 +18,41 @@ async fn handle_client_cmd(vm: Arc<VariableManager>, stream: TcpStream, addr: St
             debug!("Accepting client from {addr}");
             let mut rx = vm.tx.subscribe();
             let mut subscribed_set: HashSet<String> = HashSet::new();
+            let mut as_json = false;
             loop {
                 select! {
                     cmd_result = ws_stream.next() => {
                         match cmd_result {
                             Some(Ok(msg)) => {
-                                match msg {
+                                let (command, is_json_cmd) = match msg {
                                     Message::Binary(bin) => {
-                                        let command = match Command::decode(&*bin) {
-                                            Ok(cmd) => cmd,
-                                            Err(_) => Command { command_type: None }
-                                        };
-                                        let response = vm.exec_cmd(command, &mut subscribed_set);
-                                        let resp_bytes = response.encode_to_vec();
-                                        match ws_stream.send(Message::Binary(resp_bytes.into())).await {
-                                            Ok(_) => (),
-                                            Err(e) => error!("Error sending response. Err: {e}")
+                                        match Command::decode(&*bin) {
+                                            Ok(cmd) => (cmd, false),
+                                            Err(_) => (Command { command_type: None }, false)
                                         }
                                     }
-                                    _ => ()
+                                    Message::Text(txt) => {
+                                        match serde_json::from_str(&txt.to_string()) {
+                                            Ok(cmd) => (cmd, true),
+                                            Err(_) => (Command { command_type: None }, true)
+                                        }
+                                    }
+                                    _ => (Command { command_type: None }, false)
+                                };
+                                as_json = is_json_cmd;
+
+                                let response = vm.exec_cmd(command, &mut subscribed_set);
+                                let resp_msg = if as_json {
+                                    match serde_json::to_string(&response) {
+                                        Ok(str_) => Message::Text(str_.into()),
+                                        Err(e) => Message::Text(format!("Error: {e}").into())
+                                    }
+                                } else {
+                                    Message::Binary(response.encode_to_vec().into())
+                                };
+                                match ws_stream.send(resp_msg).await {
+                                    Ok(_) => (),
+                                    Err(e) => error!("Error sending response. Err: {e}")
                                 }
                             }
                             Some(Err(e)) => {
@@ -52,8 +69,15 @@ async fn handle_client_cmd(vm: Arc<VariableManager>, stream: TcpStream, addr: St
                         match data_result {
                             Ok(msg) => {
                                 if subscribed_set.contains(&msg.var_id) {
-                                    let resp_bytes = msg.encode_to_vec();
-                                    match ws_stream.send(Message::Binary(resp_bytes.into())).await {
+                                    let resp_msg = if as_json {
+                                        match serde_json::to_string(&msg) {
+                                            Ok(str_) => Message::Text(str_.into()),
+                                            Err(e) => Message::Text(format!("Error: {e}").into())
+                                        }
+                                    } else {
+                                        Message::Binary(msg.encode_to_vec().into())
+                                    };
+                                    match ws_stream.send(resp_msg).await {
                                         Ok(_) => (),
                                         Err(e) => error!("Error sending response client {addr}. Err: {e}")
                                     }
