@@ -1,10 +1,11 @@
 import type { TagScalarValue } from "./types";
-import type { Command, ItemMeta } from "../../proto/namespace/commands";
+import type { Command } from "../../proto/namespace/commands";
 import type {
   NamespaceFolder,
   NamespaceNode,
   NamespaceSchema,
   Value,
+  ItemMeta,
 } from "../../proto/namespace/types";
 import type { ItemType, VarDataType } from "../../proto/namespace/enums";
 
@@ -57,6 +58,42 @@ export function createGetCommand(
     cmdId,
     command: {
       get: {
+        cmdId,
+        varIds,
+      },
+    },
+  };
+}
+
+export function createSubscribeCommand(
+  varIds: string[],
+  cmdId = createCommandId("sub"),
+): {
+  cmdId: string;
+  command: Command;
+} {
+  return {
+    cmdId,
+    command: {
+      sub: {
+        cmdId,
+        varIds,
+      },
+    },
+  };
+}
+
+export function createUnsubscribeCommand(
+  varIds: string[],
+  cmdId = createCommandId("unsub"),
+): {
+  cmdId: string;
+  command: Command;
+} {
+  return {
+    cmdId,
+    command: {
+      unsub: {
         cmdId,
         varIds,
       },

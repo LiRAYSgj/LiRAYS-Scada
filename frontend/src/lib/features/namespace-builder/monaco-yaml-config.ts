@@ -126,7 +126,6 @@ export async function removeEditorContextMenuItems(
   monaco: typeof import("monaco-editor"),
 ): Promise<void> {
   try {
-    // @ts-expect-error Monaco internal ESM path has no public types
     const actions =
       await import("monaco-editor/esm/vs/platform/actions/common/actions.js");
     const { MenuRegistry, MenuId } = actions as {

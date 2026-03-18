@@ -7,8 +7,6 @@
 	import { browser } from '$app/environment';
 	import { onDestroy, onMount, tick } from 'svelte';
 	import type { editor as MonacoEditorNamespace } from 'monaco-editor';
-	import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
-	import 'monaco-editor/min/vs/editor/editor.main.css';
 	import type { EditorMode, NamespaceNode } from '../types.js';
 	import * as nsYaml from '../namespace-yaml.js';
 	import { Button } from '$lib/components/Button';
@@ -89,6 +87,8 @@
 	let suppressEditorSync = false;
 	let parseTimer: ReturnType<typeof setTimeout> | null = null;
 	let monacoInitError = '';
+	let monacoCssLoaded = false;
+	let monacoWorkerCtor: any = null;
 
 	let importInput: HTMLInputElement | null = null;
 	let editingInputEl: HTMLInputElement | null = null;
@@ -769,9 +769,20 @@
 		monacoCreating = true;
 		const host = editorHost;
 		try {
+			// Load Monaco heavy assets only when the YAML tab is actually opened.
+			if (!monacoCssLoaded) {
+				await import('monaco-editor/min/vs/editor/editor.main.css');
+				monacoCssLoaded = true;
+			}
+			if (!monacoWorkerCtor) {
+				const workerMod: any = await import(
+					'monaco-editor/esm/vs/editor/editor.worker?worker'
+				);
+				monacoWorkerCtor = workerMod.default ?? workerMod;
+			}
 			(globalThis as any).MonacoEnvironment = {
 				getWorker() {
-					return new EditorWorker();
+					return new monacoWorkerCtor();
 				}
 			};
 			monaco = await import('monaco-editor');

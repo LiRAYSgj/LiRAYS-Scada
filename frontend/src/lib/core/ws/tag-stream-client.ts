@@ -3,9 +3,10 @@ import { writable } from "svelte/store";
 import {
   createAddCommand,
   createAddBulkCommand,
-  createGetCommand,
   createSingleItemMeta,
   createDelCommand,
+  createSubscribeCommand,
+  createUnsubscribeCommand,
   createListCommand,
   createSetCommand,
   fromBackendValue,
@@ -17,6 +18,7 @@ import {
   Response,
   type ListResponse,
 } from "../../proto/namespace/commands";
+import { VarIdValue as VarIdValueMessage, type VarIdValue } from "../../proto/namespace/types";
 import {
   ItemType,
   OperationStatus,
@@ -26,13 +28,12 @@ import { snackbarStore } from "../../stores/snackbar";
 
 const RETRY_BASE_MS = 2000;
 const RETRY_MAX_MS = 10000;
-const POLL_MS = 2000;
 /** All commands use the same timeout; success/failure is determined by Response.status and optional error_msg. */
 const COMMAND_TIMEOUT_MS = 3600_000;
 
 const TIMEOUT_USER_MESSAGE = "Requested operation timed out. Try again.";
 
-type PendingType = "list" | "add" | "set" | "del" | "add_bulk";
+type PendingType = "list" | "add" | "set" | "del" | "add_bulk" | "sub" | "unsub";
 
 interface PendingCommand {
   type: PendingType;
@@ -43,7 +44,6 @@ interface PendingCommand {
 
 export class TagStreamClient {
   private socket: WebSocket | null = null;
-  private pollTimer: ReturnType<typeof setInterval> | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private retries = 0;
   private started = false;
@@ -51,7 +51,6 @@ export class TagStreamClient {
   private desiredIds = new Set<string>();
   private intentionallyClosed = false;
   private endpoint = "";
-  private inflightByCmdId = new Map<string, string[]>();
   private pendingByCmdId = new Map<string, PendingCommand>();
   private connectionWaiters: Array<{
     resolve: () => void;
@@ -77,8 +76,7 @@ export class TagStreamClient {
     }
     if (this.socket && this.socket.readyState === WebSocket.OPEN) {
       this.status.set(WebSocketConnectionStatus.CONNECTED);
-      this.startPolling();
-      this.pollOnce();
+      this.subscribeAllTrackedIds();
       return;
     }
     this.connect(false);
@@ -88,10 +86,8 @@ export class TagStreamClient {
     this.intentionallyClosed = true;
     this.started = false;
     this.desiredIds.clear();
-    this.inflightByCmdId.clear();
     this.rejectAllPending(new Error("Stopped"));
     this.clearReconnect();
-    this.stopPolling();
     this.status.set(WebSocketConnectionStatus.DISCONNECTED);
     if (this.socket) {
       this.socket.close();
@@ -100,13 +96,27 @@ export class TagStreamClient {
   }
 
   setTrackedIds(ids: string[]): void {
+    const prevIds = this.desiredIds;
     this.desiredIds = new Set(ids);
 
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+      // Not connected yet; will subscribe on connect open.
       return;
     }
 
-    this.pollOnce();
+    const nextSet = this.desiredIds;
+    const toSubscribe: string[] = [];
+    const toUnsubscribe: string[] = [];
+
+    for (const id of nextSet) {
+      if (!prevIds.has(id)) toSubscribe.push(id);
+    }
+    for (const id of prevIds) {
+      if (!nextSet.has(id)) toUnsubscribe.push(id);
+    }
+
+    void this.subscribeIds(toSubscribe);
+    void this.unsubscribeIds(toUnsubscribe);
   }
 
   async sendWriteValue(
@@ -279,8 +289,7 @@ export class TagStreamClient {
       }
       this.resolveConnectionWaiters();
       if (this.started) {
-        this.startPolling();
-        this.pollOnce();
+        this.subscribeAllTrackedIds();
       }
     });
 
@@ -290,7 +299,6 @@ export class TagStreamClient {
 
     this.socket.addEventListener("close", () => {
       this.connecting = false;
-      this.stopPolling();
       this.socket = null;
       this.rejectConnectionWaiters(new Error("WebSocket connection closed"));
       this.rejectAllPending(new Error("WebSocket connection closed"));
@@ -329,22 +337,7 @@ export class TagStreamClient {
     }
   }
 
-  private startPolling(): void {
-    this.stopPolling();
-    this.pollTimer = setInterval(() => {
-      this.pollOnce();
-    }, POLL_MS);
-  }
-
-  private stopPolling(): void {
-    if (this.pollTimer) {
-      clearInterval(this.pollTimer);
-      this.pollTimer = null;
-    }
-  }
-
   private send(message: Command): void {
-    console.log("Sending message:", message);
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
       return;
     }
@@ -352,13 +345,41 @@ export class TagStreamClient {
     this.socket.send(bytes);
   }
 
-  private pollOnce(): void {
-    if (this.desiredIds.size === 0) {
-      return;
-    }
-    const ids = Array.from(this.desiredIds);
-    const { cmdId, command } = createGetCommand(ids);
-    this.inflightByCmdId.set(cmdId, ids);
+  private subscribeAllTrackedIds(): void {
+    void this.subscribeIds(Array.from(this.desiredIds));
+  }
+
+  private async subscribeIds(ids: string[]): Promise<void> {
+    if (ids.length === 0) return;
+    await this.ensureConnected();
+    const { cmdId, command } = createSubscribeCommand(ids);
+    this.pendingByCmdId.set(cmdId, {
+      type: "sub",
+      resolve: () => {},
+      reject: () => {
+        snackbarStore.error("Subscribe request failed");
+      },
+      timeoutId: setTimeout(() => {
+        this.pendingByCmdId.delete(cmdId);
+      }, COMMAND_TIMEOUT_MS),
+    });
+    this.send(command);
+  }
+
+  private async unsubscribeIds(ids: string[]): Promise<void> {
+    if (ids.length === 0) return;
+    await this.ensureConnected();
+    const { cmdId, command } = createUnsubscribeCommand(ids);
+    this.pendingByCmdId.set(cmdId, {
+      type: "unsub",
+      resolve: () => {},
+      reject: () => {
+        snackbarStore.error("Unsubscribe request failed");
+      },
+      timeoutId: setTimeout(() => {
+        this.pendingByCmdId.delete(cmdId);
+      }, COMMAND_TIMEOUT_MS),
+    });
     this.send(command);
   }
 
@@ -384,60 +405,61 @@ export class TagStreamClient {
 
     try {
       const payload = Response.decode(new Uint8Array(rawData));
-      console.log(payload);
-      const status = payload.status ?? OperationStatus.OPERATION_STATUS_INVALID;
-      const errorMsg = payload.errorMsg ?? "";
-
-      const cmdId =
-        payload.list?.cmdId ??
-        payload.get?.cmdId ??
-        payload.set?.cmdId ??
-        payload.add?.cmdId ??
-        payload.del?.cmdId ??
-        payload.inv?.cmdId ??
-        payload.addBulk?.cmdId ??
-        "";
-
-      const isTerminalError =
-        status === OperationStatus.OPERATION_STATUS_ERR ||
-        status === OperationStatus.OPERATION_STATUS_INVALID ||
+      const hasEnvelopeType =
+        payload.add != null ||
+        payload.list != null ||
+        payload.set != null ||
+        payload.get != null ||
+        payload.del != null ||
+        payload.addBulk != null ||
+        payload.sub != null ||
+        payload.unsub != null ||
         payload.inv != null;
-      const isTerminalSuccess = status === OperationStatus.OPERATION_STATUS_OK;
 
-      if (isTerminalError && cmdId) {
-        const pending = this.pendingByCmdId.get(cmdId);
-        const message =
-          errorMsg ||
-          (status === OperationStatus.OPERATION_STATUS_INVALID
-            ? "Invalid operation status"
-            : "Operation failed");
-        if (pending) {
-          clearTimeout(pending.timeoutId);
-          this.pendingByCmdId.delete(cmdId);
-          snackbarStore.error(message);
-          pending.reject(new Error(message));
-        }
-        return;
-      }
+      if (hasEnvelopeType) {
+        const errorMsg = payload.errorMsg ?? "";
+        const status =
+          payload.status ?? OperationStatus.OPERATION_STATUS_INVALID;
 
-      if (isTerminalSuccess) {
-        if (payload.get != null) {
-          const ids = this.inflightByCmdId.get(payload.get.cmdId);
-          if (ids != null) {
-            this.inflightByCmdId.delete(payload.get.cmdId);
-            this.values.update((current) => {
-              const next = { ...current };
-              for (let i = 0; i < ids.length; i += 1) {
-                const id = ids[i];
-                const raw = payload.get!.varValues[i];
-                const parsed = fromBackendValue(raw?.value);
-                if (parsed !== undefined) next[id] = parsed;
-              }
-              return next;
-            });
-          }
-        } else if (cmdId) {
+        const cmdId =
+          payload.list?.cmdId ??
+          payload.get?.cmdId ??
+          payload.set?.cmdId ??
+          payload.add?.cmdId ??
+          payload.del?.cmdId ??
+          payload.sub?.cmdId ??
+          payload.unsub?.cmdId ??
+          payload.inv?.cmdId ??
+          payload.addBulk?.cmdId ??
+          "";
+
+        const isTerminalError =
+          status === OperationStatus.OPERATION_STATUS_ERR ||
+          status === OperationStatus.OPERATION_STATUS_INVALID ||
+          payload.inv != null;
+        const isTerminalSuccess =
+          status === OperationStatus.OPERATION_STATUS_OK;
+
+        if (isTerminalError && cmdId) {
           const pending = this.pendingByCmdId.get(cmdId);
+          const message =
+            errorMsg ||
+            (status === OperationStatus.OPERATION_STATUS_INVALID
+              ? "Invalid operation status"
+              : "Operation failed");
+          if (pending) {
+            clearTimeout(pending.timeoutId);
+            this.pendingByCmdId.delete(cmdId);
+            snackbarStore.error(message);
+            pending.reject(new Error(message));
+          }
+          return;
+        }
+
+        if (isTerminalSuccess) {
+          const pending = cmdId
+            ? this.pendingByCmdId.get(cmdId)
+            : undefined;
           if (pending) {
             clearTimeout(pending.timeoutId);
             this.pendingByCmdId.delete(cmdId);
@@ -447,16 +469,39 @@ export class TagStreamClient {
               pending.resolve();
             }
           }
+          return;
+        }
+
+        // Non-terminal status (e.g. future Pending/Progress): reset timeout and keep waiting.
+        if (cmdId) {
+          this.resetCommandTimeout(cmdId);
         }
         return;
       }
-
-      // Non-terminal status (e.g. future Pending/Progress): reset timeout and keep waiting
-      if (cmdId) {
-        this.resetCommandTimeout(cmdId);
-      }
     } catch {
-      // Ignore malformed payloads
+      // Not a Response envelope. Fall through to VarIdValue decode.
+    }
+
+    try {
+      // Subscription updates are pushed as VarIdValue messages.
+      const varUpdate: VarIdValue = VarIdValueMessage.decode(
+        new Uint8Array(rawData),
+      );
+      if (!varUpdate.varId) return;
+      if (!this.desiredIds.has(varUpdate.varId)) return;
+
+      const parsed = fromBackendValue(varUpdate.value);
+      this.values.update((current) => {
+        const next = { ...current };
+        if (parsed === undefined) {
+          delete next[varUpdate.varId];
+        } else {
+          next[varUpdate.varId] = parsed;
+        }
+        return next;
+      });
+    } catch {
+      // Ignore malformed updates
     }
   }
 
