@@ -6,6 +6,8 @@ use uuid::Uuid;
 use prost::Message;
 use sled::{Db, Tree, Batch};
 
+// use crate::rtdata::namespace::{AddCommand, ListCommand, SetCommand, SubscribeCommand};
+
 use super::parser::{parse_repeated_name, clone_name};
 use super::namespace::{
     ItemType,
@@ -47,6 +49,7 @@ impl VariableManager {
         let items_tree = db.open_tree("mainTree").unwrap();
 
         let (tx, _) = broadcast::channel(1024);
+        // VariableManager::generate_json_examples();
         Self { db, items_tree, tx }
     }
 
@@ -325,6 +328,18 @@ impl VariableManager {
         }
         self.items_tree.apply_batch(batch).map_err(|e| format!("Error removing items: {e}"))
     }
+
+    // fn generate_json_examples() {
+    //     let cmd_examples = vec![
+    //         Command { command_type: Some(CommandType::List(ListCommand {cmd_id: "cdwec".to_string(), folder_id: None}))},
+    //         Command { command_type: Some(CommandType::Sub(SubscribeCommand {cmd_id: "cdwec".to_string(), var_ids: vec!["aa".to_string()]}))},
+    //         Command { command_type: Some(CommandType::Set(SetCommand {cmd_id: "cdwec".to_string(), var_ids_values: vec![VarIdValue{var_id: "aa".to_string(), value: Some(Value { typed: Some(Typed::IntegerValue(23)) })}]}))},
+    //     ];
+    //     for cmd in cmd_examples {
+    //         let json = serde_json::to_string_pretty(&cmd).unwrap();
+    //         println!("\n{}", json);
+    //     }
+    // }
 
     pub fn exec_cmd(&self, cmd: Command, subscribed_set: &mut HashSet<String>) -> Response {
         match cmd.command_type {
