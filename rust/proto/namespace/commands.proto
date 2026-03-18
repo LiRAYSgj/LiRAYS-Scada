@@ -60,9 +60,17 @@ message SubscribeCommand {
   repeated string var_ids = 2;
 }
 
+message SubscribeResponse {
+  string cmd_id = 1;
+}
+
 message UnsubscribeCommand {
   string cmd_id = 1;
   repeated string var_ids = 2;
+}
+
+message UnsubscribeResponse {
+  string cmd_id = 1;
 }
 
 message DelCommand {
@@ -101,7 +109,9 @@ message Response {
     DelResponse del = 5;
     InvalidCmdResponse inv = 6;
     AddBulkResponse add_bulk = 7;
+    SubscribeResponse sub = 8;
+    UnsubscribeResponse unsub = 9;
   }
-  OperationStatus status = 8;
-  optional string error_msg = 9;
+  OperationStatus status = 10;
+  optional string error_msg = 11;
 }

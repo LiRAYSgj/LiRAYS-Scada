@@ -102,6 +102,34 @@ class GetResponse(_message.Message):
     var_values: _containers.RepeatedCompositeFieldContainer[_types_pb2.OptionalValue]
     def __init__(self, cmd_id: _Optional[str] = ..., var_values: _Optional[_Iterable[_Union[_types_pb2.OptionalValue, _Mapping]]] = ...) -> None: ...
 
+class SubscribeCommand(_message.Message):
+    __slots__ = ("cmd_id", "var_ids")
+    CMD_ID_FIELD_NUMBER: _ClassVar[int]
+    VAR_IDS_FIELD_NUMBER: _ClassVar[int]
+    cmd_id: str
+    var_ids: _containers.RepeatedScalarFieldContainer[str]
+    def __init__(self, cmd_id: _Optional[str] = ..., var_ids: _Optional[_Iterable[str]] = ...) -> None: ...
+
+class SubscribeResponse(_message.Message):
+    __slots__ = ("cmd_id",)
+    CMD_ID_FIELD_NUMBER: _ClassVar[int]
+    cmd_id: str
+    def __init__(self, cmd_id: _Optional[str] = ...) -> None: ...
+
+class UnsubscribeCommand(_message.Message):
+    __slots__ = ("cmd_id", "var_ids")
+    CMD_ID_FIELD_NUMBER: _ClassVar[int]
+    VAR_IDS_FIELD_NUMBER: _ClassVar[int]
+    cmd_id: str
+    var_ids: _containers.RepeatedScalarFieldContainer[str]
+    def __init__(self, cmd_id: _Optional[str] = ..., var_ids: _Optional[_Iterable[str]] = ...) -> None: ...
+
+class UnsubscribeResponse(_message.Message):
+    __slots__ = ("cmd_id",)
+    CMD_ID_FIELD_NUMBER: _ClassVar[int]
+    cmd_id: str
+    def __init__(self, cmd_id: _Optional[str] = ...) -> None: ...
+
 class DelCommand(_message.Message):
     __slots__ = ("cmd_id", "item_ids")
     CMD_ID_FIELD_NUMBER: _ClassVar[int]
@@ -123,22 +151,26 @@ class InvalidCmdResponse(_message.Message):
     def __init__(self, cmd_id: _Optional[str] = ...) -> None: ...
 
 class Command(_message.Message):
-    __slots__ = ("add", "list", "set", "get", "add_bulk")
+    __slots__ = ("add", "list", "set", "get", "add_bulk", "sub", "unsub")
     ADD_FIELD_NUMBER: _ClassVar[int]
     LIST_FIELD_NUMBER: _ClassVar[int]
     SET_FIELD_NUMBER: _ClassVar[int]
     GET_FIELD_NUMBER: _ClassVar[int]
     DEL_FIELD_NUMBER: _ClassVar[int]
     ADD_BULK_FIELD_NUMBER: _ClassVar[int]
+    SUB_FIELD_NUMBER: _ClassVar[int]
+    UNSUB_FIELD_NUMBER: _ClassVar[int]
     add: AddCommand
     list: ListCommand
     set: SetCommand
     get: GetCommand
     add_bulk: AddBulkCommand
-    def __init__(self, add: _Optional[_Union[AddCommand, _Mapping]] = ..., list: _Optional[_Union[ListCommand, _Mapping]] = ..., set: _Optional[_Union[SetCommand, _Mapping]] = ..., get: _Optional[_Union[GetCommand, _Mapping]] = ..., add_bulk: _Optional[_Union[AddBulkCommand, _Mapping]] = ..., **kwargs) -> None: ...
+    sub: SubscribeCommand
+    unsub: UnsubscribeCommand
+    def __init__(self, add: _Optional[_Union[AddCommand, _Mapping]] = ..., list: _Optional[_Union[ListCommand, _Mapping]] = ..., set: _Optional[_Union[SetCommand, _Mapping]] = ..., get: _Optional[_Union[GetCommand, _Mapping]] = ..., add_bulk: _Optional[_Union[AddBulkCommand, _Mapping]] = ..., sub: _Optional[_Union[SubscribeCommand, _Mapping]] = ..., unsub: _Optional[_Union[UnsubscribeCommand, _Mapping]] = ..., **kwargs) -> None: ...
 
 class Response(_message.Message):
-    __slots__ = ("add", "list", "set", "get", "inv", "add_bulk", "status", "error_msg")
+    __slots__ = ("add", "list", "set", "get", "inv", "add_bulk", "sub", "unsub", "status", "error_msg")
     ADD_FIELD_NUMBER: _ClassVar[int]
     LIST_FIELD_NUMBER: _ClassVar[int]
     SET_FIELD_NUMBER: _ClassVar[int]
@@ -146,6 +178,8 @@ class Response(_message.Message):
     DEL_FIELD_NUMBER: _ClassVar[int]
     INV_FIELD_NUMBER: _ClassVar[int]
     ADD_BULK_FIELD_NUMBER: _ClassVar[int]
+    SUB_FIELD_NUMBER: _ClassVar[int]
+    UNSUB_FIELD_NUMBER: _ClassVar[int]
     STATUS_FIELD_NUMBER: _ClassVar[int]
     ERROR_MSG_FIELD_NUMBER: _ClassVar[int]
     add: AddResponse
@@ -154,6 +188,8 @@ class Response(_message.Message):
     get: GetResponse
     inv: InvalidCmdResponse
     add_bulk: AddBulkResponse
+    sub: SubscribeResponse
+    unsub: UnsubscribeResponse
     status: _enums_pb2.OperationStatus
     error_msg: str
-    def __init__(self, add: _Optional[_Union[AddResponse, _Mapping]] = ..., list: _Optional[_Union[ListResponse, _Mapping]] = ..., set: _Optional[_Union[SetResponse, _Mapping]] = ..., get: _Optional[_Union[GetResponse, _Mapping]] = ..., inv: _Optional[_Union[InvalidCmdResponse, _Mapping]] = ..., add_bulk: _Optional[_Union[AddBulkResponse, _Mapping]] = ..., status: _Optional[_Union[_enums_pb2.OperationStatus, str]] = ..., error_msg: _Optional[str] = ..., **kwargs) -> None: ...
+    def __init__(self, add: _Optional[_Union[AddResponse, _Mapping]] = ..., list: _Optional[_Union[ListResponse, _Mapping]] = ..., set: _Optional[_Union[SetResponse, _Mapping]] = ..., get: _Optional[_Union[GetResponse, _Mapping]] = ..., inv: _Optional[_Union[InvalidCmdResponse, _Mapping]] = ..., add_bulk: _Optional[_Union[AddBulkResponse, _Mapping]] = ..., sub: _Optional[_Union[SubscribeResponse, _Mapping]] = ..., unsub: _Optional[_Union[UnsubscribeResponse, _Mapping]] = ..., status: _Optional[_Union[_enums_pb2.OperationStatus, str]] = ..., error_msg: _Optional[str] = ..., **kwargs) -> None: ...

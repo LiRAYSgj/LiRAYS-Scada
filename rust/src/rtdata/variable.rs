@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use log::{debug, warn, info};
 use tokio::sync::broadcast;
@@ -22,6 +22,8 @@ use super::namespace::{
     SetResponse,
     GetResponse,
     DelResponse,
+    SubscribeResponse,
+    UnsubscribeResponse,
     InvalidCmdResponse,
     OperationStatus,
     OptionalValue,
@@ -324,7 +326,7 @@ impl VariableManager {
         self.items_tree.apply_batch(batch).map_err(|e| format!("Error removing items: {e}"))
     }
 
-    pub fn exec_cmd(&self, cmd: Command) -> Response {
+    pub fn exec_cmd(&self, cmd: Command, subscribed_set: &mut HashSet<String>) -> Response {
         match cmd.command_type {
             Some(CommandType::Add(add_cmd)) => {
                 let parent_id = add_cmd.parent_id.unwrap_or("/".to_string());
@@ -409,17 +411,21 @@ impl VariableManager {
                 Response { response_type: Some(ResponseType::AddBulk(AddBulkResponse { cmd_id: addb_cmd.cmd_id })), status, error_msg }
             }
             Some(CommandType::Sub(sub_cmd)) => {
+                subscribed_set.extend(sub_cmd.var_ids);
                 Response {
-                    response_type: Some(ResponseType::Inv(InvalidCmdResponse { cmd_id: sub_cmd.cmd_id })),
-                    status: OperationStatus::Err as i32,
-                    error_msg: Some("Subscribe command not allowed in this listener".to_string())
+                    response_type: Some(ResponseType::Sub(SubscribeResponse { cmd_id: sub_cmd.cmd_id })),
+                    status: OperationStatus::Ok as i32,
+                    error_msg: None
                 }
             }
             Some(CommandType::Unsub(unsub_cmd)) => {
+                for _id in unsub_cmd.var_ids {
+                    subscribed_set.remove(&_id);
+                }
                 Response {
-                    response_type: Some(ResponseType::Inv(InvalidCmdResponse { cmd_id: unsub_cmd.cmd_id })),
-                    status: OperationStatus::Err as i32,
-                    error_msg: Some("Unsubscribe command not allowed in this listener".to_string())
+                    response_type: Some(ResponseType::Unsub(UnsubscribeResponse { cmd_id: unsub_cmd.cmd_id })),
+                    status: OperationStatus::Ok as i32,
+                    error_msg: None
                 }
             }
             None => {

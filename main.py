@@ -165,7 +165,7 @@ if __name__ == "__main__":
         api_thread.start()
 
         logger.info("Starting Rust backend at ws://%s:%s", RUST_HOST, RUST_PORT)
-        serve(RUST_HOST, RUST_PORT, 1235, DEMO_DATA_DIR)
+        serve(RUST_HOST, RUST_PORT, DEMO_DATA_DIR)
         while True:
             time.sleep(1)
     except KeyboardInterrupt:

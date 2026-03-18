@@ -1,9 +1,8 @@
 import websockets
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, HTTPException, status
 from google.protobuf.json_format import MessageToDict, ParseDict
 
 from ...proto.namespace.commands_pb2 import Command, Response
-from ..database.sqlite_engine import SQLiteEng, get_db_eng
 from ..model.data_commands import (
     AddCommandModel,
     AddResponseModel,

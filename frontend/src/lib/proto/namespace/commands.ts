@@ -71,6 +71,24 @@ export interface GetResponse {
   varValues: OptionalValue[];
 }
 
+export interface SubscribeCommand {
+  cmdId: string;
+  varIds: string[];
+}
+
+export interface SubscribeResponse {
+  cmdId: string;
+}
+
+export interface UnsubscribeCommand {
+  cmdId: string;
+  varIds: string[];
+}
+
+export interface UnsubscribeResponse {
+  cmdId: string;
+}
+
 export interface DelCommand {
   cmdId: string;
   itemIds: string[];
@@ -92,6 +110,8 @@ export interface Command {
   get?: GetCommand | undefined;
   del?: DelCommand | undefined;
   addBulk?: AddBulkCommand | undefined;
+  sub?: SubscribeCommand | undefined;
+  unsub?: UnsubscribeCommand | undefined;
 }
 
 export interface Response {
@@ -102,6 +122,8 @@ export interface Response {
   del?: DelResponse | undefined;
   inv?: InvalidCmdResponse | undefined;
   addBulk?: AddBulkResponse | undefined;
+  sub?: SubscribeResponse | undefined;
+  unsub?: UnsubscribeResponse | undefined;
   status: OperationStatus;
   errorMsg?: string | undefined;
 }
@@ -1162,6 +1184,302 @@ export const GetResponse: MessageFns<GetResponse> = {
   },
 };
 
+function createBaseSubscribeCommand(): SubscribeCommand {
+  return { cmdId: "", varIds: [] };
+}
+
+export const SubscribeCommand: MessageFns<SubscribeCommand> = {
+  encode(message: SubscribeCommand, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.cmdId !== "") {
+      writer.uint32(10).string(message.cmdId);
+    }
+    for (const v of message.varIds) {
+      writer.uint32(18).string(v!);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): SubscribeCommand {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseSubscribeCommand();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.cmdId = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.varIds.push(reader.string());
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): SubscribeCommand {
+    return {
+      cmdId: isSet(object.cmdId)
+        ? globalThis.String(object.cmdId)
+        : isSet(object.cmd_id)
+        ? globalThis.String(object.cmd_id)
+        : "",
+      varIds: globalThis.Array.isArray(object?.varIds)
+        ? object.varIds.map((e: any) => globalThis.String(e))
+        : globalThis.Array.isArray(object?.var_ids)
+        ? object.var_ids.map((e: any) => globalThis.String(e))
+        : [],
+    };
+  },
+
+  toJSON(message: SubscribeCommand): unknown {
+    const obj: any = {};
+    if (message.cmdId !== "") {
+      obj.cmdId = message.cmdId;
+    }
+    if (message.varIds?.length) {
+      obj.varIds = message.varIds;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<SubscribeCommand>, I>>(base?: I): SubscribeCommand {
+    return SubscribeCommand.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<SubscribeCommand>, I>>(object: I): SubscribeCommand {
+    const message = createBaseSubscribeCommand();
+    message.cmdId = object.cmdId ?? "";
+    message.varIds = object.varIds?.map((e) => e) || [];
+    return message;
+  },
+};
+
+function createBaseSubscribeResponse(): SubscribeResponse {
+  return { cmdId: "" };
+}
+
+export const SubscribeResponse: MessageFns<SubscribeResponse> = {
+  encode(message: SubscribeResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.cmdId !== "") {
+      writer.uint32(10).string(message.cmdId);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): SubscribeResponse {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseSubscribeResponse();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.cmdId = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): SubscribeResponse {
+    return {
+      cmdId: isSet(object.cmdId)
+        ? globalThis.String(object.cmdId)
+        : isSet(object.cmd_id)
+        ? globalThis.String(object.cmd_id)
+        : "",
+    };
+  },
+
+  toJSON(message: SubscribeResponse): unknown {
+    const obj: any = {};
+    if (message.cmdId !== "") {
+      obj.cmdId = message.cmdId;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<SubscribeResponse>, I>>(base?: I): SubscribeResponse {
+    return SubscribeResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<SubscribeResponse>, I>>(object: I): SubscribeResponse {
+    const message = createBaseSubscribeResponse();
+    message.cmdId = object.cmdId ?? "";
+    return message;
+  },
+};
+
+function createBaseUnsubscribeCommand(): UnsubscribeCommand {
+  return { cmdId: "", varIds: [] };
+}
+
+export const UnsubscribeCommand: MessageFns<UnsubscribeCommand> = {
+  encode(message: UnsubscribeCommand, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.cmdId !== "") {
+      writer.uint32(10).string(message.cmdId);
+    }
+    for (const v of message.varIds) {
+      writer.uint32(18).string(v!);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): UnsubscribeCommand {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseUnsubscribeCommand();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.cmdId = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.varIds.push(reader.string());
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): UnsubscribeCommand {
+    return {
+      cmdId: isSet(object.cmdId)
+        ? globalThis.String(object.cmdId)
+        : isSet(object.cmd_id)
+        ? globalThis.String(object.cmd_id)
+        : "",
+      varIds: globalThis.Array.isArray(object?.varIds)
+        ? object.varIds.map((e: any) => globalThis.String(e))
+        : globalThis.Array.isArray(object?.var_ids)
+        ? object.var_ids.map((e: any) => globalThis.String(e))
+        : [],
+    };
+  },
+
+  toJSON(message: UnsubscribeCommand): unknown {
+    const obj: any = {};
+    if (message.cmdId !== "") {
+      obj.cmdId = message.cmdId;
+    }
+    if (message.varIds?.length) {
+      obj.varIds = message.varIds;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<UnsubscribeCommand>, I>>(base?: I): UnsubscribeCommand {
+    return UnsubscribeCommand.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<UnsubscribeCommand>, I>>(object: I): UnsubscribeCommand {
+    const message = createBaseUnsubscribeCommand();
+    message.cmdId = object.cmdId ?? "";
+    message.varIds = object.varIds?.map((e) => e) || [];
+    return message;
+  },
+};
+
+function createBaseUnsubscribeResponse(): UnsubscribeResponse {
+  return { cmdId: "" };
+}
+
+export const UnsubscribeResponse: MessageFns<UnsubscribeResponse> = {
+  encode(message: UnsubscribeResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.cmdId !== "") {
+      writer.uint32(10).string(message.cmdId);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): UnsubscribeResponse {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseUnsubscribeResponse();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.cmdId = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): UnsubscribeResponse {
+    return {
+      cmdId: isSet(object.cmdId)
+        ? globalThis.String(object.cmdId)
+        : isSet(object.cmd_id)
+        ? globalThis.String(object.cmd_id)
+        : "",
+    };
+  },
+
+  toJSON(message: UnsubscribeResponse): unknown {
+    const obj: any = {};
+    if (message.cmdId !== "") {
+      obj.cmdId = message.cmdId;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<UnsubscribeResponse>, I>>(base?: I): UnsubscribeResponse {
+    return UnsubscribeResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<UnsubscribeResponse>, I>>(object: I): UnsubscribeResponse {
+    const message = createBaseUnsubscribeResponse();
+    message.cmdId = object.cmdId ?? "";
+    return message;
+  },
+};
+
 function createBaseDelCommand(): DelCommand {
   return { cmdId: "", itemIds: [] };
 }
@@ -1375,7 +1693,16 @@ export const InvalidCmdResponse: MessageFns<InvalidCmdResponse> = {
 };
 
 function createBaseCommand(): Command {
-  return { add: undefined, list: undefined, set: undefined, get: undefined, del: undefined, addBulk: undefined };
+  return {
+    add: undefined,
+    list: undefined,
+    set: undefined,
+    get: undefined,
+    del: undefined,
+    addBulk: undefined,
+    sub: undefined,
+    unsub: undefined,
+  };
 }
 
 export const Command: MessageFns<Command> = {
@@ -1397,6 +1724,12 @@ export const Command: MessageFns<Command> = {
     }
     if (message.addBulk !== undefined) {
       AddBulkCommand.encode(message.addBulk, writer.uint32(50).fork()).join();
+    }
+    if (message.sub !== undefined) {
+      SubscribeCommand.encode(message.sub, writer.uint32(58).fork()).join();
+    }
+    if (message.unsub !== undefined) {
+      UnsubscribeCommand.encode(message.unsub, writer.uint32(66).fork()).join();
     }
     return writer;
   },
@@ -1456,6 +1789,22 @@ export const Command: MessageFns<Command> = {
           message.addBulk = AddBulkCommand.decode(reader, reader.uint32());
           continue;
         }
+        case 7: {
+          if (tag !== 58) {
+            break;
+          }
+
+          message.sub = SubscribeCommand.decode(reader, reader.uint32());
+          continue;
+        }
+        case 8: {
+          if (tag !== 66) {
+            break;
+          }
+
+          message.unsub = UnsubscribeCommand.decode(reader, reader.uint32());
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1477,6 +1826,8 @@ export const Command: MessageFns<Command> = {
         : isSet(object.add_bulk)
         ? AddBulkCommand.fromJSON(object.add_bulk)
         : undefined,
+      sub: isSet(object.sub) ? SubscribeCommand.fromJSON(object.sub) : undefined,
+      unsub: isSet(object.unsub) ? UnsubscribeCommand.fromJSON(object.unsub) : undefined,
     };
   },
 
@@ -1500,6 +1851,12 @@ export const Command: MessageFns<Command> = {
     if (message.addBulk !== undefined) {
       obj.addBulk = AddBulkCommand.toJSON(message.addBulk);
     }
+    if (message.sub !== undefined) {
+      obj.sub = SubscribeCommand.toJSON(message.sub);
+    }
+    if (message.unsub !== undefined) {
+      obj.unsub = UnsubscribeCommand.toJSON(message.unsub);
+    }
     return obj;
   },
 
@@ -1518,6 +1875,12 @@ export const Command: MessageFns<Command> = {
     message.addBulk = (object.addBulk !== undefined && object.addBulk !== null)
       ? AddBulkCommand.fromPartial(object.addBulk)
       : undefined;
+    message.sub = (object.sub !== undefined && object.sub !== null)
+      ? SubscribeCommand.fromPartial(object.sub)
+      : undefined;
+    message.unsub = (object.unsub !== undefined && object.unsub !== null)
+      ? UnsubscribeCommand.fromPartial(object.unsub)
+      : undefined;
     return message;
   },
 };
@@ -1531,6 +1894,8 @@ function createBaseResponse(): Response {
     del: undefined,
     inv: undefined,
     addBulk: undefined,
+    sub: undefined,
+    unsub: undefined,
     status: 0,
     errorMsg: undefined,
   };
@@ -1559,11 +1924,17 @@ export const Response: MessageFns<Response> = {
     if (message.addBulk !== undefined) {
       AddBulkResponse.encode(message.addBulk, writer.uint32(58).fork()).join();
     }
+    if (message.sub !== undefined) {
+      SubscribeResponse.encode(message.sub, writer.uint32(66).fork()).join();
+    }
+    if (message.unsub !== undefined) {
+      UnsubscribeResponse.encode(message.unsub, writer.uint32(74).fork()).join();
+    }
     if (message.status !== 0) {
-      writer.uint32(64).int32(message.status);
+      writer.uint32(80).int32(message.status);
     }
     if (message.errorMsg !== undefined) {
-      writer.uint32(74).string(message.errorMsg);
+      writer.uint32(90).string(message.errorMsg);
     }
     return writer;
   },
@@ -1632,15 +2003,31 @@ export const Response: MessageFns<Response> = {
           continue;
         }
         case 8: {
-          if (tag !== 64) {
+          if (tag !== 66) {
+            break;
+          }
+
+          message.sub = SubscribeResponse.decode(reader, reader.uint32());
+          continue;
+        }
+        case 9: {
+          if (tag !== 74) {
+            break;
+          }
+
+          message.unsub = UnsubscribeResponse.decode(reader, reader.uint32());
+          continue;
+        }
+        case 10: {
+          if (tag !== 80) {
             break;
           }
 
           message.status = reader.int32() as any;
           continue;
         }
-        case 9: {
-          if (tag !== 74) {
+        case 11: {
+          if (tag !== 90) {
             break;
           }
 
@@ -1669,6 +2056,8 @@ export const Response: MessageFns<Response> = {
         : isSet(object.add_bulk)
         ? AddBulkResponse.fromJSON(object.add_bulk)
         : undefined,
+      sub: isSet(object.sub) ? SubscribeResponse.fromJSON(object.sub) : undefined,
+      unsub: isSet(object.unsub) ? UnsubscribeResponse.fromJSON(object.unsub) : undefined,
       status: isSet(object.status) ? operationStatusFromJSON(object.status) : 0,
       errorMsg: isSet(object.errorMsg)
         ? globalThis.String(object.errorMsg)
@@ -1701,6 +2090,12 @@ export const Response: MessageFns<Response> = {
     if (message.addBulk !== undefined) {
       obj.addBulk = AddBulkResponse.toJSON(message.addBulk);
     }
+    if (message.sub !== undefined) {
+      obj.sub = SubscribeResponse.toJSON(message.sub);
+    }
+    if (message.unsub !== undefined) {
+      obj.unsub = UnsubscribeResponse.toJSON(message.unsub);
+    }
     if (message.status !== 0) {
       obj.status = operationStatusToJSON(message.status);
     }
@@ -1727,6 +2122,12 @@ export const Response: MessageFns<Response> = {
       : undefined;
     message.addBulk = (object.addBulk !== undefined && object.addBulk !== null)
       ? AddBulkResponse.fromPartial(object.addBulk)
+      : undefined;
+    message.sub = (object.sub !== undefined && object.sub !== null)
+      ? SubscribeResponse.fromPartial(object.sub)
+      : undefined;
+    message.unsub = (object.unsub !== undefined && object.unsub !== null)
+      ? UnsubscribeResponse.fromPartial(object.unsub)
       : undefined;
     message.status = object.status ?? 0;
     message.errorMsg = object.errorMsg ?? undefined;
