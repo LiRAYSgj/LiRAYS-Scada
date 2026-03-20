@@ -17,6 +17,7 @@ use super::namespace::{
     VarDataType,
     Command,
     Response,
+    FolderInfo,
     VarInfo,
     AddResponse,
     AddBulkResponse,
@@ -135,24 +136,27 @@ impl VariableManager {
         Ok(count)
     }
 
-    fn list_path(&self, parent_id: &str) -> Result<(Vec<ItemMeta>, Vec<ItemMeta>), String> {
+    fn list_path(&self, parent_id: &str) -> Result<(Vec<FolderInfo>, Vec<VarInfo>), String> {
         let path = VariableManager::normalize_path(parent_id, ItemType::Folder);
         let prefix = format!("H:{}\0", path);
-        let mut children_folders = vec![];
-        let mut children_vars = vec![];
+        let mut children_folders: Vec<FolderInfo> = vec![];
+        let mut children_vars: Vec<VarInfo> = vec![];
 
         for result in self.items_tree.scan_prefix(prefix) {
             let (_, _value) = result.map_err(|e| format!("Error reading tree: {e}"))?;
             let i_meta = ItemMeta::decode(_value.as_ref()).map_err(|e| format!("Error decoding Item: {e}"))?;
             let i_type = VariableManager::cast_item_type(i_meta.i_type);
+            let var_id_ = format!("{}/{}", path, i_meta.name);
+            let ch_id = VariableManager::normalize_path(&var_id_, ItemType::Variable);
             match i_type {
-                ItemType::Folder => children_folders.push(i_meta),
-                ItemType::Variable => children_vars.push(i_meta),
+                ItemType::Folder => {children_folders.push(FolderInfo {id: ch_id, name: i_meta.name});}
+                ItemType::Variable => {
+                    let v_dtype = i_meta.var_d_type.ok_or("Invalid variable data type".to_string())?;
+                    children_vars.push(VarInfo { id: ch_id, name: i_meta.name, var_d_type: v_dtype });
+                }
                 _ => return Err(format!("Invalid item type"))
             }
         }
-        // children_folders.sort_by(|a, b| a.name.cmp(&b.name));
-        // children_vars.sort_by(|a, b| a.name.cmp(&b.name));
 
         Ok((children_folders, children_vars))
     }
@@ -341,7 +345,11 @@ impl VariableManager {
     //     }
     // }
 
-    pub fn exec_cmd(&self, cmd: Command, subscribed_set: &mut HashSet<String>) -> Response {
+    pub fn exec_cmd(
+        &self,
+        cmd: Command,
+        subscribed_set: &mut HashSet<String>
+    ) -> Response {
         match cmd.command_type {
             Some(CommandType::Add(add_cmd)) => {
                 let parent_id = add_cmd.parent_id.unwrap_or("/".to_string());
@@ -358,30 +366,14 @@ impl VariableManager {
                 Response { response_type: Some(ResponseType::Add(AddResponse { cmd_id: add_cmd.cmd_id })), status, error_msg }
             }
             Some(CommandType::List(list_cmd)) => {
-                let mut children_folders: HashMap<String, String> = HashMap::new();
-                let mut children_vars: HashMap<String, VarInfo> = HashMap::new();
                 let folder_to_list = list_cmd.folder_id.unwrap_or("/".to_string());
-                let (status, error_msg) = match self.list_path(&folder_to_list) {
-                    Ok((ch_folders, ch_vars)) => {
-                        for ch_folder in ch_folders {
-                            let var_id = format!("{}/{}", folder_to_list, ch_folder.name);
-                            let ch_id = VariableManager::normalize_path(&var_id, ItemType::Variable);
-                            children_folders.insert(ch_folder.name, ch_id);
-                        }
-                        for ch_var in ch_vars {
-                            let var_id = format!("{}/{}", folder_to_list, ch_var.name);
-                            let v_dtype = VariableManager::cast_var_data_type(ch_var.var_d_type);
-                            children_vars.insert(ch_var.name, VarInfo { var_id, var_d_type: v_dtype as i32 });
-                        }
-                        (OperationStatus::Ok as i32, None)
+                let (status, error_msg, folders, variables) = match self.list_path(&folder_to_list) {
+                    Ok((children_folders, children_vars)) => {
+                        (OperationStatus::Ok as i32, None, children_folders, children_vars)
                     }
-                    Err(e) => (OperationStatus::Err as i32, Some(e))
+                    Err(e) => (OperationStatus::Err as i32, Some(e), vec![], vec![])
                 };
-                Response { response_type: Some(ResponseType::List(ListResponse {
-                    cmd_id: list_cmd.cmd_id,
-                    children_folders,
-                    children_vars
-                })), status, error_msg }
+                Response { response_type: Some(ResponseType::List(ListResponse { cmd_id: list_cmd.cmd_id, folders, variables })), status, error_msg }
             }
             Some(CommandType::Set(set_cmd)) => {
                 let (status, error_msg) = match self.set_vals(set_cmd.var_ids_values) {

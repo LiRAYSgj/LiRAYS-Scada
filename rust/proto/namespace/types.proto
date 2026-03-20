@@ -30,23 +30,21 @@ message ChildInfo {
   optional VarDataType var_d_type = 3;
 }
 
-message Item {
-  string id = 1;  // id is the item path where name is the last step
-  string name = 2;
-  ItemType i_type = 5;
-  optional VarDataType var_d_type = 6;
-  optional Value value = 7;
-}
-
 message ItemMeta {
   string name = 1;
   ItemType i_type = 2;
   optional VarDataType var_d_type = 3;
 }
 
+message FolderInfo {
+  string id = 1;
+  string name = 2;
+}
+
 message VarInfo {
-  string var_id = 1;
-  VarDataType var_d_type = 2;
+  string id = 1;
+  string name = 2;
+  VarDataType var_d_type = 3;
 }
 
 message VarIdValue {

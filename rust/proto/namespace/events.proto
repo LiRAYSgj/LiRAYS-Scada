@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package namespace;
+
+import "namespace/enums.proto";
+
+message ItemsCreatedEvent {
+    repeated string folders_to_reload = 1;
+    repeated string new_items = 2;
+}
+
+message ItemsDeletedEvent {
+  string root_uid = 1; // 16 bytes
+  string vendor = 2;
+}
+
+message Event {
+  oneof event {
+    ItemsCreatedEvent created_ev = 1;
+    ItemsCreatedEvent deleted_ev = 2;
+  }
+}

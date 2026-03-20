@@ -85,15 +85,15 @@ export function varDataTypeFromJSON(object: any): VarDataType {
 export function varDataTypeToJSON(object: VarDataType): string {
   switch (object) {
     case VarDataType.VAR_DATA_TYPE_INVALID:
-      return "VAR_DATA_TYPE_INVALID";
+      return "invalid";
     case VarDataType.VAR_DATA_TYPE_INTEGER:
-      return "VAR_DATA_TYPE_INTEGER";
+      return "integer";
     case VarDataType.VAR_DATA_TYPE_FLOAT:
-      return "VAR_DATA_TYPE_FLOAT";
+      return "float";
     case VarDataType.VAR_DATA_TYPE_TEXT:
-      return "VAR_DATA_TYPE_TEXT";
+      return "text";
     case VarDataType.VAR_DATA_TYPE_BOOLEAN:
-      return "VAR_DATA_TYPE_BOOLEAN";
+      return "bool";
     case VarDataType.UNRECOGNIZED:
     default:
       return "UNRECOGNIZED";
@@ -135,6 +135,46 @@ export function operationStatusToJSON(object: OperationStatus): string {
     case OperationStatus.OPERATION_STATUS_ERR:
       return "OPERATION_STATUS_ERR";
     case OperationStatus.UNRECOGNIZED:
+    default:
+      return "UNRECOGNIZED";
+  }
+}
+
+/** EventType */
+export enum EventType {
+  EVENT_TYPE_INVALID = 0,
+  EVENT_TYPE_ITEMS_CREATED = 1,
+  EVENT_TYPE_ITEMS_DELETED = 2,
+  UNRECOGNIZED = -1,
+}
+
+export function eventTypeFromJSON(object: any): EventType {
+  switch (object) {
+    case 0:
+    case "EVENT_TYPE_INVALID":
+      return EventType.EVENT_TYPE_INVALID;
+    case 1:
+    case "EVENT_TYPE_ITEMS_CREATED":
+      return EventType.EVENT_TYPE_ITEMS_CREATED;
+    case 2:
+    case "EVENT_TYPE_ITEMS_DELETED":
+      return EventType.EVENT_TYPE_ITEMS_DELETED;
+    case -1:
+    case "UNRECOGNIZED":
+    default:
+      return EventType.UNRECOGNIZED;
+  }
+}
+
+export function eventTypeToJSON(object: EventType): string {
+  switch (object) {
+    case EventType.EVENT_TYPE_INVALID:
+      return "EVENT_TYPE_INVALID";
+    case EventType.EVENT_TYPE_ITEMS_CREATED:
+      return "EVENT_TYPE_ITEMS_CREATED";
+    case EventType.EVENT_TYPE_ITEMS_DELETED:
+      return "EVENT_TYPE_ITEMS_DELETED";
+    case EventType.UNRECOGNIZED:
     default:
       return "UNRECOGNIZED";
   }

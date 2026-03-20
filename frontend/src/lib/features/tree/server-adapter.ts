@@ -16,29 +16,29 @@ function toTreeNodes(
   parent: TreeNode | null,
   payload: ListResponse,
 ): TreeNode[] {
-  const folders = Object.entries(payload.childrenFolders).map(([name, id]) => ({
-    id,
+  const folders = payload.folders.map((folder) => ({
+    id: folder.id,
     parentId: parent?.id ?? null,
-    name,
-    path: id,
+    name: folder.name,
+    path: folder.id,
     kind: "folder" as const,
     hasChildren: true,
     childIds: null,
   }));
 
-  const vars = Object.entries(payload.childrenVars).map(
-    ([name, { varId: id, varDType: dataType }]) => ({
-      id,
-      parentId: parent?.id ?? null,
-      name,
-      path: id,
-      kind: "tag" as const,
-      hasChildren: false,
-      childIds: null,
-      dataType:
-        dataType !== undefined ? varDataTypeToJSON(dataType) : undefined,
-    }),
-  );
+  const vars = payload.variables.map((variable) => ({
+    id: variable.id,
+    parentId: parent?.id ?? null,
+    name: variable.name,
+    path: variable.id,
+    kind: "tag" as const,
+    hasChildren: false,
+    childIds: null,
+    dataType:
+      variable.varDType !== undefined
+        ? varDataTypeToJSON(variable.varDType)
+        : undefined,
+  }));
 
   return [...folders, ...vars];
 }
