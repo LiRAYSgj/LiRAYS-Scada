@@ -3,20 +3,24 @@ syntax = "proto3";
 package namespace;
 
 import "namespace/enums.proto";
+import "namespace/types.proto";
 
-message ItemsCreatedEvent {
-    repeated string folders_to_reload = 1;
-    repeated string new_items = 2;
+message FolderChanged {
+    string folder_id = 1;
+    bool reload = 2;
+    repeated string removed_folders = 3;
+    repeated string removed_variables = 4;
+    repeated FolderInfo new_folders = 5;
+    repeated VarInfo new_variables = 6;
 }
 
-message ItemsDeletedEvent {
-  string root_uid = 1; // 16 bytes
-  string vendor = 2;
+message TreeChanged {
+    repeated FolderChanged folder_changed_event = 1;
 }
 
 message Event {
-  oneof event {
-    ItemsCreatedEvent created_ev = 1;
-    ItemsCreatedEvent deleted_ev = 2;
+  oneof ev {
+    VarIdValue var_value_ev = 1;
+    TreeChanged tree_changed_ev = 2;
   }
 }

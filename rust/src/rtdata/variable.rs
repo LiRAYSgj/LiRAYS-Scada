@@ -8,7 +8,18 @@ use sled::{Db, Tree, Batch};
 
 // use crate::rtdata::namespace::{AddCommand, ListCommand, SetCommand, SubscribeCommand};
 
+use crate::rtdata::namespace::EventType;
+
 use super::parser::{parse_repeated_name, clone_name};
+use super::events::extract_add_event;
+use super::utils::{
+    cast_item_type,
+    cast_var_data_type,
+    normalize_path,
+    get_ancestors,
+    get_hierarchy_key,
+    // generate_json_examples
+};
 use super::namespace::{
     ItemType,
     ItemMeta,
@@ -31,7 +42,9 @@ use super::namespace::{
     OperationStatus,
     OptionalValue,
     NamespaceNode,
+    Event,
     value::Typed,
+    event::Ev,
     command::CommandType,
     response::ResponseType,
     namespace_node::Node,
@@ -40,7 +53,7 @@ use super::namespace::{
 pub struct VariableManager {
     pub db: Db,
     pub items_tree: Tree,
-    pub tx: broadcast::Sender<VarIdValue>,
+    pub events_tx: broadcast::Sender<Event>,
 }
 
 impl VariableManager {
@@ -50,66 +63,14 @@ impl VariableManager {
         let items_tree = db.open_tree("mainTree").unwrap();
 
         let (tx, _) = broadcast::channel(1024);
-        // VariableManager::generate_json_examples();
-        Self { db, items_tree, tx }
-    }
-
-    fn cast_item_type(value: i32) -> ItemType {
-        match ItemType::try_from(value) {
-            Ok(it) => it,
-            Err(_) => ItemType::Invalid
-        }
-    }
-
-    fn cast_var_data_type(value: Option<i32>) -> VarDataType {
-        match value {
-            Some(v) => {
-                match VarDataType::try_from(v) {
-                    Ok(dt) => dt,
-                    Err(_) => VarDataType::Invalid
-                }
-            }
-            None => VarDataType::Invalid
-        }
-    }
-
-    fn normalize_path(path: &str, i_type: ItemType) -> String {
-        let trimmed = path.trim_matches('/');
-        let components: Vec<&str> = trimmed.split('/').filter(|s| !s.is_empty()).collect();
-        let mut base = format!("/{}", components.join("/"));
-        match i_type {
-            ItemType::Folder => {
-                if !base.ends_with('/') {
-                    base.push('/')
-                }
-            },
-            _ => ()
-        }
-        base
-    }
-
-    fn get_ancestors(path: &str) -> Vec<(String, String)> {
-        let mut ancestors = vec![];
-        let parts: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
-
-        let mut parent = format!("/");
-        for part in parts {
-            ancestors.push((parent.clone(), part.to_string()));
-            parent.push_str(format!("{}/", part).as_str());
-        }
-        ancestors
-    }
-
-    fn get_hierarchy_key(full_path: &str) -> String {
-        let normalized = VariableManager::normalize_path(full_path, ItemType::Variable);
-        let (parent, name) = normalized.rsplit_once('/').unwrap_or(("", &normalized));
-        format!("H:{}/\0{}", parent, name)
+        // generate_json_examples();
+        Self { db, items_tree, events_tx: tx }
     }
 
     fn add_items(&self, parent_id: &str, items_meta: Vec<ItemMeta>, batch: &mut Batch) -> Result<usize, String> {
         // Let's verify parent_id is an existing folder. Or create it otherwise
-        let parent_path = VariableManager::normalize_path(parent_id, ItemType::Folder);
-        let ancestors = VariableManager::get_ancestors(&parent_path);
+        let parent_path = normalize_path(parent_id, ItemType::Folder);
+        let ancestors = get_ancestors(&parent_path);
         let mut count = 0;
 
         for (parent, folder_name) in ancestors {
@@ -137,7 +98,7 @@ impl VariableManager {
     }
 
     fn list_path(&self, parent_id: &str) -> Result<(Vec<FolderInfo>, Vec<VarInfo>), String> {
-        let path = VariableManager::normalize_path(parent_id, ItemType::Folder);
+        let path = normalize_path(parent_id, ItemType::Folder);
         let prefix = format!("H:{}\0", path);
         let mut children_folders: Vec<FolderInfo> = vec![];
         let mut children_vars: Vec<VarInfo> = vec![];
@@ -145,9 +106,9 @@ impl VariableManager {
         for result in self.items_tree.scan_prefix(prefix) {
             let (_, _value) = result.map_err(|e| format!("Error reading tree: {e}"))?;
             let i_meta = ItemMeta::decode(_value.as_ref()).map_err(|e| format!("Error decoding Item: {e}"))?;
-            let i_type = VariableManager::cast_item_type(i_meta.i_type);
+            let i_type = cast_item_type(i_meta.i_type);
             let var_id_ = format!("{}/{}", path, i_meta.name);
-            let ch_id = VariableManager::normalize_path(&var_id_, ItemType::Variable);
+            let ch_id = normalize_path(&var_id_, ItemType::Variable);
             match i_type {
                 ItemType::Folder => {children_folders.push(FolderInfo {id: ch_id, name: i_meta.name});}
                 ItemType::Variable => {
@@ -159,6 +120,12 @@ impl VariableManager {
         }
 
         Ok((children_folders, children_vars))
+    }
+
+    fn count_path(&self, parent_id: &str) -> usize {
+        let path = normalize_path(parent_id, ItemType::Folder);
+        let prefix = format!("H:{}\0", path);
+        self.items_tree.scan_prefix(prefix).count()
     }
 
     pub fn list_keys_with_prefix(&self, prefix: &str) -> Result<Vec<String>, String> {
@@ -252,8 +219,8 @@ impl VariableManager {
         let mut batch = Batch::default();
         let mut successfully_set_vals: Vec<VarIdValue> = vec![];
         for var_id_val in var_id_vals {
-            let var_id = VariableManager::normalize_path(&var_id_val.var_id, ItemType::Variable);
-            let h_key = VariableManager::get_hierarchy_key(&var_id_val.var_id);
+            let var_id = normalize_path(&var_id_val.var_id, ItemType::Variable);
+            let h_key = get_hierarchy_key(&var_id_val.var_id);
             let i_meta = match self.items_tree.get(h_key.as_bytes()) {
                 Ok(Some(_value)) => ItemMeta::decode(_value.as_ref()).map_err(|e| format!("Error decoding Item: {e}"))?,
                 Ok(None) => return Err(format!("Missing variable.")),
@@ -261,8 +228,8 @@ impl VariableManager {
             };
             let d_key_str = format!("D:{}", var_id);
             let d_key = d_key_str.as_bytes();
-            let i_type = VariableManager::cast_item_type(i_meta.i_type);
-            let v_dtype = VariableManager::cast_var_data_type(i_meta.var_d_type);
+            let i_type = cast_item_type(i_meta.i_type);
+            let v_dtype = cast_var_data_type(i_meta.var_d_type);
             match var_id_val.value {
                 Some(value) => {
                     let val = value.typed.ok_or_else(|| format!("None value"))?;
@@ -308,10 +275,10 @@ impl VariableManager {
     fn del_items(&self, items_ids: Vec<String>) -> Result<(), String> {
         let mut batch = Batch::default();
         for id in items_ids {
-            let as_var_id = VariableManager::normalize_path(&id, ItemType::Variable);
+            let as_var_id = normalize_path(&id, ItemType::Variable);
             let potential_d_key_str = format!("D:{}", as_var_id);
             let potential_d_key = potential_d_key_str.as_bytes();
-            let potential_ref_str = VariableManager::get_hierarchy_key(&id);
+            let potential_ref_str = get_hierarchy_key(&id);
             let potential_ref = potential_ref_str.as_bytes();
 
             batch.remove(potential_d_key);  // Remove value if it is a var and has a value
@@ -333,37 +300,38 @@ impl VariableManager {
         self.items_tree.apply_batch(batch).map_err(|e| format!("Error removing items: {e}"))
     }
 
-    // fn generate_json_examples() {
-    //     let cmd_examples = vec![
-    //         Command { command_type: Some(CommandType::List(ListCommand {cmd_id: "cdwec".to_string(), folder_id: None}))},
-    //         Command { command_type: Some(CommandType::Sub(SubscribeCommand {cmd_id: "cdwec".to_string(), var_ids: vec!["aa".to_string()]}))},
-    //         Command { command_type: Some(CommandType::Set(SetCommand {cmd_id: "cdwec".to_string(), var_ids_values: vec![VarIdValue{var_id: "aa".to_string(), value: Some(Value { typed: Some(Typed::IntegerValue(23)) })}]}))},
-    //     ];
-    //     for cmd in cmd_examples {
-    //         let json = serde_json::to_string_pretty(&cmd).unwrap();
-    //         println!("\n{}", json);
-    //     }
-    // }
-
     pub fn exec_cmd(
         &self,
         cmd: Command,
-        subscribed_set: &mut HashSet<String>
+        subscribed_set: &mut HashSet<String>,
+        get_tree_changes: &mut bool,
     ) -> Response {
         match cmd.command_type {
             Some(CommandType::Add(add_cmd)) => {
-                let parent_id = add_cmd.parent_id.unwrap_or("/".to_string());
+                let cmd_id = add_cmd.cmd_id.clone();
+                let parent_id = add_cmd.parent_id.clone().unwrap_or("/".to_string());
                 let mut batch = Batch::default();
-                let (status, error_msg) = match self.add_items(&parent_id, add_cmd.items_meta, &mut batch) {
+                let (status, error_msg) = match self.add_items(&parent_id, add_cmd.items_meta.clone(), &mut batch) {
                     Ok(_) => {
                         match self.items_tree.apply_batch(batch).map_err(|e| format!("Error adding items: {e}")) {
-                            Ok(_) => (OperationStatus::Ok as i32, None),
+                            Ok(_) => {
+                                match extract_add_event(add_cmd, self.count_path(&parent_id)) {
+                                    Ok(event) => {
+                                        match self.events_tx.send(event) {
+                                            Ok(_) => (),
+                                            Err(e) => warn!("Error sending event: {e}")
+                                        }
+                                    }
+                                    Err(e) => warn!("Error extracting event: {e}")
+                                }
+                                (OperationStatus::Ok as i32, None)
+                            }
                             Err(e) => (OperationStatus::Err as i32, Some(format!("Applying batch error: {e}")))
                         }
                     }
                     Err(e) => (OperationStatus::Err as i32, Some(format!("Inserting error: {e}")))
                 };
-                Response { response_type: Some(ResponseType::Add(AddResponse { cmd_id: add_cmd.cmd_id })), status, error_msg }
+                Response { response_type: Some(ResponseType::Add(AddResponse { cmd_id })), status, error_msg }
             }
             Some(CommandType::List(list_cmd)) => {
                 let folder_to_list = list_cmd.folder_id.unwrap_or("/".to_string());
@@ -379,7 +347,10 @@ impl VariableManager {
                 let (status, error_msg) = match self.set_vals(set_cmd.var_ids_values) {
                     Ok(successfully_set_vals) => {
                         for v in successfully_set_vals {
-                            let _ = self.tx.send(v);
+                            match self.events_tx.send(Event { ev: Some(Ev::VarValueEv(v)) }) {
+                                Ok(_) => (),
+                                Err(e) => warn!("Error sending event: {e}")
+                            }
                         }
                         (OperationStatus::Ok as i32, None)
                     }
@@ -418,7 +389,12 @@ impl VariableManager {
                 Response { response_type: Some(ResponseType::AddBulk(AddBulkResponse { cmd_id: addb_cmd.cmd_id })), status, error_msg }
             }
             Some(CommandType::Sub(sub_cmd)) => {
-                subscribed_set.extend(sub_cmd.var_ids);
+                if sub_cmd.events.contains(&(EventType::VarValues as i32)) {
+                    subscribed_set.extend(sub_cmd.var_ids);
+                }
+                if sub_cmd.events.contains(&(EventType::TreeChange as i32)) {
+                    *get_tree_changes = true;
+                }
                 Response {
                     response_type: Some(ResponseType::Sub(SubscribeResponse { cmd_id: sub_cmd.cmd_id })),
                     status: OperationStatus::Ok as i32,
@@ -426,9 +402,15 @@ impl VariableManager {
                 }
             }
             Some(CommandType::Unsub(unsub_cmd)) => {
-                for _id in unsub_cmd.var_ids {
-                    subscribed_set.remove(&_id);
+                if unsub_cmd.events.contains(&(EventType::VarValues as i32)) {
+                    for _id in unsub_cmd.var_ids {
+                        subscribed_set.remove(&_id);
+                    }
                 }
+                if unsub_cmd.events.contains(&(EventType::TreeChange as i32)) {
+                    *get_tree_changes = false;
+                }
+
                 Response {
                     response_type: Some(ResponseType::Unsub(UnsubscribeResponse { cmd_id: unsub_cmd.cmd_id })),
                     status: OperationStatus::Ok as i32,

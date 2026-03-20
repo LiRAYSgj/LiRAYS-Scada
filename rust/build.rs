@@ -16,7 +16,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &[
             "proto/namespace/types.proto",
             "proto/namespace/enums.proto",
-            "proto/namespace/commands.proto"
+            "proto/namespace/commands.proto",
+            "proto/namespace/events.proto"
         ],
         &["proto/"]
     )?;

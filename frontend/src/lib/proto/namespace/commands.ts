@@ -81,6 +81,7 @@ export interface SubscribeResponse {
 export interface UnsubscribeCommand {
   cmdId: string;
   varIds: string[];
+  events: EventType[];
 }
 
 export interface UnsubscribeResponse {
@@ -1135,7 +1136,7 @@ export const SubscribeResponse: MessageFns<SubscribeResponse> = {
 };
 
 function createBaseUnsubscribeCommand(): UnsubscribeCommand {
-  return { cmdId: "", varIds: [] };
+  return { cmdId: "", varIds: [], events: [] };
 }
 
 export const UnsubscribeCommand: MessageFns<UnsubscribeCommand> = {
@@ -1146,6 +1147,11 @@ export const UnsubscribeCommand: MessageFns<UnsubscribeCommand> = {
     for (const v of message.varIds) {
       writer.uint32(18).string(v!);
     }
+    writer.uint32(26).fork();
+    for (const v of message.events) {
+      writer.int32(v);
+    }
+    writer.join();
     return writer;
   },
 
@@ -1172,6 +1178,24 @@ export const UnsubscribeCommand: MessageFns<UnsubscribeCommand> = {
           message.varIds.push(reader.string());
           continue;
         }
+        case 3: {
+          if (tag === 24) {
+            message.events.push(reader.int32() as any);
+
+            continue;
+          }
+
+          if (tag === 26) {
+            const end2 = reader.uint32() + reader.pos;
+            while (reader.pos < end2) {
+              message.events.push(reader.int32() as any);
+            }
+
+            continue;
+          }
+
+          break;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1193,6 +1217,7 @@ export const UnsubscribeCommand: MessageFns<UnsubscribeCommand> = {
         : globalThis.Array.isArray(object?.var_ids)
         ? object.var_ids.map((e: any) => globalThis.String(e))
         : [],
+      events: globalThis.Array.isArray(object?.events) ? object.events.map((e: any) => eventTypeFromJSON(e)) : [],
     };
   },
 
@@ -1204,6 +1229,9 @@ export const UnsubscribeCommand: MessageFns<UnsubscribeCommand> = {
     if (message.varIds?.length) {
       obj.varIds = message.varIds;
     }
+    if (message.events?.length) {
+      obj.events = message.events.map((e) => eventTypeToJSON(e));
+    }
     return obj;
   },
 
@@ -1214,6 +1242,7 @@ export const UnsubscribeCommand: MessageFns<UnsubscribeCommand> = {
     const message = createBaseUnsubscribeCommand();
     message.cmdId = object.cmdId ?? "";
     message.varIds = object.varIds?.map((e) => e) || [];
+    message.events = object.events?.map((e) => e) || [];
     return message;
   },
 };

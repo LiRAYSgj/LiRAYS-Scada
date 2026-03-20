@@ -8,7 +8,7 @@ use std::{sync::Arc, thread};
 use prost::Message as ProstMessage;
 use pyo3::prelude::*;
 use super::variable::{VariableManager};
-use super::namespace::Command;
+use super::namespace::{Command, event::Ev};
 use serde_json;
 
 
@@ -16,8 +16,9 @@ async fn handle_client_cmd(vm: Arc<VariableManager>, stream: TcpStream, addr: St
     match accept_async(stream).await {
         Ok(mut ws_stream) => {
             debug!("Accepting client from {addr}");
-            let mut rx = vm.tx.subscribe();
+            let mut events_rx = vm.events_tx.subscribe();
             let mut subscribed_set: HashSet<String> = HashSet::new();
+            let mut get_tree_changes = false;
             let mut as_json = false;
             loop {
                 select! {
@@ -41,7 +42,7 @@ async fn handle_client_cmd(vm: Arc<VariableManager>, stream: TcpStream, addr: St
                                 };
                                 as_json = is_json_cmd;
 
-                                let response = vm.exec_cmd(command, &mut subscribed_set);
+                                let response = vm.exec_cmd(command, &mut subscribed_set, &mut get_tree_changes);
                                 let resp_msg = if as_json {
                                     match serde_json::to_string(&response) {
                                         Ok(str_) => Message::Text(str_.into()),
@@ -65,17 +66,22 @@ async fn handle_client_cmd(vm: Arc<VariableManager>, stream: TcpStream, addr: St
                             }
                         }
                     }
-                    data_result = rx.recv() => {
+                    data_result = events_rx.recv() => {
                         match data_result {
-                            Ok(msg) => {
-                                if subscribed_set.contains(&msg.var_id) {
+                            Ok(event) => {
+                                let send_event = match &event.ev {
+                                    Some(Ev::VarValueEv(var_id_val)) => subscribed_set.contains(&var_id_val.var_id),
+                                    Some(Ev::TreeChangedEv(_)) => get_tree_changes,
+                                    None => false
+                                };
+                                if send_event {
                                     let resp_msg = if as_json {
-                                        match serde_json::to_string(&msg) {
+                                        match serde_json::to_string(&event) {
                                             Ok(str_) => Message::Text(str_.into()),
                                             Err(e) => Message::Text(format!("Error: {e}").into())
                                         }
                                     } else {
-                                        Message::Binary(msg.encode_to_vec().into())
+                                        Message::Binary(event.encode_to_vec().into())
                                     };
                                     match ws_stream.send(resp_msg).await {
                                         Ok(_) => (),

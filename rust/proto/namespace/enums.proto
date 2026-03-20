@@ -28,6 +28,6 @@ enum OperationStatus {
 // EventType
 enum EventType {
     EVENT_TYPE_INVALID = 0;
-    EVENT_TYPE_ITEMS_CREATED = 1;
-    EVENT_TYPE_ITEMS_DELETED = 2;
+    EVENT_TYPE_TREE_CHANGE = 1;
+    EVENT_TYPE_VAR_VALUES = 2;
 }

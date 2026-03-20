@@ -85,15 +85,15 @@ export function varDataTypeFromJSON(object: any): VarDataType {
 export function varDataTypeToJSON(object: VarDataType): string {
   switch (object) {
     case VarDataType.VAR_DATA_TYPE_INVALID:
-      return "invalid";
+      return "VAR_DATA_TYPE_INVALID";
     case VarDataType.VAR_DATA_TYPE_INTEGER:
-      return "integer";
+      return "VAR_DATA_TYPE_INTEGER";
     case VarDataType.VAR_DATA_TYPE_FLOAT:
-      return "float";
+      return "VAR_DATA_TYPE_FLOAT";
     case VarDataType.VAR_DATA_TYPE_TEXT:
-      return "text";
+      return "VAR_DATA_TYPE_TEXT";
     case VarDataType.VAR_DATA_TYPE_BOOLEAN:
-      return "bool";
+      return "VAR_DATA_TYPE_BOOLEAN";
     case VarDataType.UNRECOGNIZED:
     default:
       return "UNRECOGNIZED";
@@ -143,8 +143,8 @@ export function operationStatusToJSON(object: OperationStatus): string {
 /** EventType */
 export enum EventType {
   EVENT_TYPE_INVALID = 0,
-  EVENT_TYPE_ITEMS_CREATED = 1,
-  EVENT_TYPE_ITEMS_DELETED = 2,
+  EVENT_TYPE_TREE_CHANGE = 1,
+  EVENT_TYPE_VAR_VALUES = 2,
   UNRECOGNIZED = -1,
 }
 
@@ -154,11 +154,11 @@ export function eventTypeFromJSON(object: any): EventType {
     case "EVENT_TYPE_INVALID":
       return EventType.EVENT_TYPE_INVALID;
     case 1:
-    case "EVENT_TYPE_ITEMS_CREATED":
-      return EventType.EVENT_TYPE_ITEMS_CREATED;
+    case "EVENT_TYPE_TREE_CHANGE":
+      return EventType.EVENT_TYPE_TREE_CHANGE;
     case 2:
-    case "EVENT_TYPE_ITEMS_DELETED":
-      return EventType.EVENT_TYPE_ITEMS_DELETED;
+    case "EVENT_TYPE_VAR_VALUES":
+      return EventType.EVENT_TYPE_VAR_VALUES;
     case -1:
     case "UNRECOGNIZED":
     default:
@@ -170,10 +170,10 @@ export function eventTypeToJSON(object: EventType): string {
   switch (object) {
     case EventType.EVENT_TYPE_INVALID:
       return "EVENT_TYPE_INVALID";
-    case EventType.EVENT_TYPE_ITEMS_CREATED:
-      return "EVENT_TYPE_ITEMS_CREATED";
-    case EventType.EVENT_TYPE_ITEMS_DELETED:
-      return "EVENT_TYPE_ITEMS_DELETED";
+    case EventType.EVENT_TYPE_TREE_CHANGE:
+      return "EVENT_TYPE_TREE_CHANGE";
+    case EventType.EVENT_TYPE_VAR_VALUES:
+      return "EVENT_TYPE_VAR_VALUES";
     case EventType.UNRECOGNIZED:
     default:
       return "UNRECOGNIZED";

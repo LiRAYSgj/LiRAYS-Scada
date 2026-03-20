@@ -6,44 +6,59 @@
 
 /* eslint-disable */
 import { BinaryReader, BinaryWriter } from "@bufbuild/protobuf/wire";
+import { FolderInfo, VarIdValue, VarInfo } from "./types";
 
 export const protobufPackage = "namespace";
 
-export interface ItemsCreatedEvent {
-  foldersToReload: string[];
-  newItems: string[];
+export interface FolderChanged {
+  folderId: string;
+  reload: boolean;
+  removedFolders: string[];
+  removedVariables: string[];
+  newFolders: FolderInfo[];
+  newVariables: VarInfo[];
 }
 
-export interface ItemsDeletedEvent {
-  /** 16 bytes */
-  rootUid: string;
-  vendor: string;
+export interface TreeChanged {
+  folderChangedEvent: FolderChanged[];
 }
 
 export interface Event {
-  createdEv?: ItemsCreatedEvent | undefined;
-  deletedEv?: ItemsCreatedEvent | undefined;
+  varValueEv?: VarIdValue | undefined;
+  treeChangedEv?: TreeChanged | undefined;
 }
 
-function createBaseItemsCreatedEvent(): ItemsCreatedEvent {
-  return { foldersToReload: [], newItems: [] };
+function createBaseFolderChanged(): FolderChanged {
+  return { folderId: "", reload: false, removedFolders: [], removedVariables: [], newFolders: [], newVariables: [] };
 }
 
-export const ItemsCreatedEvent: MessageFns<ItemsCreatedEvent> = {
-  encode(message: ItemsCreatedEvent, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    for (const v of message.foldersToReload) {
-      writer.uint32(10).string(v!);
+export const FolderChanged: MessageFns<FolderChanged> = {
+  encode(message: FolderChanged, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.folderId !== "") {
+      writer.uint32(10).string(message.folderId);
     }
-    for (const v of message.newItems) {
-      writer.uint32(18).string(v!);
+    if (message.reload !== false) {
+      writer.uint32(16).bool(message.reload);
+    }
+    for (const v of message.removedFolders) {
+      writer.uint32(26).string(v!);
+    }
+    for (const v of message.removedVariables) {
+      writer.uint32(34).string(v!);
+    }
+    for (const v of message.newFolders) {
+      FolderInfo.encode(v!, writer.uint32(42).fork()).join();
+    }
+    for (const v of message.newVariables) {
+      VarInfo.encode(v!, writer.uint32(50).fork()).join();
     }
     return writer;
   },
 
-  decode(input: BinaryReader | Uint8Array, length?: number): ItemsCreatedEvent {
+  decode(input: BinaryReader | Uint8Array, length?: number): FolderChanged {
     const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
     const end = length === undefined ? reader.len : reader.pos + length;
-    const message = createBaseItemsCreatedEvent();
+    const message = createBaseFolderChanged();
     while (reader.pos < end) {
       const tag = reader.uint32();
       switch (tag >>> 3) {
@@ -52,15 +67,47 @@ export const ItemsCreatedEvent: MessageFns<ItemsCreatedEvent> = {
             break;
           }
 
-          message.foldersToReload.push(reader.string());
+          message.folderId = reader.string();
           continue;
         }
         case 2: {
-          if (tag !== 18) {
+          if (tag !== 16) {
             break;
           }
 
-          message.newItems.push(reader.string());
+          message.reload = reader.bool();
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.removedFolders.push(reader.string());
+          continue;
+        }
+        case 4: {
+          if (tag !== 34) {
+            break;
+          }
+
+          message.removedVariables.push(reader.string());
+          continue;
+        }
+        case 5: {
+          if (tag !== 42) {
+            break;
+          }
+
+          message.newFolders.push(FolderInfo.decode(reader, reader.uint32()));
+          continue;
+        }
+        case 6: {
+          if (tag !== 50) {
+            break;
+          }
+
+          message.newVariables.push(VarInfo.decode(reader, reader.uint32()));
           continue;
         }
       }
@@ -72,62 +119,91 @@ export const ItemsCreatedEvent: MessageFns<ItemsCreatedEvent> = {
     return message;
   },
 
-  fromJSON(object: any): ItemsCreatedEvent {
+  fromJSON(object: any): FolderChanged {
     return {
-      foldersToReload: globalThis.Array.isArray(object?.foldersToReload)
-        ? object.foldersToReload.map((e: any) => globalThis.String(e))
-        : globalThis.Array.isArray(object?.folders_to_reload)
-        ? object.folders_to_reload.map((e: any) => globalThis.String(e))
+      folderId: isSet(object.folderId)
+        ? globalThis.String(object.folderId)
+        : isSet(object.folder_id)
+        ? globalThis.String(object.folder_id)
+        : "",
+      reload: isSet(object.reload) ? globalThis.Boolean(object.reload) : false,
+      removedFolders: globalThis.Array.isArray(object?.removedFolders)
+        ? object.removedFolders.map((e: any) => globalThis.String(e))
+        : globalThis.Array.isArray(object?.removed_folders)
+        ? object.removed_folders.map((e: any) => globalThis.String(e))
         : [],
-      newItems: globalThis.Array.isArray(object?.newItems)
-        ? object.newItems.map((e: any) => globalThis.String(e))
-        : globalThis.Array.isArray(object?.new_items)
-        ? object.new_items.map((e: any) => globalThis.String(e))
+      removedVariables: globalThis.Array.isArray(object?.removedVariables)
+        ? object.removedVariables.map((e: any) => globalThis.String(e))
+        : globalThis.Array.isArray(object?.removed_variables)
+        ? object.removed_variables.map((e: any) => globalThis.String(e))
+        : [],
+      newFolders: globalThis.Array.isArray(object?.newFolders)
+        ? object.newFolders.map((e: any) => FolderInfo.fromJSON(e))
+        : globalThis.Array.isArray(object?.new_folders)
+        ? object.new_folders.map((e: any) => FolderInfo.fromJSON(e))
+        : [],
+      newVariables: globalThis.Array.isArray(object?.newVariables)
+        ? object.newVariables.map((e: any) => VarInfo.fromJSON(e))
+        : globalThis.Array.isArray(object?.new_variables)
+        ? object.new_variables.map((e: any) => VarInfo.fromJSON(e))
         : [],
     };
   },
 
-  toJSON(message: ItemsCreatedEvent): unknown {
+  toJSON(message: FolderChanged): unknown {
     const obj: any = {};
-    if (message.foldersToReload?.length) {
-      obj.foldersToReload = message.foldersToReload;
+    if (message.folderId !== "") {
+      obj.folderId = message.folderId;
     }
-    if (message.newItems?.length) {
-      obj.newItems = message.newItems;
+    if (message.reload !== false) {
+      obj.reload = message.reload;
+    }
+    if (message.removedFolders?.length) {
+      obj.removedFolders = message.removedFolders;
+    }
+    if (message.removedVariables?.length) {
+      obj.removedVariables = message.removedVariables;
+    }
+    if (message.newFolders?.length) {
+      obj.newFolders = message.newFolders.map((e) => FolderInfo.toJSON(e));
+    }
+    if (message.newVariables?.length) {
+      obj.newVariables = message.newVariables.map((e) => VarInfo.toJSON(e));
     }
     return obj;
   },
 
-  create<I extends Exact<DeepPartial<ItemsCreatedEvent>, I>>(base?: I): ItemsCreatedEvent {
-    return ItemsCreatedEvent.fromPartial(base ?? ({} as any));
+  create<I extends Exact<DeepPartial<FolderChanged>, I>>(base?: I): FolderChanged {
+    return FolderChanged.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<ItemsCreatedEvent>, I>>(object: I): ItemsCreatedEvent {
-    const message = createBaseItemsCreatedEvent();
-    message.foldersToReload = object.foldersToReload?.map((e) => e) || [];
-    message.newItems = object.newItems?.map((e) => e) || [];
+  fromPartial<I extends Exact<DeepPartial<FolderChanged>, I>>(object: I): FolderChanged {
+    const message = createBaseFolderChanged();
+    message.folderId = object.folderId ?? "";
+    message.reload = object.reload ?? false;
+    message.removedFolders = object.removedFolders?.map((e) => e) || [];
+    message.removedVariables = object.removedVariables?.map((e) => e) || [];
+    message.newFolders = object.newFolders?.map((e) => FolderInfo.fromPartial(e)) || [];
+    message.newVariables = object.newVariables?.map((e) => VarInfo.fromPartial(e)) || [];
     return message;
   },
 };
 
-function createBaseItemsDeletedEvent(): ItemsDeletedEvent {
-  return { rootUid: "", vendor: "" };
+function createBaseTreeChanged(): TreeChanged {
+  return { folderChangedEvent: [] };
 }
 
-export const ItemsDeletedEvent: MessageFns<ItemsDeletedEvent> = {
-  encode(message: ItemsDeletedEvent, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    if (message.rootUid !== "") {
-      writer.uint32(10).string(message.rootUid);
-    }
-    if (message.vendor !== "") {
-      writer.uint32(18).string(message.vendor);
+export const TreeChanged: MessageFns<TreeChanged> = {
+  encode(message: TreeChanged, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    for (const v of message.folderChangedEvent) {
+      FolderChanged.encode(v!, writer.uint32(10).fork()).join();
     }
     return writer;
   },
 
-  decode(input: BinaryReader | Uint8Array, length?: number): ItemsDeletedEvent {
+  decode(input: BinaryReader | Uint8Array, length?: number): TreeChanged {
     const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
     const end = length === undefined ? reader.len : reader.pos + length;
-    const message = createBaseItemsDeletedEvent();
+    const message = createBaseTreeChanged();
     while (reader.pos < end) {
       const tag = reader.uint32();
       switch (tag >>> 3) {
@@ -136,15 +212,7 @@ export const ItemsDeletedEvent: MessageFns<ItemsDeletedEvent> = {
             break;
           }
 
-          message.rootUid = reader.string();
-          continue;
-        }
-        case 2: {
-          if (tag !== 18) {
-            break;
-          }
-
-          message.vendor = reader.string();
+          message.folderChangedEvent.push(FolderChanged.decode(reader, reader.uint32()));
           continue;
         }
       }
@@ -156,50 +224,45 @@ export const ItemsDeletedEvent: MessageFns<ItemsDeletedEvent> = {
     return message;
   },
 
-  fromJSON(object: any): ItemsDeletedEvent {
+  fromJSON(object: any): TreeChanged {
     return {
-      rootUid: isSet(object.rootUid)
-        ? globalThis.String(object.rootUid)
-        : isSet(object.root_uid)
-        ? globalThis.String(object.root_uid)
-        : "",
-      vendor: isSet(object.vendor) ? globalThis.String(object.vendor) : "",
+      folderChangedEvent: globalThis.Array.isArray(object?.folderChangedEvent)
+        ? object.folderChangedEvent.map((e: any) => FolderChanged.fromJSON(e))
+        : globalThis.Array.isArray(object?.folder_changed_event)
+        ? object.folder_changed_event.map((e: any) => FolderChanged.fromJSON(e))
+        : [],
     };
   },
 
-  toJSON(message: ItemsDeletedEvent): unknown {
+  toJSON(message: TreeChanged): unknown {
     const obj: any = {};
-    if (message.rootUid !== "") {
-      obj.rootUid = message.rootUid;
-    }
-    if (message.vendor !== "") {
-      obj.vendor = message.vendor;
+    if (message.folderChangedEvent?.length) {
+      obj.folderChangedEvent = message.folderChangedEvent.map((e) => FolderChanged.toJSON(e));
     }
     return obj;
   },
 
-  create<I extends Exact<DeepPartial<ItemsDeletedEvent>, I>>(base?: I): ItemsDeletedEvent {
-    return ItemsDeletedEvent.fromPartial(base ?? ({} as any));
+  create<I extends Exact<DeepPartial<TreeChanged>, I>>(base?: I): TreeChanged {
+    return TreeChanged.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<ItemsDeletedEvent>, I>>(object: I): ItemsDeletedEvent {
-    const message = createBaseItemsDeletedEvent();
-    message.rootUid = object.rootUid ?? "";
-    message.vendor = object.vendor ?? "";
+  fromPartial<I extends Exact<DeepPartial<TreeChanged>, I>>(object: I): TreeChanged {
+    const message = createBaseTreeChanged();
+    message.folderChangedEvent = object.folderChangedEvent?.map((e) => FolderChanged.fromPartial(e)) || [];
     return message;
   },
 };
 
 function createBaseEvent(): Event {
-  return { createdEv: undefined, deletedEv: undefined };
+  return { varValueEv: undefined, treeChangedEv: undefined };
 }
 
 export const Event: MessageFns<Event> = {
   encode(message: Event, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    if (message.createdEv !== undefined) {
-      ItemsCreatedEvent.encode(message.createdEv, writer.uint32(10).fork()).join();
+    if (message.varValueEv !== undefined) {
+      VarIdValue.encode(message.varValueEv, writer.uint32(10).fork()).join();
     }
-    if (message.deletedEv !== undefined) {
-      ItemsCreatedEvent.encode(message.deletedEv, writer.uint32(18).fork()).join();
+    if (message.treeChangedEv !== undefined) {
+      TreeChanged.encode(message.treeChangedEv, writer.uint32(18).fork()).join();
     }
     return writer;
   },
@@ -216,7 +279,7 @@ export const Event: MessageFns<Event> = {
             break;
           }
 
-          message.createdEv = ItemsCreatedEvent.decode(reader, reader.uint32());
+          message.varValueEv = VarIdValue.decode(reader, reader.uint32());
           continue;
         }
         case 2: {
@@ -224,7 +287,7 @@ export const Event: MessageFns<Event> = {
             break;
           }
 
-          message.deletedEv = ItemsCreatedEvent.decode(reader, reader.uint32());
+          message.treeChangedEv = TreeChanged.decode(reader, reader.uint32());
           continue;
         }
       }
@@ -238,26 +301,26 @@ export const Event: MessageFns<Event> = {
 
   fromJSON(object: any): Event {
     return {
-      createdEv: isSet(object.createdEv)
-        ? ItemsCreatedEvent.fromJSON(object.createdEv)
-        : isSet(object.created_ev)
-        ? ItemsCreatedEvent.fromJSON(object.created_ev)
+      varValueEv: isSet(object.varValueEv)
+        ? VarIdValue.fromJSON(object.varValueEv)
+        : isSet(object.var_value_ev)
+        ? VarIdValue.fromJSON(object.var_value_ev)
         : undefined,
-      deletedEv: isSet(object.deletedEv)
-        ? ItemsCreatedEvent.fromJSON(object.deletedEv)
-        : isSet(object.deleted_ev)
-        ? ItemsCreatedEvent.fromJSON(object.deleted_ev)
+      treeChangedEv: isSet(object.treeChangedEv)
+        ? TreeChanged.fromJSON(object.treeChangedEv)
+        : isSet(object.tree_changed_ev)
+        ? TreeChanged.fromJSON(object.tree_changed_ev)
         : undefined,
     };
   },
 
   toJSON(message: Event): unknown {
     const obj: any = {};
-    if (message.createdEv !== undefined) {
-      obj.createdEv = ItemsCreatedEvent.toJSON(message.createdEv);
+    if (message.varValueEv !== undefined) {
+      obj.varValueEv = VarIdValue.toJSON(message.varValueEv);
     }
-    if (message.deletedEv !== undefined) {
-      obj.deletedEv = ItemsCreatedEvent.toJSON(message.deletedEv);
+    if (message.treeChangedEv !== undefined) {
+      obj.treeChangedEv = TreeChanged.toJSON(message.treeChangedEv);
     }
     return obj;
   },
@@ -267,11 +330,11 @@ export const Event: MessageFns<Event> = {
   },
   fromPartial<I extends Exact<DeepPartial<Event>, I>>(object: I): Event {
     const message = createBaseEvent();
-    message.createdEv = (object.createdEv !== undefined && object.createdEv !== null)
-      ? ItemsCreatedEvent.fromPartial(object.createdEv)
+    message.varValueEv = (object.varValueEv !== undefined && object.varValueEv !== null)
+      ? VarIdValue.fromPartial(object.varValueEv)
       : undefined;
-    message.deletedEv = (object.deletedEv !== undefined && object.deletedEv !== null)
-      ? ItemsCreatedEvent.fromPartial(object.deletedEv)
+    message.treeChangedEv = (object.treeChangedEv !== undefined && object.treeChangedEv !== null)
+      ? TreeChanged.fromPartial(object.treeChangedEv)
       : undefined;
     return message;
   },

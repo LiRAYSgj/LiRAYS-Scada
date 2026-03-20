@@ -195,6 +195,10 @@ Subscribe to Variable Value changes
   "command_type": {
     "Sub": {
       "cmd_id": "some-unique-id",
+      "events": [
+        1,
+        2
+      ]
       "var_ids": [
         "/Folder/Path/int_var",
         "/Folder/Path/float_var",

@@ -68,6 +68,7 @@ message SubscribeResponse {
 message UnsubscribeCommand {
   string cmd_id = 1;
   repeated string var_ids = 2;
+  repeated EventType events = 3;
 }
 
 message UnsubscribeResponse {
