@@ -3,7 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TagStreamClient } from "./tag-stream-client";
 import { WebSocketConnectionStatus } from "./types";
 import { Command, Response } from "../../proto/namespace/commands";
-import { ItemType, OperationStatus } from "../../proto/namespace/enums";
+import { Event } from "../../proto/namespace/events";
+import {
+  EventType,
+  ItemType,
+  OperationStatus,
+} from "../../proto/namespace/enums";
 
 vi.mock("$app/environment", () => ({
   browser: true,
@@ -70,7 +75,7 @@ describe("TagStreamClient", () => {
     expect(get(client.status)).toBe(WebSocketConnectionStatus.CONNECTED);
   });
 
-  it("sends GET request when tracked ids are set", () => {
+  it("sends global tree subscribe and var-values subscribe when tracked ids are set", async () => {
     const client = new TagStreamClient();
     client.start("ws://localhost:8787");
     const ws = FakeWebSocket.instances[0];
@@ -78,40 +83,60 @@ describe("TagStreamClient", () => {
     ws.emit("open");
 
     client.setTrackedIds(["tag-a", "tag-b"]);
+    await vi.waitFor(() => {
+      expect(ws.sent.length).toBeGreaterThanOrEqual(2);
+    });
 
     const decodedRequests = ws.sent.map((msg) => Command.decode(msg));
-    expect(decodedRequests.some((req) => req.get !== undefined)).toBe(true);
     expect(
       decodedRequests.some(
         (req) =>
-          req.get?.varIds.includes("tag-a") &&
-          req.get?.varIds.includes("tag-b"),
+          req.sub?.varIds.length === 0 &&
+          req.sub?.events?.includes(EventType.EVENT_TYPE_TREE_CHANGE),
+      ),
+    ).toBe(true);
+    expect(
+      decodedRequests.some(
+        (req) =>
+          req.sub?.varIds.includes("tag-a") &&
+          req.sub?.varIds.includes("tag-b") &&
+          req.sub?.events?.includes(EventType.EVENT_TYPE_VAR_VALUES),
       ),
     ).toBe(true);
   });
 
-  it("updates value store on GET response messages", () => {
+  it("updates value store on Event.var_value_ev pushes", async () => {
     const client = new TagStreamClient();
     client.start("ws://localhost:8787");
     const ws = FakeWebSocket.instances[0];
     ws.readyState = FakeWebSocket.OPEN;
     ws.emit("open");
     client.setTrackedIds(["tag-a"]);
+    await vi.waitFor(() => {
+      expect(ws.sent.length).toBeGreaterThanOrEqual(2);
+    });
 
     const decodedRequests = ws.sent.map((msg) => Command.decode(msg));
-    const request = decodedRequests.find((req) => req.get !== undefined);
-    expect(request).toBeDefined();
+    const sub = decodedRequests.find((req) =>
+      req.sub?.varIds.includes("tag-a"),
+    );
+    expect(sub).toBeDefined();
 
     const responseBytes = Response.encode({
       status: OperationStatus.OPERATION_STATUS_OK,
-      get: {
-        cmdId: request!.get!.cmdId,
-        varValues: [{ value: { integerValue: 57 } }],
-      },
+      sub: { cmdId: sub!.sub!.cmdId },
     }).finish();
 
     ws.emit("message", {
       data: responseBytes.slice().buffer,
+    });
+
+    const push = Event.encode({
+      varValueEv: { varId: "tag-a", value: { integerValue: 57 } },
+    }).finish();
+
+    ws.emit("message", {
+      data: push.slice().buffer,
     });
 
     expect(get(client.values)).toEqual({ "tag-a": 57 });
@@ -166,8 +191,8 @@ describe("TagStreamClient", () => {
       status: OperationStatus.OPERATION_STATUS_OK,
       list: {
         cmdId: parsed.list!.cmdId,
-        childrenFolders: { root: "root-id" },
-        childrenVars: {},
+        folders: [],
+        variables: [],
       },
     }).finish();
 
