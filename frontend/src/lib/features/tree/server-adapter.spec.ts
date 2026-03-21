@@ -13,8 +13,8 @@ describe("fetchTreeChildren", () => {
   it("maps root LIST payload to root tree nodes", async () => {
     vi.mocked(tagStreamClient.listChildren).mockResolvedValue({
       cmdId: "cmd-1",
-      childrenFolders: { root: "root-id" },
-      childrenVars: {},
+      folders: [{ id: "root-id", name: "root" }],
+      variables: [],
     });
 
     const roots = await fetchTreeChildren(null);
@@ -34,10 +34,14 @@ describe("fetchTreeChildren", () => {
     // LIST payloads use VarDataType (int32); varDataTypeToJSON drives TreeNode.dataType
     vi.mocked(tagStreamClient.listChildren).mockResolvedValue({
       cmdId: "cmd-2",
-      childrenFolders: { area: "folder-1" },
-      childrenVars: {
-        pressure: { varId: "var-1", varDType: VarDataType.VAR_DATA_TYPE_FLOAT },
-      },
+      folders: [{ id: "folder-1", name: "area" }],
+      variables: [
+        {
+          id: "var-1",
+          name: "pressure",
+          varDType: VarDataType.VAR_DATA_TYPE_FLOAT,
+        },
+      ],
     });
 
     const parent = {

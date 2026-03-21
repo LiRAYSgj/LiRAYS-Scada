@@ -1,6 +1,12 @@
 import { derived, writable } from "svelte/store";
+import type { TreeChanged } from "$lib/proto/namespace/events";
 import { flattenVisibleRows } from "./flatten";
 import type { TreeNode, TreeState } from "./types";
+import {
+  applyFolderChangedToState,
+  pruneOrphanSelection,
+  type ReloadParentRequest,
+} from "./tree-remote-reconcile";
 
 interface TreeAdapter {
   fetchChildren: (parent: TreeNode | null) => Promise<TreeNode[]>;
@@ -234,6 +240,31 @@ export function createTreeStore(adapter: TreeAdapter) {
     }),
   );
 
+  /**
+   * Applies `TreeChanged` pushes from the global WS subscription (other UI instances).
+   * Handles reload vs incremental rules for cached children.
+   */
+  async function applyRemoteTreeChanged(ev: TreeChanged): Promise<void> {
+    const reloads: ReloadParentRequest[] = [];
+    state.update((current) => {
+      for (const fc of ev.folderChangedEvent) {
+        reloads.push(...applyFolderChangedToState(current, fc));
+      }
+      pruneOrphanSelection(current);
+      return current;
+    });
+
+    const seen = new Set<string>();
+    for (const parentId of reloads) {
+      const key = parentId === null ? "__root__" : parentId;
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      await refreshNode(parentId);
+    }
+  }
+
   return {
     state,
     visibleRows,
@@ -242,5 +273,6 @@ export function createTreeStore(adapter: TreeAdapter) {
     selectNode,
     collapseNode,
     refreshNode,
+    applyRemoteTreeChanged,
   };
 }
