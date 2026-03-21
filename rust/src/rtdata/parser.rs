@@ -52,7 +52,7 @@ pub fn clone_name(input: &str, start: Option<usize>, stop: Option<usize>, step: 
         let mut result = Vec::new();
         let mut current = start_val;
         while current <= end {
-            result.push(format!("{input}_{current}"));
+            result.push(format!("{input}{current}"));
             current += step_val;
         }
         result
