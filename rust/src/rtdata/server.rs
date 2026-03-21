@@ -1,4 +1,4 @@
-use log::{debug, error, info, warn};
+use log::{error, info, warn};
 use tokio::net::TcpStream;
 use tokio::{runtime::Runtime, net::TcpListener, select};
 use tokio_tungstenite::{accept_async, tungstenite::Message};
@@ -15,7 +15,7 @@ use serde_json;
 async fn handle_client_cmd(vm: Arc<VariableManager>, stream: TcpStream, addr: String) {
     match accept_async(stream).await {
         Ok(mut ws_stream) => {
-            debug!("Accepting client from {addr}");
+            info!("Accepting client from {addr}");
             let mut events_rx = vm.events_tx.subscribe();
             let mut subscribed_set: HashSet<String> = HashSet::new();
             let mut get_tree_changes = false;

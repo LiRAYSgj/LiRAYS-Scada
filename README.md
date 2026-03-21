@@ -198,7 +198,7 @@ Subscribe to Variable Value changes
       "events": [
         1,
         2
-      ]
+      ],
       "var_ids": [
         "/Folder/Path/int_var",
         "/Folder/Path/float_var",

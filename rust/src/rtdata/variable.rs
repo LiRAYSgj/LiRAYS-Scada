@@ -311,11 +311,12 @@ impl VariableManager {
                 let cmd_id = add_cmd.cmd_id.clone();
                 let parent_id = add_cmd.parent_id.clone().unwrap_or("/".to_string());
                 let mut batch = Batch::default();
+                let curr_count = self.count_path(&parent_id);
                 let (status, error_msg) = match self.add_items(&parent_id, add_cmd.items_meta.clone(), &mut batch) {
                     Ok(_) => {
                         match self.items_tree.apply_batch(batch).map_err(|e| format!("Error adding items: {e}")) {
                             Ok(_) => {
-                                match extract_add_event(add_cmd, self.count_path(&parent_id)) {
+                                match extract_add_event(add_cmd, curr_count) {
                                     Ok(event) => {
                                         match self.events_tx.send(event) {
                                             Ok(_) => (),
