@@ -6,20 +6,30 @@ from .base import Base
 
 
 class TypedFloat(Base):
-    FloatValue: float = Field(description="Float value to be set", examples=[23.12])
+    FloatValue: float = Field(
+        description="Float value to be set. Used in MCP operations for data retrieval and reporting.",
+        examples=[23.12],
+    )
 
 
 class TypedInteger(Base):
-    IntegerValue: int = Field(description="Integer value to be set", examples=[23])
+    IntegerValue: int = Field(
+        description="Integer value to be set. Used in MCP operations for data retrieval and reporting.",
+        examples=[23],
+    )
 
 
 class TypedText(Base):
-    TextValue: str = Field(description="Text value to be set", examples=["Some text"])
+    TextValue: str = Field(
+        description="Text value to be set. Used in MCP operations for data retrieval and reporting.",
+        examples=["Some text"],
+    )
 
 
 class TypedBoolean(Base):
     BooleanValue: bool = Field(
-        description="Boolean value to be set", examples=[True, False]
+        description="Boolean value to be set. Used in MCP operations for data retrieval and reporting.",
+        examples=[True, False],
     )
 
 
@@ -30,12 +40,12 @@ class Value(Base):
 class GetCmdPayload(Base):
     cmd_id: str = Field(
         ...,
-        description="Unique identifier for the get command",
+        description="Unique identifier for the get command. Required for MCP protocol tracking and response correlation.",
         examples=["cmd_get_12345"],
     )
     var_ids: List[str] = Field(
         ...,
-        description="List of variable IDs to get values for",
+        description="List of variable IDs to get values for. Each ID should be a valid path that MCP agents can understand and process.",
         examples=[
             [
                 "/devices/sensors/NewFolder/NewFloatVariable",
@@ -48,6 +58,12 @@ class GetCmdPayload(Base):
 
 
 class GetCommand(Base):
+    """
+    Get command structure for MCP protocol compatibility.
+    This command type can be translated between HTTP and WebSocket protocols
+    for seamless integration with MCP-compatible AI agents.
+    """
+
     Get: GetCmdPayload
 
 
@@ -82,20 +98,32 @@ class GetResponse(Base):
 
 
 class GetCommandModel(Base):
+    """
+    Get command model for MCP protocol compatibility.
+    This model structure supports translation between HTTP and WebSocket protocols
+    for seamless integration with MCP-compatible AI agents.
+    """
+
     command_type: GetCommand
 
 
 class GetResponseModel(Base):
+    """
+    Get response model for MCP protocol compatibility.
+    This model structure supports translation between HTTP and WebSocket protocols
+    for seamless integration with MCP-compatible AI agents.
+    """
+
     status: int = Field(
         ...,
-        description="Operation status (0=Invalid, 1=OK, 2=Error)",
+        description="Operation status (0=Invalid, 1=OK, 2=Error). For MCP compatibility, status 1 indicates successful command execution that can be reported back to agents.",
         examples=[1, 2],
         ge=0,
         le=2,
     )
     error_msg: Optional[str] = Field(
         None,
-        description="Error message if operation failed",
+        description="Error message if operation failed. MCP agents can use this for error handling and reporting.",
         examples=[None, "Operation failed due to invalid input"],
     )
     response_type: GetResponse
