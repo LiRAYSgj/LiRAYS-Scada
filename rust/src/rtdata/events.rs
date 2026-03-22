@@ -1,15 +1,14 @@
 use std::collections::HashMap;
 
-use super::namespace::{FolderInfo, ItemMeta, ItemType, VarInfo, Event, AddCommand, DelCommand, TreeChanged, FolderChanged, event::Ev};
+use super::namespace::{FolderInfo, ItemMeta, ItemType, VarInfo, Event, DelCommand, TreeChanged, FolderChanged, event::Ev};
 use super::utils::{cast_var_data_type, normalize_path, get_parent_and_name};
 
 pub fn extract_add_event(
-    add_cmd: &AddCommand,
+    folder_id: &str,
     reload: bool,
     new_folders_imeta: Vec<ItemMeta>,
     new_variables_imeta: Vec<ItemMeta>
 ) -> Result<Event, String> {
-    let folder_id = add_cmd.parent_id.clone().ok_or("Missing parent id".to_string())?;
     let new_folders = new_folders_imeta.iter().map(|i_meta| {
         FolderInfo {
             id: normalize_path(&format!("{}/{}", folder_id, i_meta.name), ItemType::Folder),
@@ -26,7 +25,7 @@ pub fn extract_add_event(
     }).collect();
 
     let folders_changed = vec![FolderChanged {
-        folder_id,
+        folder_id: folder_id.to_string(),
         reload,
         removed_items: vec![],
         new_folders,

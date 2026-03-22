@@ -66,14 +66,18 @@ impl VariableManager {
         Self { db, items_tree, events_tx: tx }
     }
 
-    fn add_items(&self, parent_id: &str, items_meta: Vec<ItemMeta>, batch: &mut Batch) -> Result<(usize, bool, Vec<ItemMeta>, Vec<ItemMeta>), String> {
+    fn add_items(
+        &self,
+        parent_id: &str,
+        items_meta: Vec<ItemMeta>,
+        batch: &mut Batch
+    ) -> Result<(bool, Vec<ItemMeta>, Vec<ItemMeta>), String> {
         // Let's verify parent_id is an existing folder. Or create it otherwise
         // Returns (reload: bool, new folders: Vec, new variables: Vec)
         let parent_path = normalize_path(parent_id, ItemType::Folder);
         let ancestors = get_ancestors(&parent_path);
         let mut new_folders = vec![];
         let mut new_variables = vec![];
-        let mut counter = 0;
 
         for (parent, folder_name) in ancestors {
             let h_key = format!("H:{}\0{}", parent, folder_name);
@@ -91,9 +95,6 @@ impl VariableManager {
         }
         let prefix = format!("H:{}\0", parent_path);
         let children_keys: HashSet<String> = HashSet::from_iter(self.list_keys_with_prefix(&prefix)?);
-        let curr_children_count = children_keys.len();
-        let new_count = items_meta.len();
-        let reload = new_count > curr_children_count;
 
         for i_meta in items_meta {
             let h_key = format!("H:{}\0{}", parent_path, i_meta.name);
@@ -101,17 +102,14 @@ impl VariableManager {
                 return Err(format!("Can't create existing item {}", h_key));
             }
             batch.insert(h_key.as_bytes(), i_meta.encode_to_vec());
-            counter += 1;
             let i_type = cast_item_type(i_meta.i_type);
-            if !reload {
-                match i_type {
-                    ItemType::Folder => new_folders.push(i_meta),
-                    ItemType::Variable => new_variables.push(i_meta),
-                    ItemType::Invalid => warn!("Invalid item type in create")
-                }
+            match i_type {
+                ItemType::Folder => new_folders.push(i_meta),
+                ItemType::Variable => new_variables.push(i_meta),
+                ItemType::Invalid => warn!("Invalid item type in create")
             }
         }
-        Ok((counter, reload, new_folders, new_variables))
+        Ok((false, new_folders, new_variables))
     }
 
     fn list_path(&self, parent_id: &str) -> Result<(Vec<FolderInfo>, Vec<VarInfo>), String> {
@@ -148,11 +146,19 @@ impl VariableManager {
         Ok(keys)
     }
 
-    fn add_bulk_recursive(&self, root_parent_id: &str, root_nodes: HashMap<String, NamespaceNode>, batch: &mut Batch) -> Result<(), String> {
+    fn add_bulk_recursive(
+        &self,
+        root_parent_id: &str,
+        root_nodes: HashMap<String, NamespaceNode>,
+        batch: &mut Batch
+    ) -> Result<(Vec<ItemMeta>, Vec<ItemMeta>), String> {
         let mut stack = vec![(root_parent_id.to_string(), root_nodes)];
         let mut total_count = 0usize;
+        let mut first_level_folders = vec![];
+        let mut first_level_variables = vec![];
 
         while let Some((parent_id, nodes)) = stack.pop() {
+            let is_first_level = parent_id == root_parent_id;
             for (key, val) in nodes {
                 let mut name_ = key.as_str();
                 let (start, stop, step) = parse_repeated_name(&mut name_);
@@ -202,18 +208,28 @@ impl VariableManager {
 
                 if !vars_to_create.is_empty() {
                     let prev_m = total_count / 1_000_000;
-                    total_count += self.add_items(&parent_id, vars_to_create, batch)?.0;
+                    let (_, _, new_vars) = self.add_items(&parent_id, vars_to_create, batch)?;
+                    total_count += new_vars.len();
                     let curr_m = total_count / 1_000_000;
                     if curr_m > prev_m {
                         info!("Bulk ADD: {} million items added to batch", curr_m);
                     }
+                    // If this is the first level, collect the created variables
+                    if is_first_level {
+                        first_level_variables.extend(new_vars);
+                    }
                 }
                 if !folders_to_create.is_empty() {
                     let prev_m = total_count / 1_000_000;
-                    total_count += self.add_items(&parent_id, folders_to_create, batch)?.0;
+                    let (_, new_folders, _) = self.add_items(&parent_id, folders_to_create, batch)?;
+                    total_count += new_folders.len();
                     let curr_m = total_count / 1_000_000;
                     if curr_m > prev_m {
                         debug!("Bulk ADD: {} million items added to batch", curr_m);
+                    }
+                    // If this is the first level, collect the created folders
+                    if is_first_level {
+                        first_level_folders.extend(new_folders);
                     }
                 }
 
@@ -222,7 +238,7 @@ impl VariableManager {
                 }
             }
         }
-        Ok(())
+        Ok((first_level_folders, first_level_variables))
     }
 
     fn set_vals(&self, var_id_vals: Vec<VarIdValue>) -> Result<Vec<VarIdValue>, String> {
@@ -324,19 +340,24 @@ impl VariableManager {
                 let parent_id = add_cmd.parent_id.clone().unwrap_or("/".to_string());
                 let mut batch = Batch::default();
                 let (status, error_msg) = match self.add_items(&parent_id, add_cmd.items_meta.clone(), &mut batch) {
-                    Ok((_, reload, new_folders, new_variables)) => {
+                    Ok((reload, new_folders, new_variables)) => {
                         match self.items_tree.apply_batch(batch).map_err(|e| format!("Error adding items: {e}")) {
                             Ok(_) => {
-                                match extract_add_event(&add_cmd, reload, new_folders, new_variables) {
-                                    Ok(event) => {
-                                        match self.events_tx.send(event) {
-                                            Ok(_) => (),
-                                            Err(e) => warn!("Error sending event: {e}")
+                                match add_cmd.parent_id {
+                                    Some(folder_id) => {
+                                        match extract_add_event(&folder_id, reload, new_folders, new_variables) {
+                                            Ok(event) => {
+                                                match self.events_tx.send(event) {
+                                                    Ok(_) => (),
+                                                    Err(e) => warn!("Error sending event: {e}")
+                                                }
+                                            }
+                                            Err(e) => warn!("Error extracting event: {e}")
                                         }
+                                        (OperationStatus::Ok as i32, None)
                                     }
-                                    Err(e) => warn!("Error extracting event: {e}")
+                                    None => (OperationStatus::Err as i32, Some(format!("Missing parent id")))
                                 }
-                                (OperationStatus::Ok as i32, None)
                             }
                             Err(e) => (OperationStatus::Err as i32, Some(format!("Applying batch error: {e}")))
                         }
@@ -400,8 +421,19 @@ impl VariableManager {
                     Some(schema) => {
                         let mut batch = sled::Batch::default();
                         match self.add_bulk_recursive(&addb_cmd.parent_id, schema.roots, &mut batch) {
-                            Ok(_) => match self.items_tree.apply_batch(batch) {
-                                Ok(_) => (OperationStatus::Ok as i32, None),
+                            Ok((new_folders, new_variables)) => match self.items_tree.apply_batch(batch) {
+                                Ok(_) => {
+                                    match extract_add_event(&addb_cmd.parent_id, false, new_folders, new_variables) {
+                                        Ok(event) => {
+                                            match self.events_tx.send(event) {
+                                                Ok(_) => (),
+                                                Err(e) => warn!("Error sending event: {e}")
+                                            }
+                                        }
+                                        Err(e) => warn!("Error extracting event: {e}")
+                                    }
+                                    (OperationStatus::Ok as i32, None)
+                                }
                                 Err(e) => (OperationStatus::Err as i32, Some(format!("On apply batch: {e}"))),
                             },
                             Err(e) => (OperationStatus::Err as i32, Some(format!("Bulk insert error: {e}"))),

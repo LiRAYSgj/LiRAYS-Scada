@@ -1,5 +1,5 @@
-Area_[:20]:
-  Line_[:4]:
+Area_[:3]:
+  Line_[:2]:
     Motor_[:2]:
       Power: Float
       Speed: Float

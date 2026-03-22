@@ -32,18 +32,17 @@ function collectSubtreeIds(state: TreeState, rootId: string): Set<string> {
 
 function collectIdsToRemove(
   state: TreeState,
-  folderIds: string[],
-  varIds: string[],
+  removedItems: string[],
 ): Set<string> {
   const all = new Set<string>();
-  for (const fid of folderIds) {
+  for (const fid of removedItems) {
     for (const id of collectSubtreeIds(state, fid)) {
       all.add(id);
     }
   }
-  for (const vid of varIds) {
-    all.add(vid);
-  }
+  // for (const vid of varIds) {
+  //   all.add(vid);
+  // }
   return all;
 }
 
@@ -183,8 +182,7 @@ function applyIncrementalVirtualRoot(
 ): void {
   const toRemove = collectIdsToRemove(
     state,
-    fc.removedFolders,
-    fc.removedVariables,
+    fc.removedItems,
   );
   if (toRemove.size > 0) {
     purgeNodes(state, toRemove);
@@ -268,8 +266,7 @@ export function applyFolderChangedToState(
   if (loaded) {
     const toRemove = collectIdsToRemove(
       state,
-      fc.removedFolders,
-      fc.removedVariables,
+      fc.removedItems,
     );
     if (toRemove.size > 0) {
       purgeNodes(state, toRemove);
