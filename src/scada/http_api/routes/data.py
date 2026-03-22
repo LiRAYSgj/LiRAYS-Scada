@@ -1,20 +1,8 @@
 import websockets
 from fastapi import APIRouter, HTTPException, status
-from google.protobuf.json_format import MessageToDict, ParseDict
 
-from ...proto.namespace.commands_pb2 import Command, Response
-from ..model.data_commands import (
-    AddCommandModel,
-    AddResponseModel,
-    DelCommandModel,
-    DelResponseModel,
-    GetCommandModel,
-    GetResponseModel,
-    ListCommandModel,
-    ListResponseModel,
-    SetCommandModel,
-    SetResponseModel,
-)
+from ..model.add_cmd import AddCommandModel, AddResponseModel
+from ..model.list_cmd import ListCommandModel, ListResponseModel
 
 data_router = APIRouter(tags=["Data"])
 data_router_prefix = "/data"
@@ -22,98 +10,42 @@ data_router_prefix = "/data"
 WS_SERVER_URL = "ws://localhost:1236"
 
 
-async def cmd_executor(cmd_payload, expected_cmd: str):
+async def cmd_executor(command: str, resp_model):
     try:
-        payload_dict = cmd_payload.model_dump()
-        command = ParseDict({expected_cmd: payload_dict}, Command())
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid payload format: {e}",
-        )
-
-    if command.WhichOneof("command_type") != expected_cmd:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid command type. Only '{expected_cmd}' is allowed on this endpoint.",
-        )
-
-    try:
-        async with websockets.connect(WS_SERVER_URL) as websocket:
-            # Send the binary serialized protobuf command
-            await websocket.send(command.SerializeToString())
-
-            # Receive the binary response
-            response_data = await websocket.recv()
-
-            # Parse it back into a Response object
-            response = Response()
-            response.ParseFromString(response_data)
-
-            # Return as a regular JSON dictionary (matching the proto schema)
-            resp = MessageToDict(response, preserving_proto_field_name=True)
-            if resp["status"] == "OPERATION_STATUS_OK":
-                return resp[expected_cmd]
-            else:
-                raise Exception(resp.get("error_msg"))
-
+        async with websockets.connect(WS_SERVER_URL) as web_sock:
+            await web_sock.send(command)
+            response = resp_model.model_validate_json(await web_sock.recv())
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"WebSocket communication error: {e}",
         )
-
-
-@data_router.post(
-    "/list",
-    response_model=ListResponseModel,
-    status_code=status.HTTP_200_OK,
-    summary="List a data directory.",
-    description="List a data directory.",
-)
-async def list_command(cmd_payload: ListCommandModel):
-    return await cmd_executor(cmd_payload, "list")
+    if response.status != 1:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Command returned an error: {response.error_msg}",
+        )
+    else:
+        return response
 
 
 @data_router.post(
     "/add",
     response_model=AddResponseModel,
     status_code=status.HTTP_200_OK,
-    summary="Add variables and directories.",
-    description="Add variables and directories.",
+    summary="Add new folders and variables.",
+    description="Add new folders and variables to a specified data directory.",
 )
-async def add_command(cmd_payload: AddCommandModel):
-    return await cmd_executor(cmd_payload, "add")
+async def add_items(cmd_payload: AddCommandModel):
+    return await cmd_executor(cmd_payload.model_dump_json(), AddResponseModel)
 
 
 @data_router.post(
-    "/set",
-    response_model=SetResponseModel,
+    "/list",
+    response_model=ListResponseModel,
     status_code=status.HTTP_200_OK,
-    summary="Set variable values.",
-    description="Set variable values.",
+    summary="List children of a data directory.",
+    description="List children (folders and variables) of a specified data directory.",
 )
-async def set_command(cmd_payload: SetCommandModel):
-    return await cmd_executor(cmd_payload, "set")
-
-
-@data_router.post(
-    "/get",
-    response_model=GetResponseModel,
-    status_code=status.HTTP_200_OK,
-    summary="Get variable values.",
-    description="Get variable values.",
-)
-async def get_command(cmd_payload: GetCommandModel):
-    return await cmd_executor(cmd_payload, "get")
-
-
-@data_router.delete(
-    "/del",
-    response_model=DelResponseModel,
-    status_code=status.HTTP_200_OK,
-    summary="Get variable values.",
-    description="Get variable values.",
-)
-async def del_command(cmd_payload: DelCommandModel):
-    return await cmd_executor(cmd_payload, "del")
+async def list_items(cmd_payload: ListCommandModel):
+    return await cmd_executor(cmd_payload.model_dump_json(), ListResponseModel)

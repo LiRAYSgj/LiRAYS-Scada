@@ -340,18 +340,15 @@ impl VariableManager {
                     Ok((reload, new_folders, new_variables)) => {
                         match self.items_tree.apply_batch(batch) {
                             Ok(_) => {
-                                if let Some(folder_id) = add_cmd.parent_id {
-                                    if let Ok(event) = extract_add_event(&folder_id, reload, new_folders, new_variables) {
-                                        if let Err(e) = self.events_tx.send(event) {
-                                            warn!("Error sending event: {e}");
-                                        }
-                                    } else {
-                                        warn!("Error extracting event");
+                                let folder_id = add_cmd.parent_id.unwrap_or("/".to_string());
+                                if let Ok(event) = extract_add_event(&folder_id, reload, new_folders, new_variables) {
+                                    if let Err(e) = self.events_tx.send(event) {
+                                        warn!("Error sending event: {e}");
                                     }
-                                    (OperationStatus::Ok as i32, None)
                                 } else {
-                                    (OperationStatus::Err as i32, Some("Missing parent id".to_string()))
+                                    warn!("Error extracting event");
                                 }
+                                (OperationStatus::Ok as i32, None)
                             }
                             Err(e) => (OperationStatus::Err as i32, Some(format!("Applying batch error: {e}")))
                         }
