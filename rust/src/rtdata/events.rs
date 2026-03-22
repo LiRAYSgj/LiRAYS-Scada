@@ -1,14 +1,15 @@
-use super::namespace::{FolderInfo, ItemMeta, ItemType, VarInfo};
-use super::namespace::{Event, AddCommand, TreeChanged, FolderChanged, event::Ev};
-use super::utils::{cast_var_data_type, normalize_path};
+use std::collections::HashMap;
+
+use super::namespace::{FolderInfo, ItemMeta, ItemType, VarInfo, Event, AddCommand, DelCommand, TreeChanged, FolderChanged, event::Ev};
+use super::utils::{cast_var_data_type, normalize_path, get_parent_and_name};
 
 pub fn extract_add_event(
-    add_cmd: AddCommand,
+    add_cmd: &AddCommand,
     reload: bool,
     new_folders_imeta: Vec<ItemMeta>,
     new_variables_imeta: Vec<ItemMeta>
 ) -> Result<Event, String> {
-    let folder_id = add_cmd.parent_id.ok_or("Missing parent id".to_string())?;
+    let folder_id = add_cmd.parent_id.clone().ok_or("Missing parent id".to_string())?;
     let new_folders = new_folders_imeta.iter().map(|i_meta| {
         FolderInfo {
             id: normalize_path(&format!("{}/{}", folder_id, i_meta.name), ItemType::Folder),
@@ -27,8 +28,7 @@ pub fn extract_add_event(
     let folders_changed = vec![FolderChanged {
         folder_id,
         reload,
-        removed_folders: vec![],
-        removed_variables: vec![],
+        removed_items: vec![],
         new_folders,
         new_variables,
     }];
@@ -38,4 +38,37 @@ pub fn extract_add_event(
             folder_changed_event: folders_changed
         }))
     })
+}
+
+pub fn extract_del_event(
+    del_cmd: &DelCommand
+) -> Result<Event, String> {
+    let mut removed_data: HashMap<String, Vec<String>> = HashMap::new();
+    for item_id in del_cmd.item_ids.clone() {
+        let (parent, _) = get_parent_and_name(&item_id);
+        match removed_data.get_mut(&parent) {
+            Some(removed_items) => {
+                removed_items.push(item_id);
+            }
+            None => {
+                removed_data.insert(parent, vec![item_id]);
+            }
+        }
+    }
+
+    let event = Event {
+        ev: Some(Ev::TreeChangedEv(TreeChanged {
+            folder_changed_event: removed_data.iter().map(|(parent, removed)| {
+                FolderChanged {
+                    folder_id: parent.clone(),
+                    reload: false,
+                    removed_items: removed.clone(),
+                    new_folders: vec![],
+                    new_variables: vec![],
+                }
+            }).collect()
+        }))
+    };
+
+    Ok(event)
 }

@@ -8,10 +8,9 @@ import "namespace/types.proto";
 message FolderChanged {
     string folder_id = 1;
     bool reload = 2;
-    repeated string removed_folders = 3;
-    repeated string removed_variables = 4;
-    repeated FolderInfo new_folders = 5;
-    repeated VarInfo new_variables = 6;
+    repeated string removed_items = 3;
+    repeated FolderInfo new_folders = 4;
+    repeated VarInfo new_variables = 5;
 }
 
 message TreeChanged {

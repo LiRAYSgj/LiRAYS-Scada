@@ -48,6 +48,23 @@ pub fn get_ancestors(path: &str) -> Vec<(String, String)> {
     ancestors
 }
 
+pub fn get_parent_and_name(path: &str) -> (String, String) {
+    let parts: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+    
+    if parts.is_empty() {
+        return (String::from("/"), String::from(""));
+    }
+    
+    let name = parts[parts.len() - 1].to_string();
+    
+    if parts.len() == 1 {
+        return (String::from("/"), name);
+    }
+    
+    let parent = format!("/{}", parts[..parts.len() - 1].join("/"));
+    (parent, name)
+}
+
 pub fn get_hierarchy_key(full_path: &str) -> String {
     let normalized = normalize_path(full_path, ItemType::Variable);
     let (parent, name) = normalized.rsplit_once('/').unwrap_or(("", &normalized));
@@ -62,5 +79,60 @@ pub fn generate_json_examples() {
     for cmd in cmd_examples {
         let json = serde_json::to_string_pretty(&cmd).unwrap();
         println!("\n{}", json);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cast_item_type() {
+        assert_eq!(cast_item_type(0), ItemType::Invalid);
+        // Test with valid ItemType values if needed
+    }
+
+    #[test]
+    fn test_cast_var_data_type() {
+        assert_eq!(cast_var_data_type(None), VarDataType::Invalid);
+        // Test with valid VarDataType values if needed
+    }
+
+    #[test]
+    fn test_normalize_path() {
+        assert_eq!(normalize_path("/a/b/c", ItemType::Variable), "/a/b/c");
+        assert_eq!(normalize_path("/a/b/c", ItemType::Folder), "/a/b/c/");
+        assert_eq!(normalize_path("a/b/c", ItemType::Variable), "/a/b/c");
+        assert_eq!(normalize_path("", ItemType::Variable), "/");
+    }
+
+    #[test]
+    fn test_get_ancestors() {
+        let ancestors = get_ancestors("/a/b/c");
+        assert_eq!(ancestors.len(), 3);
+        assert_eq!(ancestors[0], (String::from("/"), String::from("a")));
+        assert_eq!(ancestors[1], (String::from("/a/"), String::from("b")));
+        assert_eq!(ancestors[2], (String::from("/a/b/"), String::from("c")));
+    }
+
+    #[test]
+    fn test_get_parent_and_name() {
+        // Test root path
+        assert_eq!(get_parent_and_name("/"), (String::from("/"), String::from("")));
+        
+        // Test single component
+        assert_eq!(get_parent_and_name("/a"), (String::from("/"), String::from("a")));
+        
+        // Test multiple components
+        assert_eq!(get_parent_and_name("/a/b/c"), (String::from("/a/b"), String::from("c")));
+        
+        // Test path with trailing slash
+        assert_eq!(get_parent_and_name("/a/b/c/"), (String::from("/a/b"), String::from("c")));
+    }
+
+    #[test]
+    fn test_get_hierarchy_key() {
+        assert_eq!(get_hierarchy_key("/a/b/c"), "H:/a/b/\0c");
+        assert_eq!(get_hierarchy_key("/"), "H:/\0");
     }
 }

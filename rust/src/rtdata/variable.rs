@@ -8,10 +8,8 @@ use sled::{Db, Tree, Batch};
 
 // use crate::rtdata::namespace::{AddCommand, ListCommand, SetCommand, SubscribeCommand};
 
-use crate::rtdata::namespace::EventType;
-
 use super::parser::{parse_repeated_name, clone_name};
-use super::events::extract_add_event;
+use super::events::{extract_add_event, extract_del_event};
 use super::utils::{
     cast_item_type,
     cast_var_data_type,
@@ -42,6 +40,7 @@ use super::namespace::{
     OperationStatus,
     OptionalValue,
     NamespaceNode,
+    EventType,
     Event,
     value::Typed,
     event::Ev,
@@ -308,6 +307,7 @@ impl VariableManager {
                 let (key, _) = result.map_err(|e| format!("Error reading tree: {e}"))?;
                 batch.remove(key);
             }
+
         }
         self.items_tree.apply_batch(batch).map_err(|e| format!("Error removing items: {e}"))
     }
@@ -327,7 +327,7 @@ impl VariableManager {
                     Ok((_, reload, new_folders, new_variables)) => {
                         match self.items_tree.apply_batch(batch).map_err(|e| format!("Error adding items: {e}")) {
                             Ok(_) => {
-                                match extract_add_event(add_cmd, reload, new_folders, new_variables) {
+                                match extract_add_event(&add_cmd, reload, new_folders, new_variables) {
                                     Ok(event) => {
                                         match self.events_tx.send(event) {
                                             Ok(_) => (),
@@ -378,8 +378,19 @@ impl VariableManager {
                 Response { response_type: Some(ResponseType::Get(GetResponse { cmd_id: get_cmd.cmd_id, var_values })), status, error_msg }
             }
             Some(CommandType::Del(del_cmd)) => {
-                let (status, error_msg) = match self.del_items(del_cmd.item_ids) {
-                    Ok(_do_commit) => (OperationStatus::Ok as i32, None),
+                let (status, error_msg) = match self.del_items(del_cmd.item_ids.clone()) {
+                    Ok(_) => {
+                        match extract_del_event(&del_cmd) {
+                            Ok(event) => {
+                                match self.events_tx.send(event) {
+                                    Ok(_) => (),
+                                    Err(e) => warn!("Error sending event: {e}")
+                                }
+                            }
+                            Err(e) => warn!("Error extracting event: {e}")
+                        }
+                        (OperationStatus::Ok as i32, None)
+                    }
                     Err(e) => (OperationStatus::Err as i32, Some(e))
                 };
                 Response { response_type: Some(ResponseType::Del(DelResponse { cmd_id: del_cmd.cmd_id })), status, error_msg }
