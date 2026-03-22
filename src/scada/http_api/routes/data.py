@@ -2,7 +2,10 @@ import websockets
 from fastapi import APIRouter, HTTPException, status
 
 from ..model.add_cmd import AddCommandModel, AddResponseModel
+from ..model.del_cmd import DelCommandModel, DelResponseModel
+from ..model.get_cmd import GetCommandModel, GetResponseModel
 from ..model.list_cmd import ListCommandModel, ListResponseModel
+from ..model.set_cmd import SetCommandModel, SetResponseModel
 
 data_router = APIRouter(tags=["Data"])
 data_router_prefix = "/data"
@@ -49,3 +52,36 @@ async def add_items(cmd_payload: AddCommandModel):
 )
 async def list_items(cmd_payload: ListCommandModel):
     return await cmd_executor(cmd_payload.model_dump_json(), ListResponseModel)
+
+
+@data_router.post(
+    "/set",
+    response_model=SetResponseModel,
+    status_code=status.HTTP_200_OK,
+    summary="Set values for variables.",
+    description="Set values for specified variables.",
+)
+async def set_values(cmd_payload: SetCommandModel):
+    return await cmd_executor(cmd_payload.model_dump_json(), SetResponseModel)
+
+
+@data_router.post(
+    "/get",
+    response_model=GetResponseModel,
+    status_code=status.HTTP_200_OK,
+    summary="Get values for variables.",
+    description="Get values for specified variables.",
+)
+async def get_values(cmd_payload: GetCommandModel):
+    return await cmd_executor(cmd_payload.model_dump_json(), GetResponseModel)
+
+
+@data_router.post(
+    "/del",
+    response_model=DelResponseModel,
+    status_code=status.HTTP_200_OK,
+    summary="Delete items.",
+    description="Delete specified folders and variables.",
+)
+async def delete_items(cmd_payload: DelCommandModel):
+    return await cmd_executor(cmd_payload.model_dump_json(), DelResponseModel)
