@@ -76,34 +76,28 @@ impl VariableManager {
         // Returns (reload: bool, new folders: Vec, new variables: Vec)
         let parent_path = normalize_path(parent_id, ItemType::Folder);
         let ancestors = get_ancestors(&parent_path);
-        let mut new_folders = vec![];
-        let mut new_variables = vec![];
+        let mut new_folders = Vec::new();
+        let mut new_variables = Vec::new();
 
         for (parent, folder_name) in ancestors {
             let h_key = format!("H:{}\0{}", parent, folder_name);
-            match self.items_tree.get(&h_key).map_err(|e| format!("Reading error: {e}"))? {
-                None => {
-                    let item = ItemMeta {
-                        name: folder_name,
-                        i_type: ItemType::Folder as i32,
-                        var_d_type: None,
-                    };
-                    batch.insert(h_key.as_bytes(), item.encode_to_vec());
-                }
-                _ => ()
+            if !self.items_tree.contains_key(&h_key).map_err(|e| format!("Reading error: {e}"))? {
+                let item = ItemMeta {
+                    name: folder_name,
+                    i_type: ItemType::Folder as i32,
+                    var_d_type: None,
+                };
+                batch.insert(h_key.as_bytes(), item.encode_to_vec());
             }
         }
-        let prefix = format!("H:{}\0", parent_path);
-        let children_keys: HashSet<String> = HashSet::from_iter(self.list_keys_with_prefix(&prefix)?);
 
         for i_meta in items_meta {
             let h_key = format!("H:{}\0{}", parent_path, i_meta.name);
-            if children_keys.contains(&h_key) {
+            if self.items_tree.contains_key(&h_key).map_err(|e| format!("Reading error: {e}"))? {
                 return Err(format!("Can't create existing item {}", h_key));
             }
             batch.insert(h_key.as_bytes(), i_meta.encode_to_vec());
-            let i_type = cast_item_type(i_meta.i_type);
-            match i_type {
+            match cast_item_type(i_meta.i_type) {
                 ItemType::Folder => new_folders.push(i_meta),
                 ItemType::Variable => new_variables.push(i_meta),
                 ItemType::Invalid => warn!("Invalid item type in create")
@@ -115,22 +109,23 @@ impl VariableManager {
     fn list_path(&self, parent_id: &str) -> Result<(Vec<FolderInfo>, Vec<VarInfo>), String> {
         let path = normalize_path(parent_id, ItemType::Folder);
         let prefix = format!("H:{}\0", path);
-        let mut children_folders: Vec<FolderInfo> = vec![];
-        let mut children_vars: Vec<VarInfo> = vec![];
+        let mut children_folders = Vec::new();
+        let mut children_vars = Vec::new();
 
         for result in self.items_tree.scan_prefix(prefix) {
-            let (_, _value) = result.map_err(|e| format!("Error reading tree: {e}"))?;
-            let i_meta = ItemMeta::decode(_value.as_ref()).map_err(|e| format!("Error decoding Item: {e}"))?;
+            let (_, value) = result.map_err(|e| format!("Error reading tree: {e}"))?;
+            let i_meta = ItemMeta::decode(value.as_ref()).map_err(|e| format!("Error decoding Item: {e}"))?;
             let i_type = cast_item_type(i_meta.i_type);
-            let var_id_ = format!("{}/{}", path, i_meta.name);
-            let ch_id = normalize_path(&var_id_, ItemType::Variable);
+            let ch_id = normalize_path(&format!("{}/{}", path, i_meta.name), ItemType::Variable);
             match i_type {
-                ItemType::Folder => {children_folders.push(FolderInfo {id: ch_id, name: i_meta.name});}
+                ItemType::Folder => {
+                    children_folders.push(FolderInfo {id: ch_id, name: i_meta.name});
+                }
                 ItemType::Variable => {
-                    let v_dtype = i_meta.var_d_type.ok_or("Invalid variable data type".to_string())?;
+                    let v_dtype = i_meta.var_d_type.ok_or_else(|| "Invalid variable data type".to_string())?;
                     children_vars.push(VarInfo { id: ch_id, name: i_meta.name, var_d_type: v_dtype });
                 }
-                _ => return Err(format!("Invalid item type"))
+                _ => return Err("Invalid item type".to_string())
             }
         }
 
@@ -154,8 +149,8 @@ impl VariableManager {
     ) -> Result<(Vec<ItemMeta>, Vec<ItemMeta>), String> {
         let mut stack = vec![(root_parent_id.to_string(), root_nodes)];
         let mut total_count = 0usize;
-        let mut first_level_folders = vec![];
-        let mut first_level_variables = vec![];
+        let mut first_level_folders = Vec::new();
+        let mut first_level_variables = Vec::new();
 
         while let Some((parent_id, nodes)) = stack.pop() {
             let is_first_level = parent_id == root_parent_id;
@@ -164,46 +159,55 @@ impl VariableManager {
                 let (start, stop, step) = parse_repeated_name(&mut name_);
                 let item_names = clone_name(name_, start, stop, step);
 
-                let mut vars_to_create: Vec<ItemMeta> = vec![];
-                let mut folders_to_create: Vec<ItemMeta> = vec![];
-                let mut folder_children: Vec<(String, HashMap<String, NamespaceNode>)> = vec![];
+                let capacity = item_names.len();
+                let mut vars_to_create: Vec<ItemMeta> = Vec::with_capacity(capacity);
+                let mut folders_to_create: Vec<ItemMeta> = Vec::with_capacity(capacity);
+                let mut folder_children: Vec<(String, HashMap<String, NamespaceNode>)> = Vec::with_capacity(capacity);
 
-                for name in item_names {
-                    match &val.node {
-                        Some(Node::Folder(folder)) => {
-                            folders_to_create.push(ItemMeta {
-                                name: name.clone(),
-                                i_type: ItemType::Folder as i32,
-                                var_d_type: None,
-                            });
-                            let new_parent_path = if parent_id == "/" {
-                                format!("/{}", name)
-                            } else {
-                                format!("{}/{}", parent_id.trim_end_matches('/'), name)
-                            };
-                            folder_children.push((new_parent_path, folder.children.clone()));
+                if let Some(node) = val.node {
+                    match node {
+                        Node::Folder(mut folder) => {
+                            for (i, name) in item_names.into_iter().enumerate() {
+                                let new_parent_path = if parent_id == "/" {
+                                    format!("/{}", name)
+                                } else {
+                                    format!("{}/{}", parent_id.trim_end_matches('/'), name)
+                                };
+                                folders_to_create.push(ItemMeta {
+                                    name,
+                                    i_type: ItemType::Folder as i32,
+                                    var_d_type: None,
+                                });
+                                let children = if i == capacity - 1 {
+                                    std::mem::take(&mut folder.children)
+                                } else {
+                                    folder.children.clone()
+                                };
+                                folder_children.push((new_parent_path, children));
+                            }
                         }
-                        Some(Node::VariableType(v_type)) => {
+                        Node::VariableType(v_type) => {
                             let v_dtype = match v_type.to_lowercase().as_str() {
                                 "integer" | "int" | "i" => VarDataType::Integer as i32,
                                 "float" | "f" => VarDataType::Float as i32,
                                 "text" | "string" | "str" | "t" => VarDataType::Text as i32,
                                 "boolean" | "bool" | "b" => VarDataType::Boolean as i32,
                                 _ => {
-                                    warn!("Bulk ADD: Invalid variable type '{}' for '{}'", v_type, name);
+                                    warn!("Bulk ADD: Invalid variable type '{}' for key '{}'", v_type, key);
                                     VarDataType::Invalid as i32
                                 },
                             };
-                            vars_to_create.push(ItemMeta {
-                                name: name.clone(),
-                                i_type: ItemType::Variable as i32,
-                                var_d_type: Some(v_dtype),
-                            });
-                        }
-                        None => {
-                            warn!("Bulk ADD: Node with key '{}' has no content defined", name);
+                            for name in item_names {
+                                vars_to_create.push(ItemMeta {
+                                    name,
+                                    i_type: ItemType::Variable as i32,
+                                    var_d_type: Some(v_dtype),
+                                });
+                            }
                         }
                     }
+                } else {
+                    warn!("Bulk ADD: Node with key '{}' has no content defined", key);
                 }
 
                 if !vars_to_create.is_empty() {
@@ -233,24 +237,21 @@ impl VariableManager {
                     }
                 }
 
-                for (child_path, children) in folder_children {
-                    stack.push((child_path, children));
-                }
+                stack.extend(folder_children);
             }
         }
         Ok((first_level_folders, first_level_variables))
     }
 
     fn set_vals(&self, var_id_vals: Vec<VarIdValue>) -> Result<Vec<VarIdValue>, String> {
-        let base_err = format!("Error setting variable values.");
         let mut batch = Batch::default();
-        let mut successfully_set_vals: Vec<VarIdValue> = vec![];
+        let mut successfully_set_vals = Vec::with_capacity(var_id_vals.len());
         for var_id_val in var_id_vals {
             let var_id = normalize_path(&var_id_val.var_id, ItemType::Variable);
             let h_key = get_hierarchy_key(&var_id_val.var_id);
             let i_meta = match self.items_tree.get(h_key.as_bytes()) {
-                Ok(Some(_value)) => ItemMeta::decode(_value.as_ref()).map_err(|e| format!("Error decoding Item: {e}"))?,
-                Ok(None) => return Err(format!("Missing variable.")),
+                Ok(Some(value)) => ItemMeta::decode(value.as_ref()).map_err(|e| format!("Error decoding Item: {e}"))?,
+                Ok(None) => return Err("Missing variable.".to_string()),
                 Err(e) => return Err(format!("Error reading tree: {e}"))
             };
             let d_key_str = format!("D:{}", var_id);
@@ -259,7 +260,7 @@ impl VariableManager {
             let v_dtype = cast_var_data_type(i_meta.var_d_type);
             match var_id_val.value {
                 Some(value) => {
-                    let val = value.typed.ok_or_else(|| format!("None value"))?;
+                    let val = value.typed.ok_or_else(|| "None value".to_string())?;
                     let value_ = match (i_type, v_dtype, val) {
                         (ItemType::Variable, VarDataType::Integer, Typed::IntegerValue(v)) => Value {typed: Some(Typed::IntegerValue(v))},
                         (ItemType::Variable, VarDataType::Integer, Typed::FloatValue(v)) => Value {typed: Some(Typed::IntegerValue(v as i64))},
@@ -267,15 +268,15 @@ impl VariableManager {
                         (ItemType::Variable, VarDataType::Float, Typed::IntegerValue(v)) => Value {typed: Some(Typed::FloatValue(v as f64))},
                         (ItemType::Variable, VarDataType::Text, Typed::TextValue(v)) => Value {typed: Some(Typed::TextValue(v))},
                         (ItemType::Variable, VarDataType::Boolean, Typed::BooleanValue(v)) => Value {typed: Some(Typed::BooleanValue(v))},
-                        (ItemType::Variable, VarDataType::Invalid, _) => return Err(format!("Invalid var data type.")),
-                        (ItemType::Variable, _, _) => return Err(format!("Mismatch data type.")),
-                        (ItemType::Folder, _, _) => return Err(format!("Can't write value to a folder.")),
-                        (ItemType::Invalid, _, _) => return Err(format!("Invalid item type.")),
+                        (ItemType::Variable, VarDataType::Invalid, _) => return Err("Invalid var data type.".to_string()),
+                        (ItemType::Variable, _, _) => return Err("Mismatch data type.".to_string()),
+                        (ItemType::Folder, _, _) => return Err("Can't write value to a folder.".to_string()),
+                        (ItemType::Invalid, _, _) => return Err("Invalid item type.".to_string()),
                     };
                     batch.insert(d_key, value_.encode_to_vec());
                     successfully_set_vals.push(VarIdValue { var_id, value: Some(value_)});
                 }
-                None => return Err(format!("{base_err} Can't set a null value"))
+                None => return Err("Error setting variable values. Can't set a null value".to_string())
             }
         }
         self.items_tree.apply_batch(batch).map_err(|e| format!("Error Applying batch op: {e}"))?;
@@ -283,17 +284,16 @@ impl VariableManager {
     }
 
     fn get_vals(&self, var_ids: Vec<String>) -> Result<Vec<OptionalValue>, String> {
-        let base_err = format!("Error getting variable values.");
-        let mut values = vec![];
+        let mut values = Vec::with_capacity(var_ids.len());
         for var_id in var_ids {
             let d_key_str = format!("D:{}", var_id);
             match self.items_tree.get(&d_key_str) {
-                Ok(Some(_bytes)) => {
-                    let value = Value::decode(_bytes.as_ref()).map_err(|e| format!("Error decoding Value: {e}"))?;
+                Ok(Some(bytes)) => {
+                    let value = Value::decode(bytes.as_ref()).map_err(|e| format!("Error decoding Value: {e}"))?;
                     values.push(OptionalValue { value: Some(value) });
                 }
-                Ok(None) => { values.push(OptionalValue { value: None }); },
-                Err(e) => return Err(format!("{base_err} Getting variable: {e}"))
+                Ok(None) => values.push(OptionalValue { value: None }),
+                Err(e) => return Err(format!("Error getting variable values. Getting variable '{var_id}': {e}"))
             }
         }
         Ok(values)
@@ -303,27 +303,24 @@ impl VariableManager {
         let mut batch = Batch::default();
         for id in items_ids {
             let as_var_id = normalize_path(&id, ItemType::Variable);
-            let potential_d_key_str = format!("D:{}", as_var_id);
-            let potential_d_key = potential_d_key_str.as_bytes();
-            let potential_ref_str = get_hierarchy_key(&id);
-            let potential_ref = potential_ref_str.as_bytes();
+            let potential_d_key = format!("D:{}", as_var_id);
+            let potential_ref = get_hierarchy_key(&id);
 
-            batch.remove(potential_d_key);  // Remove value if it is a var and has a value
-            batch.remove(potential_ref);  // Remove current reference
+            batch.remove(potential_d_key.as_bytes());  // Remove value if it is a var and has a value
+            batch.remove(potential_ref.as_bytes());  // Remove current reference
 
             // Remove All potential children references
-            let prefix = format!("H:{}/", as_var_id);
-            for result in self.items_tree.scan_prefix(prefix) {
+            let prefix_h = format!("H:{}/", as_var_id);
+            for result in self.items_tree.scan_prefix(prefix_h) {
                 let (key, _) = result.map_err(|e| format!("Error reading tree: {e}"))?;
                 batch.remove(key);
             }
             // Remove All potential children values
-            let prefix = format!("D:{}/", as_var_id);
-            for result in self.items_tree.scan_prefix(prefix) {
+            let prefix_d = format!("D:{}/", as_var_id);
+            for result in self.items_tree.scan_prefix(prefix_d) {
                 let (key, _) = result.map_err(|e| format!("Error reading tree: {e}"))?;
                 batch.remove(key);
             }
-
         }
         self.items_tree.apply_batch(batch).map_err(|e| format!("Error removing items: {e}"))
     }
@@ -337,26 +334,23 @@ impl VariableManager {
         match cmd.command_type {
             Some(CommandType::Add(add_cmd)) => {
                 let cmd_id = add_cmd.cmd_id.clone();
-                let parent_id = add_cmd.parent_id.clone().unwrap_or("/".to_string());
+                let parent_id = add_cmd.parent_id.clone().unwrap_or_else(|| "/".to_string());
                 let mut batch = Batch::default();
                 let (status, error_msg) = match self.add_items(&parent_id, add_cmd.items_meta.clone(), &mut batch) {
                     Ok((reload, new_folders, new_variables)) => {
-                        match self.items_tree.apply_batch(batch).map_err(|e| format!("Error adding items: {e}")) {
+                        match self.items_tree.apply_batch(batch) {
                             Ok(_) => {
-                                match add_cmd.parent_id {
-                                    Some(folder_id) => {
-                                        match extract_add_event(&folder_id, reload, new_folders, new_variables) {
-                                            Ok(event) => {
-                                                match self.events_tx.send(event) {
-                                                    Ok(_) => (),
-                                                    Err(e) => warn!("Error sending event: {e}")
-                                                }
-                                            }
-                                            Err(e) => warn!("Error extracting event: {e}")
+                                if let Some(folder_id) = add_cmd.parent_id {
+                                    if let Ok(event) = extract_add_event(&folder_id, reload, new_folders, new_variables) {
+                                        if let Err(e) = self.events_tx.send(event) {
+                                            warn!("Error sending event: {e}");
                                         }
-                                        (OperationStatus::Ok as i32, None)
+                                    } else {
+                                        warn!("Error extracting event");
                                     }
-                                    None => (OperationStatus::Err as i32, Some(format!("Missing parent id")))
+                                    (OperationStatus::Ok as i32, None)
+                                } else {
+                                    (OperationStatus::Err as i32, Some("Missing parent id".to_string()))
                                 }
                             }
                             Err(e) => (OperationStatus::Err as i32, Some(format!("Applying batch error: {e}")))
@@ -367,12 +361,12 @@ impl VariableManager {
                 Response { response_type: Some(ResponseType::Add(AddResponse { cmd_id })), status, error_msg }
             }
             Some(CommandType::List(list_cmd)) => {
-                let folder_to_list = list_cmd.folder_id.unwrap_or("/".to_string());
+                let folder_to_list = list_cmd.folder_id.unwrap_or_else(|| "/".to_string());
                 let (status, error_msg, folders, variables) = match self.list_path(&folder_to_list) {
                     Ok((children_folders, children_vars)) => {
                         (OperationStatus::Ok as i32, None, children_folders, children_vars)
                     }
-                    Err(e) => (OperationStatus::Err as i32, Some(e), vec![], vec![])
+                    Err(e) => (OperationStatus::Err as i32, Some(e), Vec::new(), Vec::new())
                 };
                 Response { response_type: Some(ResponseType::List(ListResponse { cmd_id: list_cmd.cmd_id, folders, variables })), status, error_msg }
             }
@@ -380,9 +374,8 @@ impl VariableManager {
                 let (status, error_msg) = match self.set_vals(set_cmd.var_ids_values) {
                     Ok(successfully_set_vals) => {
                         for v in successfully_set_vals {
-                            match self.events_tx.send(Event { ev: Some(Ev::VarValueEv(v)) }) {
-                                Ok(_) => (),
-                                Err(e) => warn!("Error sending event: {e}")
+                            if let Err(e) = self.events_tx.send(Event { ev: Some(Ev::VarValueEv(v)) }) {
+                                warn!("Error sending event: {e}");
                             }
                         }
                         (OperationStatus::Ok as i32, None)
@@ -394,21 +387,19 @@ impl VariableManager {
             Some(CommandType::Get(get_cmd)) => {
                 let (status, error_msg, var_values) = match self.get_vals(get_cmd.var_ids) {
                     Ok(vals) => (OperationStatus::Ok as i32, None, vals),
-                    Err(e) => (OperationStatus::Err as i32, Some(e), vec![])
+                    Err(e) => (OperationStatus::Err as i32, Some(e), Vec::new())
                 };
                 Response { response_type: Some(ResponseType::Get(GetResponse { cmd_id: get_cmd.cmd_id, var_values })), status, error_msg }
             }
             Some(CommandType::Del(del_cmd)) => {
                 let (status, error_msg) = match self.del_items(del_cmd.item_ids.clone()) {
                     Ok(_) => {
-                        match extract_del_event(&del_cmd) {
-                            Ok(event) => {
-                                match self.events_tx.send(event) {
-                                    Ok(_) => (),
-                                    Err(e) => warn!("Error sending event: {e}")
-                                }
+                        if let Ok(event) = extract_del_event(&del_cmd) {
+                            if let Err(e) = self.events_tx.send(event) {
+                                warn!("Error sending event: {e}");
                             }
-                            Err(e) => warn!("Error extracting event: {e}")
+                        } else {
+                            warn!("Error extracting event");
                         }
                         (OperationStatus::Ok as i32, None)
                     }
@@ -423,14 +414,12 @@ impl VariableManager {
                         match self.add_bulk_recursive(&addb_cmd.parent_id, schema.roots, &mut batch) {
                             Ok((new_folders, new_variables)) => match self.items_tree.apply_batch(batch) {
                                 Ok(_) => {
-                                    match extract_add_event(&addb_cmd.parent_id, false, new_folders, new_variables) {
-                                        Ok(event) => {
-                                            match self.events_tx.send(event) {
-                                                Ok(_) => (),
-                                                Err(e) => warn!("Error sending event: {e}")
-                                            }
+                                    if let Ok(event) = extract_add_event(&addb_cmd.parent_id, false, new_folders, new_variables) {
+                                        if let Err(e) = self.events_tx.send(event) {
+                                            warn!("Error sending event: {e}");
                                         }
-                                        Err(e) => warn!("Error extracting event: {e}")
+                                    } else {
+                                        warn!("Error extracting event");
                                     }
                                     (OperationStatus::Ok as i32, None)
                                 }
@@ -439,7 +428,7 @@ impl VariableManager {
                             Err(e) => (OperationStatus::Err as i32, Some(format!("Bulk insert error: {e}"))),
                         }
                     }
-                    None => (OperationStatus::Err as i32, Some(format!("No schema provided")))
+                    None => (OperationStatus::Err as i32, Some("No schema provided".to_string()))
                 };
                 Response { response_type: Some(ResponseType::AddBulk(AddBulkResponse { cmd_id: addb_cmd.cmd_id })), status, error_msg }
             }

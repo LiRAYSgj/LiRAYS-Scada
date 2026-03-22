@@ -3,66 +3,58 @@ use crate::rtdata::namespace::{EventType, SubscribeCommand};
 use super::namespace::{ItemType, VarDataType, Command, ListCommand, command::CommandType};
 
 pub fn cast_item_type(value: i32) -> ItemType {
-    match ItemType::try_from(value) {
-        Ok(it) => it,
-        Err(_) => ItemType::Invalid
-    }
+    ItemType::try_from(value).unwrap_or(ItemType::Invalid)
 }
 
 pub fn cast_var_data_type(value: Option<i32>) -> VarDataType {
-    match value {
-        Some(v) => {
-            match VarDataType::try_from(v) {
-                Ok(dt) => dt,
-                Err(_) => VarDataType::Invalid
-            }
-        }
-        None => VarDataType::Invalid
-    }
+    value.and_then(|v| VarDataType::try_from(v).ok()).unwrap_or(VarDataType::Invalid)
 }
 
 pub fn normalize_path(path: &str, i_type: ItemType) -> String {
-    let trimmed = path.trim_matches('/');
-    let components: Vec<&str> = trimmed.split('/').filter(|s| !s.is_empty()).collect();
-    let mut base = format!("/{}", components.join("/"));
-    match i_type {
-        ItemType::Folder => {
-            if !base.ends_with('/') {
-                base.push('/')
-            }
-        },
-        _ => ()
+    let mut base = String::with_capacity(path.len() + 2);
+    base.push('/');
+    
+    let mut first = true;
+    for part in path.split('/').filter(|s| !s.is_empty()) {
+        if !first {
+            base.push('/');
+        }
+        base.push_str(part);
+        first = false;
+    }
+    
+    if i_type == ItemType::Folder && !base.ends_with('/') {
+        base.push('/');
     }
     base
 }
 
 pub fn get_ancestors(path: &str) -> Vec<(String, String)> {
     let mut ancestors = vec![];
-    let parts: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
-
-    let mut parent = format!("/");
-    for part in parts {
+    let mut parent = String::from("/");
+    
+    for part in path.split('/').filter(|s| !s.is_empty()) {
         ancestors.push((parent.clone(), part.to_string()));
-        parent.push_str(format!("{}/", part).as_str());
+        parent.push_str(part);
+        parent.push('/');
     }
     ancestors
 }
 
 pub fn get_parent_and_name(path: &str) -> (String, String) {
     let parts: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
-    
-    if parts.is_empty() {
-        return (String::from("/"), String::from(""));
+    match parts.as_slice() {
+        [] => (String::from("/"), String::new()),
+        [name] => (String::from("/"), name.to_string()),
+        [parent_parts @ .., name] => {
+            let mut parent = String::with_capacity(path.len());
+            for part in parent_parts {
+                parent.push('/');
+                parent.push_str(part);
+            }
+            (parent, name.to_string())
+        }
     }
-    
-    let name = parts[parts.len() - 1].to_string();
-    
-    if parts.len() == 1 {
-        return (String::from("/"), name);
-    }
-    
-    let parent = format!("/{}", parts[..parts.len() - 1].join("/"));
-    (parent, name)
 }
 
 pub fn get_hierarchy_key(full_path: &str) -> String {
@@ -77,8 +69,9 @@ pub fn generate_json_examples() {
         Command { command_type: Some(CommandType::Sub(SubscribeCommand {cmd_id: "cdwec".to_string(), events: vec![EventType::TreeChange as i32], var_ids: vec![], }))},
     ];
     for cmd in cmd_examples {
-        let json = serde_json::to_string_pretty(&cmd).unwrap();
-        println!("\n{}", json);
+        if let Ok(json) = serde_json::to_string_pretty(&cmd) {
+            println!("\n{}", json);
+        }
     }
 }
 
