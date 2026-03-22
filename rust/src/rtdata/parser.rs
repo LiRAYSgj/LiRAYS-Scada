@@ -52,7 +52,7 @@ pub fn clone_name(input: &str, start: Option<usize>, stop: Option<usize>, step: 
         let mut result = Vec::new();
         let mut current = start_val;
         while current <= end {
-            result.push(format!("{input}_{current}"));
+            result.push(format!("{input}{current}"));
             current += step_val;
         }
         result
@@ -262,19 +262,19 @@ mod tests {
         // With stop only, assumes start=1 and step=1
         assert_eq!(
             clone_name("var", None, Some(3), None),
-            vec!["var_1".to_string(), "var_2".to_string(), "var_3".to_string()]
+            vec!["var1".to_string(), "var2".to_string(), "var3".to_string()]
         );
 
         // With start=0
         assert_eq!(
             clone_name("var", Some(0), Some(2), None),
-            vec!["var_0".to_string(), "var_1".to_string(), "var_2".to_string()]
+            vec!["var0".to_string(), "var1".to_string(), "var2".to_string()]
         );
 
         // With explicit step
         assert_eq!(
             clone_name("var", Some(2), Some(8), Some(3)),
-            vec!["var_2".to_string(), "var_5".to_string(), "var_8".to_string()]
+            vec!["var2".to_string(), "var5".to_string(), "var8".to_string()]
         );
 
         // Where start > stop
@@ -286,7 +286,7 @@ mod tests {
         // Where step > (stop - start)
         assert_eq!(
             clone_name("var", Some(2), Some(5), Some(10)),
-            vec!["var_2".to_string()]
+            vec!["var2".to_string()]
         );
 
         // Missing stop but start and step provided (fallback to just input)

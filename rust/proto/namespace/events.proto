@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package namespace;
+
+import "namespace/enums.proto";
+import "namespace/types.proto";
+
+message FolderChanged {
+    string folder_id = 1;
+    bool reload = 2;
+    repeated string removed_items = 3;
+    repeated FolderInfo new_folders = 4;
+    repeated VarInfo new_variables = 5;
+}
+
+message TreeChanged {
+    repeated FolderChanged folder_changed_event = 1;
+}
+
+message Event {
+  oneof ev {
+    VarIdValue var_value_ev = 1;
+    TreeChanged tree_changed_ev = 2;
+  }
+}

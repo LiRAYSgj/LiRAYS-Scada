@@ -32,8 +32,8 @@ message ListCommand {
 
 message ListResponse {
   string cmd_id = 1;
-  map<string, string> children_folders = 2;
-  map<string, VarInfo> children_vars = 3;
+  repeated FolderInfo folders = 2;
+  repeated VarInfo variables = 3;
 }
 
 message SetCommand {
@@ -58,6 +58,7 @@ message GetResponse {
 message SubscribeCommand {
   string cmd_id = 1;
   repeated string var_ids = 2;
+  repeated EventType events = 3;
 }
 
 message SubscribeResponse {
@@ -67,6 +68,7 @@ message SubscribeResponse {
 message UnsubscribeCommand {
   string cmd_id = 1;
   repeated string var_ids = 2;
+  repeated EventType events = 3;
 }
 
 message UnsubscribeResponse {

@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x15namespace/enums.proto\x12\tnamespace*O\n\x08ItemType\x12\x15\n\x11ITEM_TYPE_INVALID\x10\x00\x12\x14\n\x10ITEM_TYPE_FOLDER\x10\x01\x12\x16\n\x12ITEM_TYPE_VARIABLE\x10\x02*\x8f\x01\n\x0bVarDataType\x12\x19\n\x15VAR_DATA_TYPE_INVALID\x10\x00\x12\x19\n\x15VAR_DATA_TYPE_INTEGER\x10\x01\x12\x17\n\x13VAR_DATA_TYPE_FLOAT\x10\x02\x12\x16\n\x12VAR_DATA_TYPE_TEXT\x10\x03\x12\x19\n\x15VAR_DATA_TYPE_BOOLEAN\x10\x04*b\n\x0fOperationStatus\x12\x1c\n\x18OPERATION_STATUS_INVALID\x10\x00\x12\x17\n\x13OPERATION_STATUS_OK\x10\x01\x12\x18\n\x14OPERATION_STATUS_ERR\x10\x02\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x15namespace/enums.proto\x12\tnamespace*O\n\x08ItemType\x12\x15\n\x11ITEM_TYPE_INVALID\x10\x00\x12\x14\n\x10ITEM_TYPE_FOLDER\x10\x01\x12\x16\n\x12ITEM_TYPE_VARIABLE\x10\x02*\x8f\x01\n\x0bVarDataType\x12\x19\n\x15VAR_DATA_TYPE_INVALID\x10\x00\x12\x19\n\x15VAR_DATA_TYPE_INTEGER\x10\x01\x12\x17\n\x13VAR_DATA_TYPE_FLOAT\x10\x02\x12\x16\n\x12VAR_DATA_TYPE_TEXT\x10\x03\x12\x19\n\x15VAR_DATA_TYPE_BOOLEAN\x10\x04*b\n\x0fOperationStatus\x12\x1c\n\x18OPERATION_STATUS_INVALID\x10\x00\x12\x17\n\x13OPERATION_STATUS_OK\x10\x01\x12\x18\n\x14OPERATION_STATUS_ERR\x10\x02*Z\n\tEventType\x12\x16\n\x12\x45VENT_TYPE_INVALID\x10\x00\x12\x1a\n\x16\x45VENT_TYPE_TREE_CHANGE\x10\x01\x12\x19\n\x15\x45VENT_TYPE_VAR_VALUES\x10\x02\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -37,4 +37,6 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_VARDATATYPE']._serialized_end=261
   _globals['_OPERATIONSTATUS']._serialized_start=263
   _globals['_OPERATIONSTATUS']._serialized_end=361
+  _globals['_EVENTTYPE']._serialized_start=363
+  _globals['_EVENTTYPE']._serialized_end=453
 # @@protoc_insertion_point(module_scope)

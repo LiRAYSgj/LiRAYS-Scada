@@ -7,7 +7,11 @@ import type {
   Value,
   ItemMeta,
 } from "../../proto/namespace/types";
-import type { ItemType, VarDataType } from "../../proto/namespace/enums";
+import {
+  EventType,
+  type ItemType,
+  type VarDataType,
+} from "../../proto/namespace/enums";
 
 export function createCommandId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -67,6 +71,7 @@ export function createGetCommand(
 
 export function createSubscribeCommand(
   varIds: string[],
+  events: EventType[],
   cmdId = createCommandId("sub"),
 ): {
   cmdId: string;
@@ -78,6 +83,7 @@ export function createSubscribeCommand(
       sub: {
         cmdId,
         varIds,
+        events,
       },
     },
   };
@@ -85,6 +91,7 @@ export function createSubscribeCommand(
 
 export function createUnsubscribeCommand(
   varIds: string[],
+  events: EventType[],
   cmdId = createCommandId("unsub"),
 ): {
   cmdId: string;
@@ -96,9 +103,17 @@ export function createUnsubscribeCommand(
       unsub: {
         cmdId,
         varIds,
+        events,
       },
     },
   };
+}
+
+/** App-lifetime subscription to tree change pushes (never unsubscribed). */
+export function createTreeChangeSubscribeCommand(
+  cmdId = createCommandId("sub-tree"),
+): { cmdId: string; command: Command } {
+  return createSubscribeCommand([], [EventType.EVENT_TYPE_TREE_CHANGE], cmdId);
 }
 
 export function createSetCommand(

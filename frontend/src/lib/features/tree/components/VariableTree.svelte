@@ -15,6 +15,7 @@
     type TagScalarValue,
     WebSocketConnectionStatus,
   } from "$lib/core/ws/types";
+  import { tagStreamClient } from "$lib/core/ws/tag-stream-client";
   import { ItemType, VarDataType } from "$lib/proto/namespace/enums";
 
   export interface SelectionChangePayload {
@@ -188,8 +189,16 @@
   onMount(() => {
     void tree.initialize();
 
+    const unsubTree = tagStreamClient.treeChanges.subscribe((ev) => {
+      if (ev?.folderChangedEvent?.length) {
+        void tree.applyRemoteTreeChanged(ev);
+      }
+    });
+
     if (!treeViewportEl) {
-      return;
+      return () => {
+        unsubTree();
+      };
     }
 
     viewportHeight = treeViewportEl.clientHeight;
@@ -217,6 +226,7 @@
     );
 
     return () => {
+      unsubTree();
       observer.disconnect();
       window.removeEventListener(
         "tree:refresh",

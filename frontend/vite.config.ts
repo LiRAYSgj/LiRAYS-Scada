@@ -15,7 +15,8 @@ if (isBuild) {
         if (a && typeof a === "object" && "message" in a) {
           return String((a as any).message);
         }
-        if (a && typeof (a as any)?.toString === "function") return String((a as any).toString());
+        if (a && typeof (a as any)?.toString === "function")
+          return String((a as any).toString());
         return "";
       })
       .join(" ");
@@ -43,13 +44,14 @@ export default defineConfig({
     rollupOptions: {
       // Keep build output focused on project issues; most warnings below come from deps.
       onwarn(warning, warn) {
-        const code = typeof warning === "object" ? (warning as any)?.code : undefined;
+        const code =
+          typeof warning === "object" ? (warning as any)?.code : undefined;
         const message =
           typeof warning === "string"
             ? warning
-            : (warning as any)?.message ??
+            : ((warning as any)?.message ??
               (warning as any)?.toString?.() ??
-              "";
+              "");
 
         // @xyflow build noise: dependency imports an internal hook it doesn't end up using.
         if (
@@ -76,9 +78,9 @@ export default defineConfig({
           if (id.includes("/d3-")) return "d3";
 
           return undefined;
-        }
-      }
-    }
+        },
+      },
+    },
   },
   server: {
     host: true,

@@ -6,6 +6,7 @@ import {
   createSingleItemMeta,
   createDelCommand,
   createSubscribeCommand,
+  createTreeChangeSubscribeCommand,
   createUnsubscribeCommand,
   createListCommand,
   createSetCommand,
@@ -18,8 +19,13 @@ import {
   Response,
   type ListResponse,
 } from "../../proto/namespace/commands";
-import { VarIdValue as VarIdValueMessage, type VarIdValue } from "../../proto/namespace/types";
 import {
+  VarIdValue as VarIdValueMessage,
+  type VarIdValue,
+} from "../../proto/namespace/types";
+import { Event, type TreeChanged } from "../../proto/namespace/events";
+import {
+  EventType,
   ItemType,
   OperationStatus,
   type VarDataType,
@@ -33,7 +39,14 @@ const COMMAND_TIMEOUT_MS = 3600_000;
 
 const TIMEOUT_USER_MESSAGE = "Requested operation timed out. Try again.";
 
-type PendingType = "list" | "add" | "set" | "del" | "add_bulk" | "sub" | "unsub";
+type PendingType =
+  | "list"
+  | "add"
+  | "set"
+  | "del"
+  | "add_bulk"
+  | "sub"
+  | "unsub";
 
 interface PendingCommand {
   type: PendingType;
@@ -61,6 +74,8 @@ export class TagStreamClient {
     WebSocketConnectionStatus.DISCONNECTED,
   );
   public readonly values = writable<Record<string, TagScalarValue>>({});
+  /** Latest tree sync payload from other UI instances (global subscription). */
+  public readonly treeChanges = writable<TreeChanged | undefined>(undefined);
 
   start(endpoint: string): void {
     if (!browser || this.started) {
@@ -76,7 +91,7 @@ export class TagStreamClient {
     }
     if (this.socket && this.socket.readyState === WebSocket.OPEN) {
       this.status.set(WebSocketConnectionStatus.CONNECTED);
-      this.subscribeAllTrackedIds();
+      this.wireSubscriptionsAfterOpen();
       return;
     }
     this.connect(false);
@@ -289,7 +304,7 @@ export class TagStreamClient {
       }
       this.resolveConnectionWaiters();
       if (this.started) {
-        this.subscribeAllTrackedIds();
+        this.wireSubscriptionsAfterOpen();
       }
     });
 
@@ -338,11 +353,36 @@ export class TagStreamClient {
   }
 
   private send(message: Command): void {
+    console.log("Sending message:", message);
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
       return;
     }
     const bytes = Command.encode(message).finish();
     this.socket.send(bytes);
+  }
+
+  private wireSubscriptionsAfterOpen(): void {
+    this.sendGlobalTreeSubscribe();
+    this.subscribeAllTrackedIds();
+  }
+
+  /** Global tree-change subscription for the whole session (re-sent on reconnect). */
+  private sendGlobalTreeSubscribe(): void {
+    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+      return;
+    }
+    const { cmdId, command } = createTreeChangeSubscribeCommand();
+    this.pendingByCmdId.set(cmdId, {
+      type: "sub",
+      resolve: () => {},
+      reject: () => {
+        snackbarStore.error("Tree subscription request failed");
+      },
+      timeoutId: setTimeout(() => {
+        this.pendingByCmdId.delete(cmdId);
+      }, COMMAND_TIMEOUT_MS),
+    });
+    this.send(command);
   }
 
   private subscribeAllTrackedIds(): void {
@@ -352,7 +392,9 @@ export class TagStreamClient {
   private async subscribeIds(ids: string[]): Promise<void> {
     if (ids.length === 0) return;
     await this.ensureConnected();
-    const { cmdId, command } = createSubscribeCommand(ids);
+    const { cmdId, command } = createSubscribeCommand(ids, [
+      EventType.EVENT_TYPE_VAR_VALUES,
+    ]);
     this.pendingByCmdId.set(cmdId, {
       type: "sub",
       resolve: () => {},
@@ -369,7 +411,9 @@ export class TagStreamClient {
   private async unsubscribeIds(ids: string[]): Promise<void> {
     if (ids.length === 0) return;
     await this.ensureConnected();
-    const { cmdId, command } = createUnsubscribeCommand(ids);
+    const { cmdId, command } = createUnsubscribeCommand(ids, [
+      EventType.EVENT_TYPE_VAR_VALUES,
+    ]);
     this.pendingByCmdId.set(cmdId, {
       type: "unsub",
       resolve: () => {},
@@ -398,13 +442,64 @@ export class TagStreamClient {
     }, COMMAND_TIMEOUT_MS);
   }
 
+  private extractResponseCmdId(payload: Response): string {
+    return (
+      payload.list?.cmdId ??
+      payload.get?.cmdId ??
+      payload.set?.cmdId ??
+      payload.add?.cmdId ??
+      payload.del?.cmdId ??
+      payload.sub?.cmdId ??
+      payload.unsub?.cmdId ??
+      payload.inv?.cmdId ??
+      payload.addBulk?.cmdId ??
+      ""
+    );
+  }
+
+  /**
+   * `Event` and `Response` share overlapping wire tags (e.g. field 1 / tag 10), so a pushed
+   * `Event.var_value_ev` can be mis-parsed as `Response.add`. If the decoded cmd_id is not a
+   * pending command, treat the frame as an `Event` push instead.
+   */
+  private tryHandleEventPush(bytes: Uint8Array): boolean {
+    try {
+      const push = Event.decode(bytes);
+      if (push.varValueEv) {
+        const varUpdate = push.varValueEv;
+        if (!varUpdate.varId) return false;
+        if (!this.desiredIds.has(varUpdate.varId)) return false;
+        const parsed = fromBackendValue(varUpdate.value);
+        this.values.update((current) => {
+          const next = { ...current };
+          if (parsed === undefined) {
+            delete next[varUpdate.varId];
+          } else {
+            next[varUpdate.varId] = parsed;
+          }
+          return next;
+        });
+        return true;
+      }
+      if (push.treeChangedEv !== undefined && push.treeChangedEv !== null) {
+        this.treeChanges.set(push.treeChangedEv);
+        return true;
+      }
+    } catch {
+      // ignore
+    }
+    return false;
+  }
+
   private handleMessage(rawData: unknown): void {
     if (!(rawData instanceof ArrayBuffer)) {
       return;
     }
 
+    const bytes = new Uint8Array(rawData);
+
     try {
-      const payload = Response.decode(new Uint8Array(rawData));
+      const payload = Response.decode(bytes);
       const hasEnvelopeType =
         payload.add != null ||
         payload.list != null ||
@@ -417,21 +512,16 @@ export class TagStreamClient {
         payload.inv != null;
 
       if (hasEnvelopeType) {
+        const cmdId = this.extractResponseCmdId(payload);
+        const pendingMatch = cmdId !== "" && this.pendingByCmdId.has(cmdId);
+        if (!pendingMatch && this.tryHandleEventPush(bytes)) {
+          return;
+        }
+
+        console.log("Received message:", payload);
         const errorMsg = payload.errorMsg ?? "";
         const status =
           payload.status ?? OperationStatus.OPERATION_STATUS_INVALID;
-
-        const cmdId =
-          payload.list?.cmdId ??
-          payload.get?.cmdId ??
-          payload.set?.cmdId ??
-          payload.add?.cmdId ??
-          payload.del?.cmdId ??
-          payload.sub?.cmdId ??
-          payload.unsub?.cmdId ??
-          payload.inv?.cmdId ??
-          payload.addBulk?.cmdId ??
-          "";
 
         const isTerminalError =
           status === OperationStatus.OPERATION_STATUS_ERR ||
@@ -457,9 +547,7 @@ export class TagStreamClient {
         }
 
         if (isTerminalSuccess) {
-          const pending = cmdId
-            ? this.pendingByCmdId.get(cmdId)
-            : undefined;
+          const pending = cmdId ? this.pendingByCmdId.get(cmdId) : undefined;
           if (pending) {
             clearTimeout(pending.timeoutId);
             this.pendingByCmdId.delete(cmdId);
@@ -479,17 +567,18 @@ export class TagStreamClient {
         return;
       }
     } catch {
-      // Not a Response envelope. Fall through to VarIdValue decode.
+      // Not a Response envelope. Fall through to Event / legacy VarIdValue decode.
+    }
+
+    if (this.tryHandleEventPush(bytes)) {
+      return;
     }
 
     try {
-      // Subscription updates are pushed as VarIdValue messages.
-      const varUpdate: VarIdValue = VarIdValueMessage.decode(
-        new Uint8Array(rawData),
-      );
+      // Legacy: bare VarIdValue pushes.
+      const varUpdate: VarIdValue = VarIdValueMessage.decode(bytes);
       if (!varUpdate.varId) return;
       if (!this.desiredIds.has(varUpdate.varId)) return;
-
       const parsed = fromBackendValue(varUpdate.value);
       this.values.update((current) => {
         const next = { ...current };

@@ -139,3 +139,43 @@ export function operationStatusToJSON(object: OperationStatus): string {
       return "UNRECOGNIZED";
   }
 }
+
+/** EventType */
+export enum EventType {
+  EVENT_TYPE_INVALID = 0,
+  EVENT_TYPE_TREE_CHANGE = 1,
+  EVENT_TYPE_VAR_VALUES = 2,
+  UNRECOGNIZED = -1,
+}
+
+export function eventTypeFromJSON(object: any): EventType {
+  switch (object) {
+    case 0:
+    case "EVENT_TYPE_INVALID":
+      return EventType.EVENT_TYPE_INVALID;
+    case 1:
+    case "EVENT_TYPE_TREE_CHANGE":
+      return EventType.EVENT_TYPE_TREE_CHANGE;
+    case 2:
+    case "EVENT_TYPE_VAR_VALUES":
+      return EventType.EVENT_TYPE_VAR_VALUES;
+    case -1:
+    case "UNRECOGNIZED":
+    default:
+      return EventType.UNRECOGNIZED;
+  }
+}
+
+export function eventTypeToJSON(object: EventType): string {
+  switch (object) {
+    case EventType.EVENT_TYPE_INVALID:
+      return "EVENT_TYPE_INVALID";
+    case EventType.EVENT_TYPE_TREE_CHANGE:
+      return "EVENT_TYPE_TREE_CHANGE";
+    case EventType.EVENT_TYPE_VAR_VALUES:
+      return "EVENT_TYPE_VAR_VALUES";
+    case EventType.UNRECOGNIZED:
+    default:
+      return "UNRECOGNIZED";
+  }
+}

@@ -24,3 +24,10 @@ enum OperationStatus {
     OPERATION_STATUS_OK = 1;
     OPERATION_STATUS_ERR = 2;
 }
+
+// EventType
+enum EventType {
+    EVENT_TYPE_INVALID = 0;
+    EVENT_TYPE_TREE_CHANGE = 1;
+    EVENT_TYPE_VAR_VALUES = 2;
+}

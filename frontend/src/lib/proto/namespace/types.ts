@@ -45,23 +45,20 @@ export interface ChildInfo {
   varDType?: VarDataType | undefined;
 }
 
-export interface Item {
-  /** id is the item path where name is the last step */
-  id: string;
-  name: string;
-  iType: ItemType;
-  varDType?: VarDataType | undefined;
-  value?: Value | undefined;
-}
-
 export interface ItemMeta {
   name: string;
   iType: ItemType;
   varDType?: VarDataType | undefined;
 }
 
+export interface FolderInfo {
+  id: string;
+  name: string;
+}
+
 export interface VarInfo {
-  varId: string;
+  id: string;
+  name: string;
   varDType: VarDataType;
 }
 
@@ -459,138 +456,6 @@ export const ChildInfo: MessageFns<ChildInfo> = {
   },
 };
 
-function createBaseItem(): Item {
-  return { id: "", name: "", iType: 0, varDType: undefined, value: undefined };
-}
-
-export const Item: MessageFns<Item> = {
-  encode(message: Item, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    if (message.id !== "") {
-      writer.uint32(10).string(message.id);
-    }
-    if (message.name !== "") {
-      writer.uint32(18).string(message.name);
-    }
-    if (message.iType !== 0) {
-      writer.uint32(40).int32(message.iType);
-    }
-    if (message.varDType !== undefined) {
-      writer.uint32(48).int32(message.varDType);
-    }
-    if (message.value !== undefined) {
-      Value.encode(message.value, writer.uint32(58).fork()).join();
-    }
-    return writer;
-  },
-
-  decode(input: BinaryReader | Uint8Array, length?: number): Item {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
-    const end = length === undefined ? reader.len : reader.pos + length;
-    const message = createBaseItem();
-    while (reader.pos < end) {
-      const tag = reader.uint32();
-      switch (tag >>> 3) {
-        case 1: {
-          if (tag !== 10) {
-            break;
-          }
-
-          message.id = reader.string();
-          continue;
-        }
-        case 2: {
-          if (tag !== 18) {
-            break;
-          }
-
-          message.name = reader.string();
-          continue;
-        }
-        case 5: {
-          if (tag !== 40) {
-            break;
-          }
-
-          message.iType = reader.int32() as any;
-          continue;
-        }
-        case 6: {
-          if (tag !== 48) {
-            break;
-          }
-
-          message.varDType = reader.int32() as any;
-          continue;
-        }
-        case 7: {
-          if (tag !== 58) {
-            break;
-          }
-
-          message.value = Value.decode(reader, reader.uint32());
-          continue;
-        }
-      }
-      if ((tag & 7) === 4 || tag === 0) {
-        break;
-      }
-      reader.skip(tag & 7);
-    }
-    return message;
-  },
-
-  fromJSON(object: any): Item {
-    return {
-      id: isSet(object.id) ? globalThis.String(object.id) : "",
-      name: isSet(object.name) ? globalThis.String(object.name) : "",
-      iType: isSet(object.iType)
-        ? itemTypeFromJSON(object.iType)
-        : isSet(object.i_type)
-        ? itemTypeFromJSON(object.i_type)
-        : 0,
-      varDType: isSet(object.varDType)
-        ? varDataTypeFromJSON(object.varDType)
-        : isSet(object.var_d_type)
-        ? varDataTypeFromJSON(object.var_d_type)
-        : undefined,
-      value: isSet(object.value) ? Value.fromJSON(object.value) : undefined,
-    };
-  },
-
-  toJSON(message: Item): unknown {
-    const obj: any = {};
-    if (message.id !== "") {
-      obj.id = message.id;
-    }
-    if (message.name !== "") {
-      obj.name = message.name;
-    }
-    if (message.iType !== 0) {
-      obj.iType = itemTypeToJSON(message.iType);
-    }
-    if (message.varDType !== undefined) {
-      obj.varDType = varDataTypeToJSON(message.varDType);
-    }
-    if (message.value !== undefined) {
-      obj.value = Value.toJSON(message.value);
-    }
-    return obj;
-  },
-
-  create<I extends Exact<DeepPartial<Item>, I>>(base?: I): Item {
-    return Item.fromPartial(base ?? ({} as any));
-  },
-  fromPartial<I extends Exact<DeepPartial<Item>, I>>(object: I): Item {
-    const message = createBaseItem();
-    message.id = object.id ?? "";
-    message.name = object.name ?? "";
-    message.iType = object.iType ?? 0;
-    message.varDType = object.varDType ?? undefined;
-    message.value = (object.value !== undefined && object.value !== null) ? Value.fromPartial(object.value) : undefined;
-    return message;
-  },
-};
-
 function createBaseItemMeta(): ItemMeta {
   return { name: "", iType: 0, varDType: undefined };
 }
@@ -691,17 +556,96 @@ export const ItemMeta: MessageFns<ItemMeta> = {
   },
 };
 
+function createBaseFolderInfo(): FolderInfo {
+  return { id: "", name: "" };
+}
+
+export const FolderInfo: MessageFns<FolderInfo> = {
+  encode(message: FolderInfo, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.id !== "") {
+      writer.uint32(10).string(message.id);
+    }
+    if (message.name !== "") {
+      writer.uint32(18).string(message.name);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): FolderInfo {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseFolderInfo();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.id = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.name = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): FolderInfo {
+    return {
+      id: isSet(object.id) ? globalThis.String(object.id) : "",
+      name: isSet(object.name) ? globalThis.String(object.name) : "",
+    };
+  },
+
+  toJSON(message: FolderInfo): unknown {
+    const obj: any = {};
+    if (message.id !== "") {
+      obj.id = message.id;
+    }
+    if (message.name !== "") {
+      obj.name = message.name;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<FolderInfo>, I>>(base?: I): FolderInfo {
+    return FolderInfo.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<FolderInfo>, I>>(object: I): FolderInfo {
+    const message = createBaseFolderInfo();
+    message.id = object.id ?? "";
+    message.name = object.name ?? "";
+    return message;
+  },
+};
+
 function createBaseVarInfo(): VarInfo {
-  return { varId: "", varDType: 0 };
+  return { id: "", name: "", varDType: 0 };
 }
 
 export const VarInfo: MessageFns<VarInfo> = {
   encode(message: VarInfo, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    if (message.varId !== "") {
-      writer.uint32(10).string(message.varId);
+    if (message.id !== "") {
+      writer.uint32(10).string(message.id);
+    }
+    if (message.name !== "") {
+      writer.uint32(18).string(message.name);
     }
     if (message.varDType !== 0) {
-      writer.uint32(16).int32(message.varDType);
+      writer.uint32(24).int32(message.varDType);
     }
     return writer;
   },
@@ -718,11 +662,19 @@ export const VarInfo: MessageFns<VarInfo> = {
             break;
           }
 
-          message.varId = reader.string();
+          message.id = reader.string();
           continue;
         }
         case 2: {
-          if (tag !== 16) {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.name = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 24) {
             break;
           }
 
@@ -740,11 +692,8 @@ export const VarInfo: MessageFns<VarInfo> = {
 
   fromJSON(object: any): VarInfo {
     return {
-      varId: isSet(object.varId)
-        ? globalThis.String(object.varId)
-        : isSet(object.var_id)
-        ? globalThis.String(object.var_id)
-        : "",
+      id: isSet(object.id) ? globalThis.String(object.id) : "",
+      name: isSet(object.name) ? globalThis.String(object.name) : "",
       varDType: isSet(object.varDType)
         ? varDataTypeFromJSON(object.varDType)
         : isSet(object.var_d_type)
@@ -755,8 +704,11 @@ export const VarInfo: MessageFns<VarInfo> = {
 
   toJSON(message: VarInfo): unknown {
     const obj: any = {};
-    if (message.varId !== "") {
-      obj.varId = message.varId;
+    if (message.id !== "") {
+      obj.id = message.id;
+    }
+    if (message.name !== "") {
+      obj.name = message.name;
     }
     if (message.varDType !== 0) {
       obj.varDType = varDataTypeToJSON(message.varDType);
@@ -769,7 +721,8 @@ export const VarInfo: MessageFns<VarInfo> = {
   },
   fromPartial<I extends Exact<DeepPartial<VarInfo>, I>>(object: I): VarInfo {
     const message = createBaseVarInfo();
-    message.varId = object.varId ?? "";
+    message.id = object.id ?? "";
+    message.name = object.name ?? "";
     message.varDType = object.varDType ?? 0;
     return message;
   },

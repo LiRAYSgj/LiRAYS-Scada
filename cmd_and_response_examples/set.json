@@ -1,0 +1,41 @@
+{
+  "command_type": {
+    "Set": {
+      "cmd_id": "set-456",
+      "var_ids_values": [
+        {
+          "var_id": "/devices/sensors/NewFolder/NewFloatVariable",
+          "value": {
+            "typed": {
+              "FloatValue": 23.12
+            }
+          }
+        },
+        {
+          "var_id": "/devices/sensors/NewFolder/NewTextVariable",
+          "value": {
+            "typed": {
+              "TextValue": "some text"
+            }
+          }
+        },
+        {
+          "var_id": "/devices/sensors/NewFolder/NewIntegerVariable",
+          "value": {
+            "typed": {
+              "IntegerValue": 23
+            }
+          }
+        },
+        {
+          "var_id": "/devices/sensors/NewFolder/NewBooleanVariable",
+          "value": {
+            "typed": {
+              "BooleanValue": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}

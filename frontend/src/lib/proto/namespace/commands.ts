@@ -6,8 +6,15 @@
 
 /* eslint-disable */
 import { BinaryReader, BinaryWriter } from "@bufbuild/protobuf/wire";
-import { OperationStatus, operationStatusFromJSON, operationStatusToJSON } from "./enums";
-import { ItemMeta, NamespaceSchema, OptionalValue, VarIdValue, VarInfo } from "./types";
+import {
+  EventType,
+  eventTypeFromJSON,
+  eventTypeToJSON,
+  OperationStatus,
+  operationStatusFromJSON,
+  operationStatusToJSON,
+} from "./enums";
+import { FolderInfo, ItemMeta, NamespaceSchema, OptionalValue, VarIdValue, VarInfo } from "./types";
 
 export const protobufPackage = "namespace";
 
@@ -38,18 +45,8 @@ export interface ListCommand {
 
 export interface ListResponse {
   cmdId: string;
-  childrenFolders: { [key: string]: string };
-  childrenVars: { [key: string]: VarInfo };
-}
-
-export interface ListResponse_ChildrenFoldersEntry {
-  key: string;
-  value: string;
-}
-
-export interface ListResponse_ChildrenVarsEntry {
-  key: string;
-  value: VarInfo | undefined;
+  folders: FolderInfo[];
+  variables: VarInfo[];
 }
 
 export interface SetCommand {
@@ -74,6 +71,7 @@ export interface GetResponse {
 export interface SubscribeCommand {
   cmdId: string;
   varIds: string[];
+  events: EventType[];
 }
 
 export interface SubscribeResponse {
@@ -83,6 +81,7 @@ export interface SubscribeResponse {
 export interface UnsubscribeCommand {
   cmdId: string;
   varIds: string[];
+  events: EventType[];
 }
 
 export interface UnsubscribeResponse {
@@ -547,7 +546,7 @@ export const ListCommand: MessageFns<ListCommand> = {
 };
 
 function createBaseListResponse(): ListResponse {
-  return { cmdId: "", childrenFolders: {}, childrenVars: {} };
+  return { cmdId: "", folders: [], variables: [] };
 }
 
 export const ListResponse: MessageFns<ListResponse> = {
@@ -555,12 +554,12 @@ export const ListResponse: MessageFns<ListResponse> = {
     if (message.cmdId !== "") {
       writer.uint32(10).string(message.cmdId);
     }
-    globalThis.Object.entries(message.childrenFolders).forEach(([key, value]: [string, string]) => {
-      ListResponse_ChildrenFoldersEntry.encode({ key: key as any, value }, writer.uint32(18).fork()).join();
-    });
-    globalThis.Object.entries(message.childrenVars).forEach(([key, value]: [string, VarInfo]) => {
-      ListResponse_ChildrenVarsEntry.encode({ key: key as any, value }, writer.uint32(26).fork()).join();
-    });
+    for (const v of message.folders) {
+      FolderInfo.encode(v!, writer.uint32(18).fork()).join();
+    }
+    for (const v of message.variables) {
+      VarInfo.encode(v!, writer.uint32(26).fork()).join();
+    }
     return writer;
   },
 
@@ -584,10 +583,7 @@ export const ListResponse: MessageFns<ListResponse> = {
             break;
           }
 
-          const entry2 = ListResponse_ChildrenFoldersEntry.decode(reader, reader.uint32());
-          if (entry2.value !== undefined) {
-            message.childrenFolders[entry2.key] = entry2.value;
-          }
+          message.folders.push(FolderInfo.decode(reader, reader.uint32()));
           continue;
         }
         case 3: {
@@ -595,10 +591,7 @@ export const ListResponse: MessageFns<ListResponse> = {
             break;
           }
 
-          const entry3 = ListResponse_ChildrenVarsEntry.decode(reader, reader.uint32());
-          if (entry3.value !== undefined) {
-            message.childrenVars[entry3.key] = entry3.value;
-          }
+          message.variables.push(VarInfo.decode(reader, reader.uint32()));
           continue;
         }
       }
@@ -617,40 +610,10 @@ export const ListResponse: MessageFns<ListResponse> = {
         : isSet(object.cmd_id)
         ? globalThis.String(object.cmd_id)
         : "",
-      childrenFolders: isObject(object.childrenFolders)
-        ? (globalThis.Object.entries(object.childrenFolders) as [string, any][]).reduce(
-          (acc: { [key: string]: string }, [key, value]: [string, any]) => {
-            acc[key] = globalThis.String(value);
-            return acc;
-          },
-          {},
-        )
-        : isObject(object.children_folders)
-        ? (globalThis.Object.entries(object.children_folders) as [string, any][]).reduce(
-          (acc: { [key: string]: string }, [key, value]: [string, any]) => {
-            acc[key] = globalThis.String(value);
-            return acc;
-          },
-          {},
-        )
-        : {},
-      childrenVars: isObject(object.childrenVars)
-        ? (globalThis.Object.entries(object.childrenVars) as [string, any][]).reduce(
-          (acc: { [key: string]: VarInfo }, [key, value]: [string, any]) => {
-            acc[key] = VarInfo.fromJSON(value);
-            return acc;
-          },
-          {},
-        )
-        : isObject(object.children_vars)
-        ? (globalThis.Object.entries(object.children_vars) as [string, any][]).reduce(
-          (acc: { [key: string]: VarInfo }, [key, value]: [string, any]) => {
-            acc[key] = VarInfo.fromJSON(value);
-            return acc;
-          },
-          {},
-        )
-        : {},
+      folders: globalThis.Array.isArray(object?.folders) ? object.folders.map((e: any) => FolderInfo.fromJSON(e)) : [],
+      variables: globalThis.Array.isArray(object?.variables)
+        ? object.variables.map((e: any) => VarInfo.fromJSON(e))
+        : [],
     };
   },
 
@@ -659,23 +622,11 @@ export const ListResponse: MessageFns<ListResponse> = {
     if (message.cmdId !== "") {
       obj.cmdId = message.cmdId;
     }
-    if (message.childrenFolders) {
-      const entries = globalThis.Object.entries(message.childrenFolders) as [string, string][];
-      if (entries.length > 0) {
-        obj.childrenFolders = {};
-        entries.forEach(([k, v]) => {
-          obj.childrenFolders[k] = v;
-        });
-      }
+    if (message.folders?.length) {
+      obj.folders = message.folders.map((e) => FolderInfo.toJSON(e));
     }
-    if (message.childrenVars) {
-      const entries = globalThis.Object.entries(message.childrenVars) as [string, VarInfo][];
-      if (entries.length > 0) {
-        obj.childrenVars = {};
-        entries.forEach(([k, v]) => {
-          obj.childrenVars[k] = VarInfo.toJSON(v);
-        });
-      }
+    if (message.variables?.length) {
+      obj.variables = message.variables.map((e) => VarInfo.toJSON(e));
     }
     return obj;
   },
@@ -686,184 +637,8 @@ export const ListResponse: MessageFns<ListResponse> = {
   fromPartial<I extends Exact<DeepPartial<ListResponse>, I>>(object: I): ListResponse {
     const message = createBaseListResponse();
     message.cmdId = object.cmdId ?? "";
-    message.childrenFolders = (globalThis.Object.entries(object.childrenFolders ?? {}) as [string, string][]).reduce(
-      (acc: { [key: string]: string }, [key, value]: [string, string]) => {
-        if (value !== undefined) {
-          acc[key] = globalThis.String(value);
-        }
-        return acc;
-      },
-      {},
-    );
-    message.childrenVars = (globalThis.Object.entries(object.childrenVars ?? {}) as [string, VarInfo][]).reduce(
-      (acc: { [key: string]: VarInfo }, [key, value]: [string, VarInfo]) => {
-        if (value !== undefined) {
-          acc[key] = VarInfo.fromPartial(value);
-        }
-        return acc;
-      },
-      {},
-    );
-    return message;
-  },
-};
-
-function createBaseListResponse_ChildrenFoldersEntry(): ListResponse_ChildrenFoldersEntry {
-  return { key: "", value: "" };
-}
-
-export const ListResponse_ChildrenFoldersEntry: MessageFns<ListResponse_ChildrenFoldersEntry> = {
-  encode(message: ListResponse_ChildrenFoldersEntry, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    if (message.key !== "") {
-      writer.uint32(10).string(message.key);
-    }
-    if (message.value !== "") {
-      writer.uint32(18).string(message.value);
-    }
-    return writer;
-  },
-
-  decode(input: BinaryReader | Uint8Array, length?: number): ListResponse_ChildrenFoldersEntry {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
-    const end = length === undefined ? reader.len : reader.pos + length;
-    const message = createBaseListResponse_ChildrenFoldersEntry();
-    while (reader.pos < end) {
-      const tag = reader.uint32();
-      switch (tag >>> 3) {
-        case 1: {
-          if (tag !== 10) {
-            break;
-          }
-
-          message.key = reader.string();
-          continue;
-        }
-        case 2: {
-          if (tag !== 18) {
-            break;
-          }
-
-          message.value = reader.string();
-          continue;
-        }
-      }
-      if ((tag & 7) === 4 || tag === 0) {
-        break;
-      }
-      reader.skip(tag & 7);
-    }
-    return message;
-  },
-
-  fromJSON(object: any): ListResponse_ChildrenFoldersEntry {
-    return {
-      key: isSet(object.key) ? globalThis.String(object.key) : "",
-      value: isSet(object.value) ? globalThis.String(object.value) : "",
-    };
-  },
-
-  toJSON(message: ListResponse_ChildrenFoldersEntry): unknown {
-    const obj: any = {};
-    if (message.key !== "") {
-      obj.key = message.key;
-    }
-    if (message.value !== "") {
-      obj.value = message.value;
-    }
-    return obj;
-  },
-
-  create<I extends Exact<DeepPartial<ListResponse_ChildrenFoldersEntry>, I>>(
-    base?: I,
-  ): ListResponse_ChildrenFoldersEntry {
-    return ListResponse_ChildrenFoldersEntry.fromPartial(base ?? ({} as any));
-  },
-  fromPartial<I extends Exact<DeepPartial<ListResponse_ChildrenFoldersEntry>, I>>(
-    object: I,
-  ): ListResponse_ChildrenFoldersEntry {
-    const message = createBaseListResponse_ChildrenFoldersEntry();
-    message.key = object.key ?? "";
-    message.value = object.value ?? "";
-    return message;
-  },
-};
-
-function createBaseListResponse_ChildrenVarsEntry(): ListResponse_ChildrenVarsEntry {
-  return { key: "", value: undefined };
-}
-
-export const ListResponse_ChildrenVarsEntry: MessageFns<ListResponse_ChildrenVarsEntry> = {
-  encode(message: ListResponse_ChildrenVarsEntry, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    if (message.key !== "") {
-      writer.uint32(10).string(message.key);
-    }
-    if (message.value !== undefined) {
-      VarInfo.encode(message.value, writer.uint32(18).fork()).join();
-    }
-    return writer;
-  },
-
-  decode(input: BinaryReader | Uint8Array, length?: number): ListResponse_ChildrenVarsEntry {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
-    const end = length === undefined ? reader.len : reader.pos + length;
-    const message = createBaseListResponse_ChildrenVarsEntry();
-    while (reader.pos < end) {
-      const tag = reader.uint32();
-      switch (tag >>> 3) {
-        case 1: {
-          if (tag !== 10) {
-            break;
-          }
-
-          message.key = reader.string();
-          continue;
-        }
-        case 2: {
-          if (tag !== 18) {
-            break;
-          }
-
-          message.value = VarInfo.decode(reader, reader.uint32());
-          continue;
-        }
-      }
-      if ((tag & 7) === 4 || tag === 0) {
-        break;
-      }
-      reader.skip(tag & 7);
-    }
-    return message;
-  },
-
-  fromJSON(object: any): ListResponse_ChildrenVarsEntry {
-    return {
-      key: isSet(object.key) ? globalThis.String(object.key) : "",
-      value: isSet(object.value) ? VarInfo.fromJSON(object.value) : undefined,
-    };
-  },
-
-  toJSON(message: ListResponse_ChildrenVarsEntry): unknown {
-    const obj: any = {};
-    if (message.key !== "") {
-      obj.key = message.key;
-    }
-    if (message.value !== undefined) {
-      obj.value = VarInfo.toJSON(message.value);
-    }
-    return obj;
-  },
-
-  create<I extends Exact<DeepPartial<ListResponse_ChildrenVarsEntry>, I>>(base?: I): ListResponse_ChildrenVarsEntry {
-    return ListResponse_ChildrenVarsEntry.fromPartial(base ?? ({} as any));
-  },
-  fromPartial<I extends Exact<DeepPartial<ListResponse_ChildrenVarsEntry>, I>>(
-    object: I,
-  ): ListResponse_ChildrenVarsEntry {
-    const message = createBaseListResponse_ChildrenVarsEntry();
-    message.key = object.key ?? "";
-    message.value = (object.value !== undefined && object.value !== null)
-      ? VarInfo.fromPartial(object.value)
-      : undefined;
+    message.folders = object.folders?.map((e) => FolderInfo.fromPartial(e)) || [];
+    message.variables = object.variables?.map((e) => VarInfo.fromPartial(e)) || [];
     return message;
   },
 };
@@ -1185,7 +960,7 @@ export const GetResponse: MessageFns<GetResponse> = {
 };
 
 function createBaseSubscribeCommand(): SubscribeCommand {
-  return { cmdId: "", varIds: [] };
+  return { cmdId: "", varIds: [], events: [] };
 }
 
 export const SubscribeCommand: MessageFns<SubscribeCommand> = {
@@ -1196,6 +971,11 @@ export const SubscribeCommand: MessageFns<SubscribeCommand> = {
     for (const v of message.varIds) {
       writer.uint32(18).string(v!);
     }
+    writer.uint32(26).fork();
+    for (const v of message.events) {
+      writer.int32(v);
+    }
+    writer.join();
     return writer;
   },
 
@@ -1222,6 +1002,24 @@ export const SubscribeCommand: MessageFns<SubscribeCommand> = {
           message.varIds.push(reader.string());
           continue;
         }
+        case 3: {
+          if (tag === 24) {
+            message.events.push(reader.int32() as any);
+
+            continue;
+          }
+
+          if (tag === 26) {
+            const end2 = reader.uint32() + reader.pos;
+            while (reader.pos < end2) {
+              message.events.push(reader.int32() as any);
+            }
+
+            continue;
+          }
+
+          break;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1243,6 +1041,7 @@ export const SubscribeCommand: MessageFns<SubscribeCommand> = {
         : globalThis.Array.isArray(object?.var_ids)
         ? object.var_ids.map((e: any) => globalThis.String(e))
         : [],
+      events: globalThis.Array.isArray(object?.events) ? object.events.map((e: any) => eventTypeFromJSON(e)) : [],
     };
   },
 
@@ -1254,6 +1053,9 @@ export const SubscribeCommand: MessageFns<SubscribeCommand> = {
     if (message.varIds?.length) {
       obj.varIds = message.varIds;
     }
+    if (message.events?.length) {
+      obj.events = message.events.map((e) => eventTypeToJSON(e));
+    }
     return obj;
   },
 
@@ -1264,6 +1066,7 @@ export const SubscribeCommand: MessageFns<SubscribeCommand> = {
     const message = createBaseSubscribeCommand();
     message.cmdId = object.cmdId ?? "";
     message.varIds = object.varIds?.map((e) => e) || [];
+    message.events = object.events?.map((e) => e) || [];
     return message;
   },
 };
@@ -1333,7 +1136,7 @@ export const SubscribeResponse: MessageFns<SubscribeResponse> = {
 };
 
 function createBaseUnsubscribeCommand(): UnsubscribeCommand {
-  return { cmdId: "", varIds: [] };
+  return { cmdId: "", varIds: [], events: [] };
 }
 
 export const UnsubscribeCommand: MessageFns<UnsubscribeCommand> = {
@@ -1344,6 +1147,11 @@ export const UnsubscribeCommand: MessageFns<UnsubscribeCommand> = {
     for (const v of message.varIds) {
       writer.uint32(18).string(v!);
     }
+    writer.uint32(26).fork();
+    for (const v of message.events) {
+      writer.int32(v);
+    }
+    writer.join();
     return writer;
   },
 
@@ -1370,6 +1178,24 @@ export const UnsubscribeCommand: MessageFns<UnsubscribeCommand> = {
           message.varIds.push(reader.string());
           continue;
         }
+        case 3: {
+          if (tag === 24) {
+            message.events.push(reader.int32() as any);
+
+            continue;
+          }
+
+          if (tag === 26) {
+            const end2 = reader.uint32() + reader.pos;
+            while (reader.pos < end2) {
+              message.events.push(reader.int32() as any);
+            }
+
+            continue;
+          }
+
+          break;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1391,6 +1217,7 @@ export const UnsubscribeCommand: MessageFns<UnsubscribeCommand> = {
         : globalThis.Array.isArray(object?.var_ids)
         ? object.var_ids.map((e: any) => globalThis.String(e))
         : [],
+      events: globalThis.Array.isArray(object?.events) ? object.events.map((e: any) => eventTypeFromJSON(e)) : [],
     };
   },
 
@@ -1402,6 +1229,9 @@ export const UnsubscribeCommand: MessageFns<UnsubscribeCommand> = {
     if (message.varIds?.length) {
       obj.varIds = message.varIds;
     }
+    if (message.events?.length) {
+      obj.events = message.events.map((e) => eventTypeToJSON(e));
+    }
     return obj;
   },
 
@@ -1412,6 +1242,7 @@ export const UnsubscribeCommand: MessageFns<UnsubscribeCommand> = {
     const message = createBaseUnsubscribeCommand();
     message.cmdId = object.cmdId ?? "";
     message.varIds = object.varIds?.map((e) => e) || [];
+    message.events = object.events?.map((e) => e) || [];
     return message;
   },
 };
@@ -2146,10 +1977,6 @@ export type DeepPartial<T> = T extends Builtin ? T
 type KeysOfUnion<T> = T extends T ? keyof T : never;
 export type Exact<P, I extends P> = P extends Builtin ? P
   : P & { [K in keyof P]: Exact<P[K], I[K]> } & { [K in Exclude<keyof I, KeysOfUnion<P>>]: never };
-
-function isObject(value: any): boolean {
-  return typeof value === "object" && value !== null;
-}
 
 function isSet(value: any): boolean {
   return value !== null && value !== undefined;
