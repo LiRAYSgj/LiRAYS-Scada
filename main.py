@@ -10,7 +10,7 @@ from typing import Optional
 
 from scada.data_dir import rt_dir
 from scada.http_api.api import ApiServer, app
-from scada.rustmod import serve
+from scada.rustmod import serve, generate_json_examples
 
 
 # Configure Python's logging to show DEBUG level
@@ -140,6 +140,7 @@ def stop_process(process: Optional[subprocess.Popen[str]], name: str) -> None:
 if __name__ == "__main__":
     frontend_process: Optional[subprocess.Popen[str]] = None
     api_thread: Optional[ApiServer] = None
+    generate_json_examples("cmd_and_response_examples")
 
     def cleanup() -> None:
         if api_thread:

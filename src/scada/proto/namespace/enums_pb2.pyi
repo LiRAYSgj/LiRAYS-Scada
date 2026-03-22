@@ -23,6 +23,12 @@ class OperationStatus(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     OPERATION_STATUS_INVALID: _ClassVar[OperationStatus]
     OPERATION_STATUS_OK: _ClassVar[OperationStatus]
     OPERATION_STATUS_ERR: _ClassVar[OperationStatus]
+
+class EventType(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    EVENT_TYPE_INVALID: _ClassVar[EventType]
+    EVENT_TYPE_TREE_CHANGE: _ClassVar[EventType]
+    EVENT_TYPE_VAR_VALUES: _ClassVar[EventType]
 ITEM_TYPE_INVALID: ItemType
 ITEM_TYPE_FOLDER: ItemType
 ITEM_TYPE_VARIABLE: ItemType
@@ -34,3 +40,6 @@ VAR_DATA_TYPE_BOOLEAN: VarDataType
 OPERATION_STATUS_INVALID: OperationStatus
 OPERATION_STATUS_OK: OperationStatus
 OPERATION_STATUS_ERR: OperationStatus
+EVENT_TYPE_INVALID: EventType
+EVENT_TYPE_TREE_CHANGE: EventType
+EVENT_TYPE_VAR_VALUES: EventType

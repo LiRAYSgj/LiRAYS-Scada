@@ -31,6 +31,31 @@ The system follows a modular architecture with clear separation of concerns:
 - **Data Management**: `data_dir.py` for handling data directory structure
 - **LMDB CLI Tool**: `lmdb_cli.py` for inspecting LMDB databases
 - **Protocol Buffers**: Generated Python code in `src/scada/proto/namespace/`
+- **MCP Adapter**: `src/scada/http_api/mcp_adapter.py` - HTTP endpoints for MCP integration with AI agents and automation tools
+
+### 14. MCP Adapters
+
+The LiRAYS system includes an MCP (Model Control Protocol) adapter layer that provides HTTP endpoints for integration with agent systems like OpenAI tools, LangChain, or other MCP-compatible systems.
+
+#### Implementation Details
+
+The MCP adapter is implemented in `src/scada/http_api/mcp_adapter.py` and provides:
+
+- **HTTP API Endpoints**: 
+  - `/mcp/tools` - Lists available MCP tools
+  - `/mcp/tool-call` - Executes MCP tool calls
+  - `/mcp/health` - Health check endpoint
+
+- **MCP Tools Implemented**:
+  - `list_directory` - Lists contents of data directories
+  - `add_items` - Adds variables and directories to the data hierarchy
+  - `set_values` - Sets values for variables
+  - `get_values` - Gets values for variables
+  - `delete_items` - Deletes items from the data hierarchy
+
+- **Integration with Backend**: The MCP adapter uses the existing WebSocket protocol to communicate with the Rust backend, routing HTTP requests through the existing `mcp_cmd_executor` function that handles serialization and communication with the WebSocket server.
+
+- **Data Flow**: The MCP adapter provides a bridge between HTTP-based MCP clients and the WebSocket-based backend system, enabling integration with AI agents and automation tools while maintaining consistency with the existing data management architecture.
 
 ### 2. Data Storage
 
@@ -49,6 +74,35 @@ The system follows a modular architecture with clear separation of concerns:
 #### Python Data Management
 - **Data Directory**: `data_dir.py` manages the data directory structure with `data_dir` and `rt_dir` paths
 - **LMDB Integration**: `lmdb_cli.py` provides utilities for inspecting LMDB databases used in data storage
+
+### 15. MCP Adapter Integration
+
+#### Architecture Overview
+The MCP adapter provides a bridge between HTTP-based AI agents and the WebSocket-based core LiRAYS system. It enables integration with:
+- OpenAI tools and assistants
+- LangChain and other AI frameworks
+- Automation systems that use MCP protocol
+- Any MCP-compatible agent system
+
+#### Integration Flow
+1. **HTTP Request**: AI agent sends HTTP request to MCP endpoints
+2. **Request Parsing**: MCP adapter parses the request and validates parameters
+3. **Protocol Translation**: HTTP request is translated to WebSocket protocol format
+4. **Backend Communication**: Request is sent to the Rust backend via WebSocket
+5. **Response Translation**: Backend response is translated back to HTTP format
+6. **Return Response**: Final HTTP response is returned to the agent
+
+#### Key Components
+- **`src/scada/http_api/mcp_adapter.py`**: Main MCP adapter implementation
+- **`src/scada/http_api/routes/mcp_data.py`**: HTTP routes and data handling
+- **WebSocket Communication**: Shared connection with existing backend infrastructure
+- **Data Model Mapping**: Translation between HTTP and WebSocket data structures
+
+#### Security Considerations
+- All HTTP endpoints are subject to the same authentication/authorization as the rest of the system
+- Input validation is performed at both HTTP and WebSocket layers
+- The MCP adapter inherits the security model from the main LiRAYS system
+- No additional security measures are implemented beyond existing system security
 
 ### 3. Communication Protocol
 
@@ -226,6 +280,7 @@ All commands use a global timeout (e.g. 60s); success/failure is determined by r
 - **Sled**: Embedded database
 - **Prost**: Protocol Buffer implementation
 - **PyO3**: Python integration
+- **websockets**: For WebSocket communication in MCP adapter
 
 #### Frontend Dependencies
 - **SvelteKit**: Application framework
@@ -237,6 +292,7 @@ All commands use a global timeout (e.g. 60s); success/failure is determined by r
 - **lmdb**: LMDB database support
 - **protobuf**: Protocol buffer support
 - **PyO3**: Rust-Python integration
+- **websockets**: For WebSocket communication in MCP adapter
 
 #### Performance
 - **Backend**: Single-threaded for client connections (uses async model for I/O)
@@ -249,6 +305,15 @@ All commands use a global timeout (e.g. 60s); success/failure is determined by r
 - **Backend**: Can be scaled by running multiple instances behind a load balancer
 - **Database performance**: May become a bottleneck for large datasets
 - **Frontend**: Scales with client-side rendering capabilities
+- **MCP Adapter Scalability**: 
+  - HTTP Endpoints: Scales with standard FastAPI deployment patterns
+  - WebSocket Communication: Shared connection with the backend system
+  - Concurrency: Handles concurrent MCP tool calls through the existing WebSocket infrastructure
+
+#### MCP Adapter Scalability
+- **HTTP Endpoints**: Scales with standard FastAPI deployment patterns
+- **WebSocket Communication**: Shared connection with the backend system
+- **Concurrency**: Handles concurrent MCP tool calls through the existing WebSocket infrastructure
 
 ### 10. Key Design Patterns
 
