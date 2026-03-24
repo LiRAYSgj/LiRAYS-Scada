@@ -1,0 +1,98 @@
+name: Build Debian Packages
+
+on:
+  push:
+    branches: [add-distribution-system]
+
+jobs:
+  build-debian:
+    name: Build Debian Package
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+        os: [ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU for ARM64
+        if: matrix.arch == 'arm64'
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            debhelper \
+            dh-make \
+            dh-systemd \
+            devscripts \
+            equivs \
+            curl \
+            ca-certificates \
+            lsb-release
+
+      - name: Install NVM and Node.js 24
+        run: |
+          curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.4/install.sh | bash
+          export NVM_DIR="$HOME/.nvm"
+          [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+          nvm install 24
+
+      - name: Install Rust
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -- -y
+          source "$HOME/.cargo/env"
+          rustc --version
+
+      - name: Build Release
+        run: |
+          make clean
+          make release
+
+      - name: Build Debian Package
+        run: |
+          debuild -b -us -uc
+          ls -la ../*.deb
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lirays-scada-${{ matrix.arch }}.deb
+          path: ../lirays-scada_*.deb
+          if-no-files-found: error
+
+  # create-release:
+  #   name: Create Release
+  #   needs: build-debian
+  #   if: github.event_name == 'release'
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Download Artifacts
+  #       uses: actions/download-artifact@v4
+  #       with:
+  #         path: artifacts
+
+  #     - name: Create Release
+  #       uses: actions/create-release@v1
+  #       with:
+  #         tag_name: ${{ github.event.release.tag_name }}
+  #         release_name: Release ${{ github.event.release.tag_name }}
+  #         body: |
+  #           Debian packages for LiRAYS Scada
+
+  #           This release includes Debian packages for both amd64 and arm64 architectures.
+  #         draft: false
+  #         prerelease: false
+
+  #     - name: Upload Release Assets
+  #       uses: actions/upload-release-asset@v1
+  #       with:
+  #         upload_url: ${{ github.event.release.upload_url }}
+  #         asset_path: artifacts/**/lirays-scada-*.deb
+  #         asset_name: lirays-scada-${{ matrix.arch }}.deb
+  #         content_type: application/vnd.debian.binary-package
