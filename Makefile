@@ -34,12 +34,14 @@ backend:
 	@echo "🦀 Building Rust backend..."
 	cargo build
 	@cp target/debug/lirays-scada deb-files/usr/bin/
+	debuild -b -us -uc
 
 .PHONY: release
 release: frontend
 	@echo "🚀 Building release..."
 	cargo build --release
 	@cp target/release/lirays-scada deb-files/usr/bin/
+	debuild -b -us -uc
 
 .PHONY: clean
 clean:
