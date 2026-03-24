@@ -49,13 +49,15 @@ jobs:
         run: |
           mk-build-deps -r
           debuild -b -us -uc
-          ls -la ../*.deb
+          rm -rf *.deb
+          cp ../*.deb .
+          ls -la *.deb
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: lirays-scada-${{ matrix.arch }}.deb
-          path: ../lirays-scada_*.deb
+          path: "*.deb"
           if-no-files-found: error
 
   create-release:
