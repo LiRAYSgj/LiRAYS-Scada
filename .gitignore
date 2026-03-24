@@ -221,3 +221,8 @@ debian/files
 data_dir/
 .svelte-kit/
 node_modules/
+
+# macOS Package
+lirays-scada*.pkg
+lirays-scada*.dmg
+macos-pkg/**/lirays-scada

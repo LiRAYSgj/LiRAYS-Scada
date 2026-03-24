@@ -3,13 +3,12 @@ import { tagStreamClient } from "$lib/core/ws/tag-stream-client";
 import type { ListResponse } from "$lib/proto/namespace/commands";
 import { varDataTypeToJSON } from "$lib/proto/namespace/enums";
 
-const DEFAULT_WS_ENDPOINT = "ws://127.0.0.1:8245";
-
 function resolveWsEndpoint(): string {
-  const configured = import.meta.env.PUBLIC_DEMO_WS_ENDPOINT as
-    | string
-    | undefined;
-  return configured || DEFAULT_WS_ENDPOINT;
+  try {
+    return `ws://${location.hostname}:8245`;
+  } catch {
+    return "ws://localhost:8245";
+  }
 }
 
 function toTreeNodes(

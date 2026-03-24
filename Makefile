@@ -9,7 +9,7 @@ NVM_DIR=$(HOME)/.nvm
 all: build
 
 .PHONY: build
-build: frontend backend
+build: frontend backend macos-package
 
 .PHONY: frontend
 frontend:
@@ -34,7 +34,8 @@ backend:
 	@echo "🦀 Building Rust backend..."
 	cargo build
 	@cp target/debug/lirays-scada deb-files/usr/bin/
-	debuild -b -us -uc
+	echo "📦 Creating Debian package..." ; \
+	debuild -b -us -uc ; \
 	rm -rf ../*.build ../*.buildinfo ../*.changes ../*.ddeb
 
 .PHONY: release
@@ -42,7 +43,8 @@ release: frontend
 	@echo "🚀 Building release..."
 	cargo build --release
 	@cp target/release/lirays-scada deb-files/usr/bin/
-	debuild -b -us -uc
+	echo "📦 Creating Debian package..." ;
+	debuild -b -us -uc ;
 	rm -rf ../*.build ../*.buildinfo ../*.changes ../*.ddeb
 
 .PHONY: clean
@@ -74,4 +76,13 @@ check:
 
 .PHONY: test
 test:
+	@echo "Running tests..."
+	@bash -c ' \
+	export NVM_DIR="$(NVM_DIR)"; \
+	[ -s "$$NVM_DIR/nvm.sh" ] && . "$$NVM_DIR/nvm.sh"; \
+	nvm use 24; \
+	cd $(FRONTEND_DIR); \
+	npm run test; \
+	cd ..; \
+	'
 	cargo test
