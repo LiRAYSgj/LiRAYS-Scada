@@ -29,7 +29,6 @@ jobs:
             build-essential \
             debhelper \
             dh-make \
-            dh-systemd \
             devscripts \
             equivs \
             curl \
