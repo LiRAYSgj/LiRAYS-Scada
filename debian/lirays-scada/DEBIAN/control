@@ -1,0 +1,14 @@
+Package: lirays-scada
+Version: 0.1.0-1
+Architecture: arm64
+Maintainer: Alejandro <alejandro@lirays.com>
+Installed-Size: 18074
+Depends: systemd
+Section: utils
+Priority: optional
+Multi-Arch: foreign
+Description: LiRAYS Scada Server
+ LiRAYS Scada is a server application that provides both TCP and HTTP interfaces
+ for managing industrial data. This package installs the lirays-scada binary along with a systemd service
+ that automatically starts the server at boot time with appropriate environment
+ variables and directory structure.

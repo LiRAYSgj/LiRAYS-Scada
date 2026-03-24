@@ -1,0 +1,17 @@
+Source: lirays-scada
+Section: utils
+Priority: optional
+Maintainer: Alejandro <alejandro@lirays.com>
+Build-Depends:
+ debhelper-compat (= 13),
+Standards-Version: 4.6.2
+
+Package: lirays-scada
+Architecture: any
+Multi-Arch: foreign
+Depends: systemd
+Description: LiRAYS Scada Server
+ LiRAYS Scada is a server application that provides both TCP and HTTP interfaces
+ for managing industrial data. This package installs the lirays-scada binary along with a systemd service
+ that automatically starts the server at boot time with appropriate environment
+ variables and directory structure.

@@ -1,0 +1,2 @@
+./deb-files/usr/bin/lirays-scada
+./deb-files/etc/systemd/system/lirays-scada.service
