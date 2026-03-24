@@ -3,9 +3,9 @@ name = "rustmod"
 version = "0.1.0"
 edition = "2024"
 
-[lib]
-name = "rustmod"
-crate-type = ["cdylib"]
+[[bin]]
+name = "lirays-scada"
+path = "src/main.rs"
 
 [dependencies]
 bytes = "1.11.1"
@@ -13,14 +13,18 @@ futures-util = "0.3.32"
 sled = "0.34.7"
 log = "0.4.29"
 prost = "0.14.3"
-pyo3 = { version = "0.27.0", features = ["extension-module"] }
-pyo3-log = "0.13.3"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
 tokio = { version = "1.50.0", features = ["full"]}
 tokio-tungstenite = "0.28.0"
 uuid = { version = "1.21.0", features = ["v4"]}
 winnow = "0.7.15"
+env_logger = "0.11.6"
+tokio-util = "0.7.13"
+include_dir = "0.7.4"
+axum = "0.8.8"
+tower-http = { version = "0.6.8", features = ["fs", "cors", "compression-gzip", "trace"]}
+mime_guess = "2.0.5"
 
 [build-dependencies]
 prost-build = "0.14.3"

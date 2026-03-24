@@ -1,5 +1,4 @@
-use pyo3::prelude::pyfunction;
-use super::namespace::{
+use crate::rtdata::namespace::{
     ItemType,
     VarDataType,
     Command,
@@ -84,8 +83,7 @@ pub fn get_hierarchy_key(full_path: &str) -> String {
     format!("H:{}/\0{}", parent, name)
 }
 
-#[pyfunction]
-pub fn generate_json_examples(folder_path: &str) {
+fn _generate_json_examples(folder_path: &str) {
     use std::fs::File;
     use std::io::Write;
 

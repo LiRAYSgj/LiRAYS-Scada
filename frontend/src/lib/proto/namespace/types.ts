@@ -17,12 +17,6 @@ import {
 
 export const protobufPackage = "namespace";
 
-export interface Meta {
-  /** 16 bytes */
-  rootUid: string;
-  vendor: string;
-}
-
 export interface Value {
   integerValue?: number | undefined;
   floatValue?: number | undefined;
@@ -89,86 +83,6 @@ export interface NamespaceFolder_ChildrenEntry {
   key: string;
   value: NamespaceNode | undefined;
 }
-
-function createBaseMeta(): Meta {
-  return { rootUid: "", vendor: "" };
-}
-
-export const Meta: MessageFns<Meta> = {
-  encode(message: Meta, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    if (message.rootUid !== "") {
-      writer.uint32(10).string(message.rootUid);
-    }
-    if (message.vendor !== "") {
-      writer.uint32(18).string(message.vendor);
-    }
-    return writer;
-  },
-
-  decode(input: BinaryReader | Uint8Array, length?: number): Meta {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
-    const end = length === undefined ? reader.len : reader.pos + length;
-    const message = createBaseMeta();
-    while (reader.pos < end) {
-      const tag = reader.uint32();
-      switch (tag >>> 3) {
-        case 1: {
-          if (tag !== 10) {
-            break;
-          }
-
-          message.rootUid = reader.string();
-          continue;
-        }
-        case 2: {
-          if (tag !== 18) {
-            break;
-          }
-
-          message.vendor = reader.string();
-          continue;
-        }
-      }
-      if ((tag & 7) === 4 || tag === 0) {
-        break;
-      }
-      reader.skip(tag & 7);
-    }
-    return message;
-  },
-
-  fromJSON(object: any): Meta {
-    return {
-      rootUid: isSet(object.rootUid)
-        ? globalThis.String(object.rootUid)
-        : isSet(object.root_uid)
-        ? globalThis.String(object.root_uid)
-        : "",
-      vendor: isSet(object.vendor) ? globalThis.String(object.vendor) : "",
-    };
-  },
-
-  toJSON(message: Meta): unknown {
-    const obj: any = {};
-    if (message.rootUid !== "") {
-      obj.rootUid = message.rootUid;
-    }
-    if (message.vendor !== "") {
-      obj.vendor = message.vendor;
-    }
-    return obj;
-  },
-
-  create<I extends Exact<DeepPartial<Meta>, I>>(base?: I): Meta {
-    return Meta.fromPartial(base ?? ({} as any));
-  },
-  fromPartial<I extends Exact<DeepPartial<Meta>, I>>(object: I): Meta {
-    const message = createBaseMeta();
-    message.rootUid = object.rootUid ?? "";
-    message.vendor = object.vendor ?? "";
-    return message;
-  },
-};
 
 function createBaseValue(): Value {
   return { integerValue: undefined, floatValue: undefined, textValue: undefined, booleanValue: undefined };

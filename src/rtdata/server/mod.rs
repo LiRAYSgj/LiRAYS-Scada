@@ -1,16 +1,18 @@
+pub mod variable;
+pub mod parser;
+pub mod utils;
+pub mod events;
+
 use log::{error, info, warn};
 use tokio::net::TcpStream;
-use tokio::{runtime::Runtime, net::TcpListener, select};
+use tokio::{net::TcpListener, select};
 use tokio_tungstenite::{accept_async, tungstenite::Message};
 use futures_util::{StreamExt, SinkExt};
-use std::collections::HashSet;
-use std::{sync::Arc, thread};
+use std::{sync::Arc, collections::HashSet};
 use prost::Message as ProstMessage;
-use pyo3::prelude::*;
-use super::variable::{VariableManager};
-use super::namespace::{Command, event::Ev};
+use variable::{VariableManager};
+use crate::rtdata::namespace::{Command, event::Ev};
 use serde_json;
-
 
 async fn handle_client_cmd(vm: Arc<VariableManager>, stream: TcpStream, addr: String) {
     match accept_async(stream).await {
@@ -102,7 +104,7 @@ async fn handle_client_cmd(vm: Arc<VariableManager>, stream: TcpStream, addr: St
     }
 }
 
-async fn run_server(host: &str, port: u16, db_dir: &str) {
+pub async fn run_server(host: &str, port: u16, db_dir: &str) {
     let var_manager = Arc::new(VariableManager::new(db_dir));
 
     // println!("------------------");
@@ -131,14 +133,4 @@ async fn run_server(host: &str, port: u16, db_dir: &str) {
             }
         }
     };
-}
-
-#[pyfunction]
-pub fn serve(host: String, port: u16, db_dir: String) {
-    thread::spawn(move || {
-        let rt = Runtime::new().unwrap();
-        rt.block_on(async move {
-            run_server(&host, port, &db_dir).await;
-        });
-    });
 }

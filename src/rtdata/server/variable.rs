@@ -4,7 +4,7 @@ use log::{debug, warn, info};
 use tokio::sync::broadcast;
 use uuid::Uuid;
 use prost::Message;
-use sled::{Db, Tree, Batch};
+use sled::{Tree, Batch};
 
 // use crate::rtdata::namespace::{AddCommand, ListCommand, SetCommand, SubscribeCommand};
 
@@ -18,7 +18,7 @@ use super::utils::{
     get_hierarchy_key,
     // generate_json_examples
 };
-use super::namespace::{
+use crate::rtdata::namespace::{
     ItemType,
     ItemMeta,
     Value,
@@ -50,7 +50,6 @@ use super::namespace::{
 };
 
 pub struct VariableManager {
-    pub db: Db,
     pub items_tree: Tree,
     pub events_tx: broadcast::Sender<Event>,
 }
@@ -63,7 +62,7 @@ impl VariableManager {
 
         let (tx, _) = broadcast::channel(1024);
         // generate_json_examples();
-        Self { db, items_tree, events_tx: tx }
+        Self { items_tree, events_tx: tx }
     }
 
     fn add_items(
@@ -132,7 +131,7 @@ impl VariableManager {
         Ok((children_folders, children_vars))
     }
 
-    pub fn list_keys_with_prefix(&self, prefix: &str) -> Result<Vec<String>, String> {
+    fn _list_keys_with_prefix(&self, prefix: &str) -> Result<Vec<String>, String> {
         let mut keys = Vec::new();
         for result in self.items_tree.scan_prefix(prefix) {
             let (key, _) = result.map_err(|e| format!("Error reading tree: {e}"))?;

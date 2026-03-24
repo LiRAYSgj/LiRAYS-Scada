@@ -20,7 +20,7 @@
     "test": "npm run test:unit -- --run",
     "test:coverage": "npm run test:unit -- --run --coverage",
     "demo:ws": "tsx demo/api-server/src/server.ts",
-    "generate:proto": "mkdir -p ./src/lib/proto && protoc --plugin=protoc-gen-ts_proto=./node_modules/.bin/protoc-gen-ts_proto --ts_proto_out=./src/lib/proto --ts_proto_opt=esModuleInterop=true -I=../rust/proto ../rust/proto/namespace/*.proto"
+    "generate:proto": "mkdir -p ./src/lib/proto && protoc --plugin=protoc-gen-ts_proto=./node_modules/.bin/protoc-gen-ts_proto --ts_proto_out=./src/lib/proto --ts_proto_opt=esModuleInterop=true -I=../proto ../proto/namespace/*.proto"
   },
   "devDependencies": {
     "@eslint/compat": "^2.0.2",
