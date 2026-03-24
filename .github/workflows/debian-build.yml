@@ -47,6 +47,7 @@ jobs:
 
       - name: Build Debian Package
         run: |
+          mk-build-deps -r
           debuild -b -us -uc
           ls -la ../*.deb
 
