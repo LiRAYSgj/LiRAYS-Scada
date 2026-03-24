@@ -9,7 +9,7 @@ from ..model.list_cmd import ListCommandModel, ListResponseModel
 from ..model.set_cmd import SetCommandModel, SetResponseModel
 
 data_router = APIRouter(tags=["Data"])
-data_router_prefix = "/data"
+data_router_prefix = "data"
 
 WS_SERVER_URL = f"ws://localhost:{BIND_RT_PORT}"
 
