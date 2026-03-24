@@ -35,6 +35,7 @@ backend:
 	cargo build
 	@cp target/debug/lirays-scada deb-files/usr/bin/
 	debuild -b -us -uc
+	rm -rf ../*.build ../*.buildinfo ../*.changes ../*.ddeb
 
 .PHONY: release
 release: frontend
@@ -42,6 +43,7 @@ release: frontend
 	cargo build --release
 	@cp target/release/lirays-scada deb-files/usr/bin/
 	debuild -b -us -uc
+	rm -rf ../*.build ../*.buildinfo ../*.changes ../*.ddeb
 
 .PHONY: clean
 clean:
