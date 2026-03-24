@@ -2,7 +2,6 @@ syntax = "proto3";
 
 package namespace;
 
-import "namespace/enums.proto";
 import "namespace/types.proto";
 
 message FolderChanged {
