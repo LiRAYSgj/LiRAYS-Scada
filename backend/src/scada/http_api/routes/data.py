@@ -1,6 +1,7 @@
 import websockets
 from fastapi import APIRouter, HTTPException, status
 
+from ...config import BIND_RT_PORT
 from ..model.add_cmd import AddCommandModel, AddResponseModel
 from ..model.del_cmd import DelCommandModel, DelResponseModel
 from ..model.get_cmd import GetCommandModel, GetResponseModel
@@ -10,7 +11,7 @@ from ..model.set_cmd import SetCommandModel, SetResponseModel
 data_router = APIRouter(tags=["Data"])
 data_router_prefix = "/data"
 
-WS_SERVER_URL = "ws://localhost:1236"
+WS_SERVER_URL = f"ws://localhost:{BIND_RT_PORT}"
 
 
 async def cmd_executor(command: str, resp_model):

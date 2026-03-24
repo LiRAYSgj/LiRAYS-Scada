@@ -15,41 +15,41 @@
         }
     </style>
 </head>
-    
+
 <body>
 <div class='wrapper'>
     <div class='pad1'>
         <h1><a href="../../index.html">All files</a> / <a href="index.html">features/tree</a> server-adapter.ts</h1>
         <div class='clearfix'>
-            
+
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Statements</span>
                 <span class='fraction'>10/10</span>
             </div>
-        
-            
+
+
             <div class='fl pad1y space-right2'>
                 <span class="strong">75% </span>
                 <span class="quiet">Branches</span>
                 <span class='fraction'>6/8</span>
             </div>
-        
-            
+
+
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Functions</span>
                 <span class='fraction'>5/5</span>
             </div>
-        
-            
+
+
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Lines</span>
                 <span class='fraction'>8/8</span>
             </div>
-        
-            
+
+
         </div>
         <p class="quiet">
             Press <em>n</em> or <em>j</em> to go to the next uncovered block, <em>b</em>, <em>p</em> or <em>k</em> for the previous block.
@@ -176,7 +176,7 @@ import { tagStreamClient } from "$lib/core/ws/tag-stream-client";
 import type { ListResponse } from "$lib/proto/namespace/commands";
 import { varDataTypeToJSON } from "$lib/proto/namespace/enums";
 &nbsp;
-const DEFAULT_WS_ENDPOINT = "ws://127.0.0.1:1236";
+const DEFAULT_WS_ENDPOINT = "ws://127.0.0.1:8245";
 &nbsp;
 function resolveWsEndpoint(): string {
   const configured = import.meta.env.PUBLIC_DEMO_WS_ENDPOINT as
@@ -244,4 +244,3 @@ export async function fetchTreeChildren(
         <script src="../../block-navigation.js"></script>
     </body>
 </html>
-    

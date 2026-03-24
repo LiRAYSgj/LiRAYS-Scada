@@ -4,13 +4,13 @@ from typing import AsyncGenerator
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel, select
 
-from ...data_dir import static_file
+from ...config import STATIC_DB
 from ..model.mock import MockResource
 
 
 class SQLiteEng:
     def __init__(self):
-        self.db_url = f"sqlite+aiosqlite:///{static_file}"
+        self.db_url = f"sqlite+aiosqlite:///{STATIC_DB}"
         self.engine = create_async_engine(
             self.db_url, connect_args={"check_same_thread": False}, echo=False
         )

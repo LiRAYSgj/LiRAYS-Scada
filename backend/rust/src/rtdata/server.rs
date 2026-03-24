@@ -117,8 +117,6 @@ async fn run_server(host: &str, port: u16, db_dir: &str) {
 
     let listener_cmd = TcpListener::bind((host, port)).await.unwrap();
 
-    info!("LiRAYS server for commands listening on {}:{}", host, port);
-
     loop {
         match listener_cmd.accept().await {
             Ok((stream, addr)) => {
@@ -136,11 +134,11 @@ async fn run_server(host: &str, port: u16, db_dir: &str) {
 }
 
 #[pyfunction]
-pub fn serve(host: String, port: u16, db_file: String) {
+pub fn serve(host: String, port: u16, db_dir: String) {
     thread::spawn(move || {
         let rt = Runtime::new().unwrap();
         rt.block_on(async move {
-            run_server(&host, port, &db_file).await;
+            run_server(&host, port, &db_dir).await;
         });
     });
 }

@@ -6,7 +6,6 @@ build-backend = "maturin"
 name = "scada"
 version = "0.0.1"
 description = "Lirays Scada System"
-readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "pydantic",
@@ -21,7 +20,7 @@ dependencies = [
 ]
 
 [project.scripts]
-lmdb-cli = "scada.lmdb_cli:main"
+lirays-backend = "scada.main:main"
 
 [tool.maturin]
 python-source = "src"
