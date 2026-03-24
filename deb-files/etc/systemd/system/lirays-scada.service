@@ -1,0 +1,35 @@
+[Unit]
+Description=LiRAYS Scada Server
+After=network.target
+
+[Service]
+Type=simple
+User=lirays
+Group=lirays
+ExecStart=/usr/bin/lirays-scada
+Restart=always
+RestartSec=10
+
+# Environment variables
+Environment=BIND_HOST=0.0.0.0
+Environment=BIND_SERVER_PORT=8245
+Environment=BIND_HTTP_HOST=0.0.0.0
+Environment=BIND_HTTP_PORT=8246
+Environment=DATA_DIR=/var/lib/lirays-scada/data_dir
+
+# Working directory
+WorkingDirectory=/var/lib/lirays-scada
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/lirays-scada
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=lirays-scada
+
+[Install]
+WantedBy=multi-user.target

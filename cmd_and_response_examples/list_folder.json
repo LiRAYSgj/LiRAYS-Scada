@@ -1,8 +1,0 @@
-{
-  "command_type": {
-    "List": {
-      "cmd_id": "list-12345",
-      "folder_id": "/Folder/Path/"
-    }
-  }
-}

@@ -208,6 +208,13 @@ __marimo__/
 # Service
 demo_data
 *.dSYM
+deb-files/usr/bin/lirays-scada
+debian/.debhelper
+debian/lirays-scada
+debian/files
+*.deb
+*.buildinfo
+*.changes
 
 # Frontend
 

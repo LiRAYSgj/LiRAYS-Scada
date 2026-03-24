@@ -1,5 +1,25 @@
 # LiRAYS-Scada
 
+## Running the Server Directly
+
+You can run the Rust WebSocket server directly using the following command:
+
+```sh
+cargo run --bin server
+```
+
+The server accepts the following environment variables for configuration:
+
+- `HOST` - Host address to bind to (default: "127.0.0.1")
+- `PORT` - Port number to listen on (default: 9001)
+- `DB_DIR` - Directory path for the database (default: "./db")
+
+Example:
+
+```sh
+HOST=0.0.0.0 PORT=1236 DB_DIR=/var/lib/lirays cargo run --bin server
+```
+
 ## General Schema
 
 ![General Schema](general_schema.png)
@@ -195,10 +215,7 @@ Subscribe to Variable Value changes
   "command_type": {
     "Sub": {
       "cmd_id": "some-unique-id",
-      "events": [
-        1,
-        2
-      ],
+      "events": [1, 2],
       "var_ids": [
         "/Folder/Path/int_var",
         "/Folder/Path/float_var",

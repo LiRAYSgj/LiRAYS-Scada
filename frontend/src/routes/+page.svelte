@@ -62,7 +62,7 @@
 
   type CanvasMode = "edit" | "play";
 
-  const DEMO_WS_ENDPOINT = env.PUBLIC_DEMO_WS_ENDPOINT || "ws://127.0.0.1:1236";
+  const DEMO_WS_ENDPOINT = env.PUBLIC_DEMO_WS_ENDPOINT || "ws://127.0.0.1:8245";
   const PIPE_EDGE_TYPE = "step";
   const PIPE_EDGE_STYLE = "stroke:#5b708a;stroke-width:8;";
   const theme = themeStore;
@@ -736,9 +736,7 @@
     }
   });
 
-  const themeVars = $derived(
-    $theme !== null ? createThemeVars($theme) : "",
-  );
+  const themeVars = $derived($theme !== null ? createThemeVars($theme) : "");
 </script>
 
 <main
@@ -753,7 +751,7 @@
     onOpenAddDialog={openTreeAddDialog}
     onOpenNamespaceBuilder={openNamespaceBuilderFromToolbar}
     isAddDisabled={false}
-    multiSelectMode={multiSelectMode}
+    {multiSelectMode}
     onToggleMultiSelect={() => {
       multiSelectMode = !multiSelectMode;
       if (!multiSelectMode) treeSelection = new Set();
@@ -774,7 +772,7 @@
         websocketStatus={$wsStatus}
         realtimeEnabled={canvasMode === "play"}
         liveTagValues={$tagValues}
-        multiSelectMode={multiSelectMode}
+        {multiSelectMode}
         selection={treeSelection}
         propagateDown={true}
         propagateUp={true}
@@ -911,8 +909,8 @@
       <div class="space-y-2">
         <h2 class="text-sm font-semibold">Remove selection</h2>
         <p class="text-xs text-(--text-muted)">
-          Remove selected item(s)? All descendants will also be removed. This action cannot be
-          undone.
+          Remove selected item(s)? All descendants will also be removed. This
+          action cannot be undone.
         </p>
         {#if removeMultipleError}
           <p class="text-xs text-red-500">{removeMultipleError}</p>

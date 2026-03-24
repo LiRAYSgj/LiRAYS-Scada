@@ -20,12 +20,13 @@
     "test": "npm run test:unit -- --run",
     "test:coverage": "npm run test:unit -- --run --coverage",
     "demo:ws": "tsx demo/api-server/src/server.ts",
-    "generate:proto": "mkdir -p ./src/lib/proto && protoc --plugin=protoc-gen-ts_proto=./node_modules/.bin/protoc-gen-ts_proto --ts_proto_out=./src/lib/proto --ts_proto_opt=esModuleInterop=true -I=../rust/proto ../rust/proto/namespace/*.proto"
+    "generate:proto": "mkdir -p ./src/lib/proto && protoc --plugin=protoc-gen-ts_proto=./node_modules/.bin/protoc-gen-ts_proto --ts_proto_out=./src/lib/proto --ts_proto_opt=esModuleInterop=true -I=../proto ../proto/namespace/*.proto"
   },
   "devDependencies": {
     "@eslint/compat": "^2.0.2",
     "@eslint/js": "^9.39.2",
     "@sveltejs/adapter-node": "^5.5.4",
+    "@sveltejs/adapter-static": "^3.0.10",
     "@sveltejs/kit": "^2.50.2",
     "@sveltejs/vite-plugin-svelte": "^6.2.4",
     "@tailwindcss/typography": "^0.5.19",
