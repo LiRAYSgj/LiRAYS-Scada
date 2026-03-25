@@ -244,3 +244,29 @@ Unsubscribe from Variable Value changes
   }
 }
 ```
+
+## New Rust http api examples
+
+# Create a resource
+
+curl -X POST http://localhost:8246/api/resources \
+ -H "Content-Type: application/json" \
+ -d '{"name":"Example Resource","description":"This is an example"}'
+
+# Get all resources
+
+curl http://localhost:8246/api/resources
+
+# Get a specific resource
+
+curl http://localhost:8246/api/resources/1
+
+# Update a resource
+
+curl -X PUT http://localhost:8246/api/resources/1 \
+ -H "Content-Type: application/json" \
+ -d '{"name":"Updated Resource","description":"Updated description"}'
+
+# Delete a resource
+
+curl -X DELETE http://localhost:8246/api/resources/1
