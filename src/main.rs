@@ -1,7 +1,7 @@
 mod rtdata;
 
 use log::info;
-use std::env;
+use std::{{env, path::Path}, fs::create_dir_all};
 use tokio::task;
 use rtdata::{server::run_server, http::run_http_server};
 
@@ -19,16 +19,21 @@ async fn main() {
     let port = env::var("BIND_SERVER_PORT").unwrap_or("8245".to_string()).parse::<u16>().unwrap();
     let http_host = env::var("BIND_HTTP_HOST").unwrap_or("0.0.0.0".to_string());
     let http_port = env::var("BIND_HTTP_PORT").unwrap_or("8246".to_string()).parse::<u16>().unwrap();
-    let db_dir = env::var("DATA_DIR").unwrap_or(default_data_dir);
+    let d_dir_str = env::var("DATA_DIR").unwrap_or(default_data_dir);
+    let data_dir = Path::new(&d_dir_str);
 
-    info!("Starting server on {host}:{port} with db_dir: {db_dir}");
+    let rt_db_dir = data_dir.join("rt_data");
+    let static_db_file = data_dir.join("static.db");
+    create_dir_all(&rt_db_dir).unwrap();
+
+    info!("Starting server on {host}:{port}");
     let server_handle = task::spawn(async move {
-        run_server(&host, port, &db_dir).await;
+        run_server(&host, port, &rt_db_dir.to_str().unwrap()).await;
     });
 
     info!("Starting HTTP server on {http_host}:{http_port}");
     let http_handle = task::spawn(async move {
-        run_http_server(&http_host, http_port).await;
+        run_http_server(&http_host, http_port, &static_db_file.to_str().unwrap()).await;
     });
 
     // Wait for both servers to finish
