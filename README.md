@@ -20,6 +20,22 @@ Example:
 HOST=0.0.0.0 PORT=1236 DB_DIR=/var/lib/lirays cargo run --bin server
 ```
 
+## Docker build
+
+```
+docker build --target production -t lirays:latest .
+docker run --rm -p 8245:8245 -p 8246:8246 -v my_data_dir:/data --name lirays-scada lirays:latest
+```
+
+## Debian build
+
+On a debian environment
+
+```
+make clean
+make release
+```
+
 ## General Schema
 
 ![General Schema](general_schema.png)
