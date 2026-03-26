@@ -1,5 +1,4 @@
-use sea_orm::{ActiveModelTrait, Database, DatabaseConnection, EntityTrait, QueryOrder, Set};
-use sea_orm_migration::MigratorTrait;
+use sea_orm::{ActiveModelTrait, DatabaseConnection, EntityTrait, QueryOrder, Set};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -33,14 +32,8 @@ pub struct StaticResourceManager {
 }
 
 impl StaticResourceManager {
-    pub async fn new(db_file: &str) -> Result<Self, sea_orm::DbErr> {
-        let url = format!("sqlite://{}", db_file);
-        let db = Database::connect(url).await?;
-        Ok(Self { db })
-    }
-
-    pub async fn migrate(&self) -> Result<(), sea_orm::DbErr> {
-        crate::migration::Migrator::up(&self.db, None).await
+    pub fn new(db: DatabaseConnection) -> Self {
+        Self { db }
     }
 
     pub async fn create_resource(

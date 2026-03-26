@@ -66,6 +66,13 @@
   const PIPE_EDGE_TYPE = "step";
   const PIPE_EDGE_STYLE = "stroke:#5b708a;stroke-width:8;";
   const theme = themeStore;
+  const username = "Admin";
+
+  const logout = () => {
+    if (typeof window !== "undefined") {
+      window.location.href = "/auth/logout";
+    }
+  };
 
   // Apply theme to <html> only after it has been loaded from storage (or default); no theme until then.
   $effect(() => {
@@ -751,6 +758,8 @@
     onOpenAddDialog={openTreeAddDialog}
     onOpenNamespaceBuilder={openNamespaceBuilderFromToolbar}
     isAddDisabled={false}
+    {username}
+    onLogout={logout}
     {multiSelectMode}
     onToggleMultiSelect={() => {
       multiSelectMode = !multiSelectMode;

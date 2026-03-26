@@ -30,6 +30,11 @@ Rust WebSocket/HTTP server with an embedded Svelte frontend for browsing and con
   - `WS_TLS_ENABLE` – when true (`1/true/yes/on`), both WS and HTTP serve over TLS.
   - `WS_TLS_CERT_PATH` / `WS_TLS_KEY_PATH` – PEM paths. If omitted while TLS is enabled, a self‑signed pair is generated under `DATA_DIR/certificates/`.
   - Browser will prompt to trust the self‑signed cert.
+- Auth (optional):
+  - `AUTH_ENABLED` – when true, all HTTP (SPA, Swagger, API) is gated by a session cookie.
+  - `AUTH_SECRET` – optional HMAC secret for signing the session cookie; if missing a random one is generated at startup (sessions invalidate on restart).
+  - First visit with auth on: redirected to `/auth/setup` to set the `admin` password (user is created then). Subsequent visits: `/auth/login`.
+  - Session: HttpOnly cookie `lirays_session`, 24h TTL, `Secure` when TLS is enabled.
 
 ## Docker
 ```sh

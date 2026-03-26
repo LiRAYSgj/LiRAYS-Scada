@@ -8,10 +8,12 @@
 	interface Props {
 		theme: ThemeMode;
 		canvasMode: CanvasMode;
+		username: string;
 		onToggleCanvasMode: () => void;
 		onToggleTheme: () => void;
 		onOpenAddDialog: () => void;
 		onOpenNamespaceBuilder: () => void;
+		onLogout: () => void;
 		isAddDisabled: boolean;
 		/** When true, Add and Namespace Builder are hidden and Remove selection is shown. */
 		multiSelectMode: boolean;
@@ -29,6 +31,8 @@
 		onToggleTheme,
 		onOpenAddDialog,
 		onOpenNamespaceBuilder,
+		onLogout,
+		username,
 		isAddDisabled,
 		multiSelectMode,
 		onToggleMultiSelect,
@@ -92,7 +96,7 @@
 			{/if}
 		</div>
 	</div>
-	<div class="flex items-center gap-2">
+	<div class="flex items-center gap-3">
 		<Button
 			variant="outline-muted"
 			icon={canvasMode === "edit" ? Play : Square}
@@ -108,5 +112,19 @@
 			title={theme === "dark" ? "Light mode" : "Dark mode"}
 			onclick={onToggleTheme}
 		/>
+		<div class="flex items-center gap-2 rounded-xl border border-(--surface-border) bg-(--surface-2) px-3 py-2 shadow-sm">
+			<div
+				class="flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold text-white"
+				style="background: linear-gradient(135deg, #38bdf8, #6366f1);"
+				title="Signed in user"
+			>
+				{username.slice(0, 1).toUpperCase()}
+			</div>
+			<div class="leading-tight">
+				<div class="text-sm font-semibold text-(--text-primary)">{username}</div>
+				<div class="text-xs text-(--text-muted)">Signed in</div>
+			</div>
+			<Button variant="outline-muted" label="Logout" onclick={onLogout} />
+		</div>
 	</div>
 </div>
