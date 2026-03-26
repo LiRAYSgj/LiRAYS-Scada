@@ -1,10 +1,21 @@
+mod http;
 mod rtdata;
+mod tls;
+mod migration;
+
+use std::{
+    env,
+    fs,
+    path::{Path, PathBuf},
+};
 
 use log::info;
-use std::{env, fs, path::{Path, PathBuf}};
-use tokio::task;
-use rtdata::{server::{run_server, ServerTlsConfig}, http::run_http_server};
 use rcgen::{generate_simple_self_signed, CertifiedKey};
+use tokio::task;
+
+use http::run_http_server;
+use rtdata::run_server;
+use tls::ServerTlsConfig;
 
 
 fn generate_self_signed_cert(out_dir: &Path) -> (PathBuf, PathBuf) {

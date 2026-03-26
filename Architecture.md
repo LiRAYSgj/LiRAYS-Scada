@@ -9,7 +9,7 @@ Rust runtime
     ├─ ws server   (tokio-tungstenite)
     ├─ http server (axum)
     ├─ sled        (runtime RT data)
-    └─ SQLite via SQLx (static resources)
+    └─ SQLite via SeaORM (static resources)
 ```
 
 ## Processes & Ports
@@ -20,12 +20,12 @@ Rust runtime
 
 ## Data & Storage
 - **sled** under `${DATA_DIR}/rt_data/` for variable tree and live values.
-- **SQLite** file `${DATA_DIR}/static.db` for static resources served by the HTTP API.
+- **SQLite** file `${DATA_DIR}/static.db` for static resources served by the HTTP API (managed with SeaORM).
 - Frontend assets compiled into the binary via `include_dir` (rebuilt when `frontend/build` changes).
 
 ## Backend Modules
 - `src/rtdata/server`: WebSocket command handling, event broadcast, variable management, TLS acceptor builder.
-- `src/rtdata/http`: Axum router for REST endpoints and static SPA serving; optional HTTPS via shared TLS config.
+- `src/rtdata/http`: Axum router for REST endpoints, OpenAPI/Swagger docs, and static SPA serving; optional HTTPS via shared TLS config.
 - `src/rtdata/namespace`: Protobuf-derived command/event types (see `proto/`).
 
 ## Frontend Notes
@@ -47,4 +47,4 @@ Rust runtime
 1) Client opens WS connection (`ws`/`wss`).  
 2) Sends protobuf/JSON commands (LIST/GET/SET/ADD/DEL/…); backend mutates sled.  
 3) Backend publishes events over the same socket to subscribed clients.  
-4) HTTP API provides CRUD over static resources and serves the SPA.
+4) HTTP API provides CRUD over static resources (SeaORM) and serves the SPA + OpenAPI doc routes.

@@ -4,7 +4,7 @@ Rust WebSocket/HTTP server with an embedded Svelte frontend for browsing and con
 
 ## Components
 - Rust backend (WebSocket on 8245, HTTP/HTTPS on 8246).
-- Embedded SQLite (SQLx) for static resources and sled for runtime data.
+- Embedded SQLite (via SeaORM) for static resources and sled for runtime data.
 - Svelte frontend bundled into the binary; optional standalone frontend dev workflow.
 
 ## Quick Start (local)
@@ -20,6 +20,7 @@ Rust WebSocket/HTTP server with an embedded Svelte frontend for browsing and con
    cargo run --bin lirays-scada
    ```
    Visit `http://localhost:8246` (or `https://localhost:8246` when TLS is on).
+   API docs: `http(s)://localhost:8246/swagger` (serves Swagger UI backed by generated OpenAPI).
 
 ## Configuration (env vars)
 - `BIND_HOST` / `BIND_SERVER_PORT` – WebSocket bind (default `0.0.0.0:8245`).
