@@ -4,8 +4,12 @@ import type { ListResponse } from "$lib/proto/namespace/commands";
 import { varDataTypeToJSON } from "$lib/proto/namespace/enums";
 
 function resolveWsEndpoint(): string {
+  // Browser has no access to server env; infer TLS need from page scheme.
+  // If the UI is served over https, use wss to avoid mixed-content errors.
   try {
-    return `ws://${location.hostname}:8245`;
+    const isHttps = location.protocol === "https:";
+    const scheme = isHttps ? "wss" : "ws";
+    return `${scheme}://${location.hostname}:8245`;
   } catch {
     return "ws://localhost:8245";
   }

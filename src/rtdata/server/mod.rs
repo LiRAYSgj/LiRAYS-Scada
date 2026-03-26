@@ -3,18 +3,35 @@ pub mod parser;
 pub mod utils;
 pub mod events;
 
+use futures_util::{SinkExt, StreamExt};
 use log::{error, info, warn};
-use tokio::net::TcpStream;
+use prost::Message as ProstMessage;
+use serde_json;
+use std::{collections::HashSet, path::PathBuf, sync::Arc};
+use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::{net::TcpListener, select};
 use tokio_tungstenite::{accept_async, tungstenite::Message};
-use futures_util::{StreamExt, SinkExt};
-use std::{sync::Arc, collections::HashSet};
-use prost::Message as ProstMessage;
-use variable::{VariableManager};
-use crate::rtdata::namespace::{Command, event::Ev};
-use serde_json;
+use tokio_rustls::{TlsAcceptor, rustls::{pki_types::{CertificateDer, PrivateKeyDer}, ServerConfig}};
+use rustls_pemfile::{certs, private_key};
+use variable::VariableManager;
+use crate::rtdata::namespace::{event::Ev, Command};
 
-async fn handle_client_cmd(vm: Arc<VariableManager>, stream: TcpStream, addr: String) {
+#[derive(Clone)]
+pub struct ServerTlsConfig {
+    pub cert_path: PathBuf,
+    pub key_path: PathBuf,
+}
+
+impl ServerTlsConfig {
+    pub fn new(cert_path: PathBuf, key_path: PathBuf) -> Self {
+        Self { cert_path, key_path }
+    }
+}
+
+async fn handle_client_cmd<S>(vm: Arc<VariableManager>, stream: S, addr: String)
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+{
     match accept_async(stream).await {
         Ok(mut ws_stream) => {
             info!("Accepting client from {addr}");
@@ -104,7 +121,24 @@ async fn handle_client_cmd(vm: Arc<VariableManager>, stream: TcpStream, addr: St
     }
 }
 
-pub async fn run_server(host: &str, port: u16, db_dir: &str) {
+pub fn build_tls_acceptor(config: &ServerTlsConfig) -> Result<TlsAcceptor, Box<dyn std::error::Error + Send + Sync>> {
+    let mut cert_reader = std::io::BufReader::new(std::fs::File::open(&config.cert_path)?);
+    let mut key_reader = std::io::BufReader::new(std::fs::File::open(&config.key_path)?);
+
+    let certs: Vec<CertificateDer<'static>> = certs(&mut cert_reader)
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let key: PrivateKeyDer<'static> = private_key(&mut key_reader)?
+        .ok_or("no private key found in key file")?;
+
+    let tls_config =ServerConfig::builder()
+        .with_no_client_auth()
+        .with_single_cert(certs, key)?;
+
+    Ok(TlsAcceptor::from(Arc::new(tls_config)))
+}
+
+pub async fn run_server(host: &str, port: u16, db_dir: &str, tls_config: Option<ServerTlsConfig>) {
     let var_manager = Arc::new(VariableManager::new(db_dir));
 
     // println!("------------------");
@@ -119,13 +153,39 @@ pub async fn run_server(host: &str, port: u16, db_dir: &str) {
 
     let listener_cmd = TcpListener::bind((host, port)).await.unwrap();
 
+    let tls_acceptor = match tls_config {
+        Some(cfg) => {
+            match build_tls_acceptor(&cfg) {
+                Ok(acceptor) => {
+                    info!("TLS enabled for websocket server using cert {:?} and key {:?}", cfg.cert_path, cfg.key_path);
+                    Some(acceptor)
+                }
+                Err(e) => {
+                    panic!("Failed to set up TLS. Error: {e}");
+                }
+            }
+        }
+        None => None,
+    };
+
     loop {
         match listener_cmd.accept().await {
             Ok((stream, addr)) => {
                 let vm = Arc::clone(&var_manager);
-                tokio::spawn(async move {
-                    handle_client_cmd(vm, stream, addr.to_string()).await
-                });
+                if let Some(acceptor) = tls_acceptor.clone() {
+                    tokio::spawn(async move {
+                        match acceptor.accept(stream).await {
+                            Ok(tls_stream) => {
+                                handle_client_cmd(vm, tls_stream, addr.to_string()).await
+                            }
+                            Err(e) => error!("TLS handshake failed for {addr}: {e}"),
+                        }
+                    });
+                } else {
+                    tokio::spawn(async move {
+                        handle_client_cmd(vm, stream, addr.to_string()).await
+                    });
+                }
             }
             Err(e) => {
                 let msg = format!("Error accepting client connection: {e}");

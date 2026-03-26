@@ -1,220 +1,50 @@
-# LiRAYS-Scada Architecture
+# LiRAYS‑SCADA Architecture
 
-## Overview
-
-LiRAYS-Scada is a SCADA (Supervisory Control and Data Acquisition) system designed for industrial automation and monitoring. The system consists of a Rust-based backend server and a SvelteKit-based frontend, communicating through a WebSocket protocol with protobuf-based messages.
-
-## System Architecture
-
-### High-Level Components
-
+## Runtime Topology
 ```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Frontend      │    │   Backend       │    │   Data Storage  │
-│   (SvelteKit)   │    │   (Rust)        │    │   (Sled DB)     │
-│                 │    │                 │    │                 │
-│  ┌───────────┐  │    │  ┌───────────┐  │    │  ┌───────────┐  │
-│  │   Web     │  │    │  │   Web     │  │    │  │   Data    │  │
-│  │  Browser  │  │    │  │  Server   │  │    │  │  Storage  │  │
-│  └───────────┘  │    │  └───────────┘  │    │  └───────────┘  │
-│                 │    │                 │    │                 │
-│  ┌───────────┐  │    │  ┌───────────┐  │    │  ┌───────────┐  │
-│  │   UI      │  │    │  │   Proto   │  │    │  │   Sled    │  │
-│  │ Components│  │    │  │   Proto   │  │    │  │   Database│  │
-│  └───────────┘  │    │  └───────────┘  │    │  └───────────┘  │
-│                 │    │                 │    │                 │
-│  ┌───────────┐  │    │  ┌───────────┐  │    │  ┌───────────┐  │
-│  │  WebSocket│  │    │  │  WebSocket│  │    │  │  Data     │  │
-│  │   Client  │  │    │  │   Server  │  │    │  │  Access   │  │
-│  └───────────┘  │    │  └───────────┘  │    │  └───────────┘  │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-        │                       │                       │
-        └───────────────────────┼───────────────────────┘
-                                │
-                    ┌─────────────────┐
-                    │   Protocol      │
-                    │   (protobuf)    │
-                    └─────────────────┘
+Browser (Svelte SPA)
+    ↕  WebSocket (8245) – protobuf or JSON commands/events
+    ↕  HTTPS/HTTP  (8246) – static SPA + REST resources
+Rust runtime
+    ├─ ws server   (tokio-tungstenite)
+    ├─ http server (axum)
+    ├─ sled        (runtime RT data)
+    └─ SQLite via SQLx (static resources)
 ```
 
-## Backend Architecture (Rust)
+## Processes & Ports
+- Single Rust binary (`lirays-scada`).
+- WebSocket: `BIND_HOST`/`BIND_SERVER_PORT` (default `0.0.0.0:8245`).
+- HTTP/S: `BIND_HTTP_HOST`/`BIND_HTTP_PORT` (default `0.0.0.0:8246`).
+- TLS: `WS_TLS_ENABLE` drives both WebSocket and HTTP listeners (shared cert/key or auto self-signed).
 
-### Core Components
+## Data & Storage
+- **sled** under `${DATA_DIR}/rt_data/` for variable tree and live values.
+- **SQLite** file `${DATA_DIR}/static.db` for static resources served by the HTTP API.
+- Frontend assets compiled into the binary via `include_dir` (rebuilt when `frontend/build` changes).
 
-#### Server Module (`src/rtdata/server`)
-- **WebSocket Server**: Handles real-time communication with frontend clients
-- **Command Processing**: Processes incoming commands from frontend
-- **Event Broadcasting**: Distributes events to subscribed clients
-- **Variable Management**: Manages variable states and values
-- **Protocol Handling**: Implements protobuf-based communication protocol
+## Backend Modules
+- `src/rtdata/server`: WebSocket command handling, event broadcast, variable management, TLS acceptor builder.
+- `src/rtdata/http`: Axum router for REST endpoints and static SPA serving; optional HTTPS via shared TLS config.
+- `src/rtdata/namespace`: Protobuf-derived command/event types (see `proto/`).
 
-#### HTTP Module (`src/rtdata/http`)
-- **Static File Serving**: Serves the compiled frontend application
-- **API Gateway**: Provides HTTP interface to the system
-- **Frontend Delivery**: Serves the SPA (Single Page Application)
+## Frontend Notes
+- Svelte app connects to `ws(s)://<host>:8245` picked from the page scheme (uses `wss` when page is `https`).
+- Built assets live in `frontend/build` and are embedded at compile time.
 
-#### Data Storage
-- **Sled Database**: Embedded key-value store for persisting data
-- **Variable Storage**: Stores real-time variable values and metadata
-- **Namespace Management**: Stores tree structure and configuration data
+## Security/TLS Flow
+- When `WS_TLS_ENABLE` is true:
+  - Uses `WS_TLS_CERT_PATH`/`WS_TLS_KEY_PATH` if provided, otherwise generates a self-signed pair under `${DATA_DIR}/certificates/`.
+  - HTTP server serves HTTPS on `BIND_HTTP_PORT`; websocket upgrades to `wss` on `BIND_SERVER_PORT`.
+- When false: plain HTTP + WS.
 
-### Communication Protocol
+## Build & Packaging
+- Frontend: `npm install && npm run build` (Node 24 recommended).
+- Backend: `cargo build` (proto generated via `build.rs`).
+- Dockerfile ships the release binary and static assets; `make release` wraps Debian packaging targets.
 
-The backend uses a WebSocket-based communication protocol with protobuf messages:
-- **Command Messages**: Binary protobuf messages for efficient communication
-- **Event Messages**: Real-time updates for variable changes and tree modifications
-- **JSON Fallback**: Support for JSON commands for debugging and development
-
-### Command Types
-- `LIST`: Fetch tree children
-- `GET`: Poll live values  
-- `SET`: Write values
-- `ADD`: Create nodes
-- `ADD_BULK`: Bulk namespace template creation
-- `DEL`: Delete nodes
-
-## Frontend Architecture (SvelteKit)
-
-### Framework Stack
-- **Framework**: SvelteKit with Svelte 5 runes and TypeScript
-- **Rendering**: SSR-capable app with client hydration
-- **UI Library**: Tailwind CSS + route-level CSS variables
-- **Graph Engine**: @xyflow/svelte for visualization
-
-### Core Modules
-
-#### Tree Subsystem (`src/lib/features/tree`)
-- **Data Management**: Server adapter for fetching tree data
-- **State Management**: Tree store with normalized cache and expand/collapse state
-- **Selection Logic**: Multi-selection with propagation support
-- **UI Components**: Variable tree, context menu, tree rows, chevrons, icons
-
-#### Graph Subsystem (`src/lib/features/graph`)
-- **Node Model**: Dynamic asset resolution from registry
-- **Asset Types**: Tank, Pump, Valve, Fan, Label, Slider, On/Off Input, Light Indicator, Typed Input
-- **UI Components**: Plant asset nodes, base asset shell, typed input asset with HTML input strategy
-
-#### WebSocket Client (`src/lib/core/ws`)
-- **Shared Client**: Single transport/client instance
-- **Reconnect Logic**: Manages connection state and reconnection with backoff
-- **Request Helpers**: Methods for all command types
-- **Polling**: 2s polling for tracked IDs with GET command
-
-### Data Flow
-1. **Initialization**: Frontend connects to backend via WebSocket
-2. **Data Fetching**: Tree data requested via LIST commands
-3. **Real-time Updates**: Events streamed for variable changes
-4. **User Interaction**: Commands sent for modifications (ADD, DEL, SET)
-5. **State Management**: Global stores manage UI and application state
-
-## Build System
-
-### Makefile Targets
-- `build`: Builds both frontend and backend components
-- `frontend`: Installs npm dependencies, generates protobuf, builds frontend
-- `backend`: Builds Rust backend and creates Debian package
-- `dev`: Starts development servers for both frontend and backend
-- `clean`: Cleans build artifacts
-- `test`: Runs Rust tests
-
-### Build Process
-1. **Frontend**: Uses Node.js with npm, TypeScript, and Svelte
-2. **Backend**: Uses Rust with Cargo, with protobuf code generation
-3. **Protobuf Integration**: Generated code for command and event handling
-4. **Packaging**: Debian package creation using debuild
-
-## Data Flow Architecture
-
-### Real-time Data Path
-```
-[Frontend] ←→ [WebSocket] ←→ [Rust Server] ←→ [Sled Database]
-     ↑                             ↓
-     └── [Tree Requests] ──┘     [Variable Updates]
-```
-
-### User Interaction Flow
-1. User interacts with UI components (tree, graph, forms)
-2. Frontend sends command via WebSocket to backend
-3. Backend processes command and updates state
-4. Backend broadcasts events to subscribed clients
-5. Frontend receives events and updates UI
-
-## Technology Stack
-
-### Backend
-- **Language**: Rust
-- **Web Framework**: Tokio with async/await
-- **WebSocket**: tokio-tungstenite
-- **Database**: Sled (embedded key-value store)
-- **Protobuf**: prost for serialization
-- **HTTP**: Axum framework for static file serving
-
-### Frontend
-- **Framework**: SvelteKit with Svelte 5 runes
-- **Language**: TypeScript
-- **Build System**: npm with Vite
-- **UI Components**: Tailwind CSS
-- **Graph Visualization**: @xyflow/svelte
-- **State Management**: Svelte stores and global state management
-
-### Protobuf
-- **Messages**: Generated from .proto files in `proto/` directory
-- **Commands**: Binary serialization for efficient network communication
-- **Events**: Real-time updates for system state changes
-
-## Deployment Architecture
-
-### Development Environment
-- `make dev`: Starts both frontend dev server and Rust backend
-- Frontend hot-reloading enabled
-- Backend with debug logging
-
-### Production Environment
-- `make release`: Builds optimized release version
-- Single binary with embedded frontend
-- Debian package generation for deployment
-
-### Containerization
-- Docker-based deployment strategy
-- Self-contained binary with static frontend
-- Environment variable configuration for binding addresses and ports
-
-## Security Considerations
-
-### Communication
-- WebSocket protocol for real-time communication
-- Binary protobuf messages for efficiency and security
-- JSON fallback for debugging only
-
-### Data Protection
-- Embedded database with local storage
-- No external network dependencies for core functionality
-- State management through WebSocket session
-
-## Performance Characteristics
-
-### Real-time Updates
-- 2-second polling interval for variable values
-- Event-driven architecture for efficient updates
-- WebSocket connection reuse for performance
-
-### Data Handling
-- Protobuf serialization for efficient binary communication
-- In-memory caching for frequently accessed data
-- Sled database for fast key-value operations
-
-### Scalability
-- Single-process architecture optimized for embedded use
-- WebSocket connection handling with async/await
-- Modular design for potential horizontal scaling
-
-## Key Features
-
-1. **Tree Browser**: Hierarchical navigation of system elements
-2. **Real-time Monitoring**: Live data visualization and updates
-3. **Graph Visualization**: Interactive system representation
-4. **Variable Management**: Creation, modification, and deletion of system variables
-5. **Namespace Templates**: Bulk creation of system elements
-6. **Multi-user Support**: Shared WebSocket connections
-7. **Responsive UI**: Adaptable interface for various devices
-8. **Persistent Storage**: Data persistence through Sled database
+## Data Flow (happy path)
+1) Client opens WS connection (`ws`/`wss`).  
+2) Sends protobuf/JSON commands (LIST/GET/SET/ADD/DEL/…); backend mutates sled.  
+3) Backend publishes events over the same socket to subscribed clients.  
+4) HTTP API provides CRUD over static resources and serves the SPA.

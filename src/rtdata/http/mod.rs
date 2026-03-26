@@ -9,7 +9,12 @@ use axum::{
 };
 use include_dir::{include_dir, Dir};
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use std::{sync::Arc, io};
+use tokio::net::{TcpListener, TcpStream};
+use tokio_rustls::{TlsAcceptor, server::TlsStream};
+use axum::serve::Listener;
+use log::{error};
+use crate::rtdata::server::{ServerTlsConfig, build_tls_acceptor};
 
 static FRONTEND: Dir = include_dir!("$CARGO_MANIFEST_DIR/frontend/build");
 
@@ -38,6 +43,45 @@ impl<T> ApiResponse<T> {
             data: None,
             message: Some(message),
         }
+    }
+}
+
+/// Incoming adapter that performs TLS handshakes on accepted TCP connections.
+struct TlsIncoming {
+    listener: TcpListener,
+    acceptor: TlsAcceptor,
+}
+
+impl TlsIncoming {
+    fn new(listener: TcpListener, acceptor: TlsAcceptor) -> Self {
+        Self { listener, acceptor }
+    }
+}
+
+impl Listener for TlsIncoming {
+    type Io = TlsStream<TcpStream>;
+    type Addr = std::net::SocketAddr;
+
+    async fn accept(&mut self) -> (Self::Io, Self::Addr) {
+        loop {
+            match self.listener.accept().await {
+                Ok((stream, addr)) => match self.acceptor.accept(stream).await {
+                    Ok(tls_stream) => return (tls_stream, addr),
+                    Err(e) => {
+                        error!("TLS handshake failed (HTTP): {e}");
+                        continue;
+                    }
+                },
+                Err(e) => {
+                    error!("Error accepting HTTP connection: {e}");
+                    continue;
+                }
+            }
+        }
+    }
+
+    fn local_addr(&self) -> io::Result<Self::Addr> {
+        self.listener.local_addr()
     }
 }
 
@@ -121,7 +165,7 @@ async fn delete_resource(
     }
 }
 
-pub async fn run_http_server(host: &str, port: u16, db_file: &str) {
+pub async fn run_http_server(host: &str, port: u16, db_file: &str, tls_config: Option<ServerTlsConfig>) {
     // Initialize the static resource manager
     let resource_manager = Arc::new(
         StaticResourceManager::new(db_file)
@@ -146,5 +190,11 @@ pub async fn run_http_server(host: &str, port: u16, db_file: &str) {
         .await
         .expect("Failed to bind");
 
-    axum::serve(listener, app).await.expect("Server error");
+    if let Some(cfg) = tls_config {
+        let acceptor = build_tls_acceptor(&cfg).expect("Failed to build TLS acceptor for HTTP");
+        let incoming = TlsIncoming::new(listener, acceptor);
+        axum::serve(incoming, app).await.expect("HTTPS server error");
+    } else {
+        axum::serve(listener, app).await.expect("HTTP server error");
+    }
 }
