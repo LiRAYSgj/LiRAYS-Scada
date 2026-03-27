@@ -58,9 +58,13 @@ where
                                 } else {
                                     Message::Binary(response.encode_to_vec().into())
                                 };
+                                // if ws_stream.
                                 match ws_stream.send(resp_msg).await {
                                     Ok(_) => (),
-                                    Err(e) => error!("Error sending response. Err: {e}")
+                                    Err(_) => {
+                                        info!("Client from {addr} disconnected");
+                                        break;
+                                    }
                                 }
                             }
                             Some(Err(e)) => {
