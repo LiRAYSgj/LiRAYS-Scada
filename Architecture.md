@@ -2,9 +2,9 @@
 
 ## Runtime Topology
 ```
-Browser (Svelte SPA)
-    ↕  WebSocket (8245) – protobuf or JSON commands/events
-    ↕  HTTPS/HTTP  (8246) – static SPA + REST resources
+Browser (SvelteKit static SPA: Svelte 5 + TypeScript)
+    ↕  WebSocket (8245) – binary protobuf command/event stream
+    ↕  HTTPS/HTTP  (8246) – static UI assets + REST resources
 Rust runtime
     ├─ ws server   (tokio-tungstenite)
     ├─ http server (axum)
@@ -33,9 +33,22 @@ Rust runtime
 - `src/rtdata/variable.rs`: sled-backed variable tree; supports constraints (min/max/options/max_len) and `EditMetaCommand` for metadata updates (name/type immutable).
 
 ## Frontend Notes
-- Svelte app connects to `ws(s)://<host>:8245` picked from the page scheme (uses `wss` when page is `https`).
-- Tree view shows columns Type → Value → Unit; hover tooltip shows constraints per variable.
-- Right-click a variable → Edit opens metadata dialog issuing `EditMetaCommand`.
+- Frontend stack: SvelteKit (adapter-static with SPA fallback), Svelte 5 runes, TypeScript, Tailwind CSS v4, and `@xyflow/svelte`.
+- Route structure is app-shell style (`src/routes/+layout.svelte` + `src/routes/+page.svelte`) with a single operational SCADA screen.
+- Main UI composition in `+page.svelte`:
+  - left panel: namespace tree (`VariableTree`) with context menus, add/remove flows, and multi-selection delete workflow.
+  - right panel: SvelteFlow graph canvas where tree nodes are dropped and mapped to plant assets (Tank, Pump, Valve, Fan, Slider, Typed Input, On/Off, Light, Label).
+  - modal tooling: Namespace Template Builder (Monaco YAML -> `ADD_BULK`).
+- Transport model:
+  - one shared `TagStreamClient` handles socket lifecycle, reconnect/backoff, command correlation (`cmd_id`), and global snackbar errors.
+  - realtime values are **subscription-based** (`SUB`/`UNSUB` for tracked graph tag IDs) and pushed as WS events.
+  - tree synchronization across clients uses global tree-change event subscription and local reconcile/refresh in the tree store.
+- WS endpoint behavior in current UI code:
+  - page realtime provider uses `PUBLIC_DEMO_WS_ENDPOINT` (fallback `ws://127.0.0.1:8245`).
+  - tree listing infers endpoint from page scheme/host (`ws`/`wss` + `location.hostname:8245`).
+- Theme/UI state:
+  - light/dark mode persisted in `localStorage` (`app-theme`) and applied after mount.
+  - global snackbar store centralizes command timeout/error/success feedback.
 - Built assets live in `frontend/build` and are embedded at compile time.
 
 ## Security/TLS Flow
@@ -56,6 +69,6 @@ Rust runtime
 
 ## Data Flow (happy path)
 1) Client opens WS connection (`ws`/`wss`).  
-2) Sends protobuf/JSON commands (LIST/GET/SET/ADD/DEL/…); backend mutates sled.  
-3) Backend publishes events over the same socket to subscribed clients.  
+2) UI sends protobuf commands (`LIST`, `ADD`, `ADD_BULK`, `DEL`, `SET`, `SUB`, `UNSUB`) over the shared socket.  
+3) Backend mutates runtime data and pushes value/tree change events over that same socket.  
 4) HTTP API provides CRUD over static resources (SeaORM) and serves the SPA + OpenAPI doc routes.

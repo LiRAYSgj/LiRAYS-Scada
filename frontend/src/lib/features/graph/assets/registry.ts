@@ -1,40 +1,13 @@
-import TankAsset from "./components/TankAsset.svelte";
-import PumpAsset from "./components/PumpAsset.svelte";
-import ValveAsset from "./components/ValveAsset.svelte";
-import FanAsset from "./components/FanAsset.svelte";
-import SliderAsset from "./components/SliderAsset.svelte";
-import TypedInputAsset from "./components/TypedInputAsset.svelte";
-import OnOffInputAsset from "./components/OnOffInputAsset.svelte";
-import LightIndicatorAsset from "./components/LightIndicatorAsset.svelte";
-import LabelAsset from "./components/LabelAsset.svelte";
-import { PlantAssetKind, type GraphAssetDefinition } from "./types";
+import type { GraphAssetDefinition } from "./types";
+import type {
+  InternalWidgetDeclaration,
+  ScadaInternalPlugin,
+} from "$lib/scada/plugins/types";
+import { internalWidgetsPlugin } from "$lib/scada/plugins/internal-widgets-plugin";
 
-const DEFAULT_PLANT_ASSET_DEFINITIONS: GraphAssetDefinition[] = [
-  { name: PlantAssetKind.TANK, label: "Tank", component: TankAsset },
-  { name: PlantAssetKind.PUMP, label: "Pump", component: PumpAsset },
-  { name: PlantAssetKind.VALVE, label: "Valve", component: ValveAsset },
-  { name: PlantAssetKind.FAN, label: "Fan", component: FanAsset },
-  { name: PlantAssetKind.SLIDER, label: "Slider", component: SliderAsset },
-  {
-    name: PlantAssetKind.TYPED_INPUT,
-    label: "Typed Input",
-    component: TypedInputAsset,
-  },
-  {
-    name: PlantAssetKind.ONOFF,
-    label: "On/Off Input",
-    component: OnOffInputAsset,
-  },
-  {
-    name: PlantAssetKind.LIGHT,
-    label: "Light Indicator",
-    component: LightIndicatorAsset,
-  },
-  { name: PlantAssetKind.LABEL, label: "Label", component: LabelAsset },
-];
-
-const definitionByKind = new Map<PlantAssetKind, GraphAssetDefinition>();
+const definitionByKind = new Map<string, GraphAssetDefinition>();
 const orderedDefinitions: GraphAssetDefinition[] = [];
+const registeredPluginIds = new Set<string>();
 
 function upsertAssetDefinition(definition: GraphAssetDefinition): void {
   const existingIndex = orderedDefinitions.findIndex(
@@ -48,8 +21,29 @@ function upsertAssetDefinition(definition: GraphAssetDefinition): void {
   definitionByKind.set(definition.name, definition);
 }
 
-for (const definition of DEFAULT_PLANT_ASSET_DEFINITIONS) {
-  upsertAssetDefinition(definition);
+function toGraphAssetDefinition(
+  plugin: ScadaInternalPlugin,
+  declaration: InternalWidgetDeclaration,
+): GraphAssetDefinition {
+  return {
+    name: declaration.manifest.type,
+    pluginId: plugin.id,
+    label: declaration.manifest.displayName,
+    runtime: declaration.runtime,
+    bindings: declaration.manifest.bindings,
+    primaryBindingKey: declaration.manifest.primaryBindingKey,
+  };
+}
+
+export function registerInternalPlugin(plugin: ScadaInternalPlugin): void {
+  if (registeredPluginIds.has(plugin.id)) return;
+  for (const widget of plugin.contributes.ui?.widgets ?? []) {
+    if (widget.runtime.kind === "custom-element") {
+      widget.runtime.register?.();
+    }
+    upsertAssetDefinition(toGraphAssetDefinition(plugin, widget));
+  }
+  registeredPluginIds.add(plugin.id);
 }
 
 export function registerAsset(definition: GraphAssetDefinition): void {
@@ -64,7 +58,9 @@ export const PLANT_ASSET_DEFINITIONS: GraphAssetDefinition[] =
   orderedDefinitions;
 
 export function resolveAssetDefinition(
-  kind: PlantAssetKind,
+  kind: string,
 ): GraphAssetDefinition {
   return definitionByKind.get(kind) ?? orderedDefinitions[0];
 }
+
+registerInternalPlugin(internalWidgetsPlugin);

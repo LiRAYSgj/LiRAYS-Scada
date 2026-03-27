@@ -1,0 +1,26 @@
+.light-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.light-bulb {
+  width: 48px;
+  height: 48px;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  display: inline-block;
+  background: #ef4444;
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.7);
+}
+
+.light-bulb.on {
+  background: #10b981;
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.7);
+}
+
+.light-caption {
+  font-size: 10px;
+  color: var(--text-muted);
+}

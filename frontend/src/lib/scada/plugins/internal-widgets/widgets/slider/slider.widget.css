@@ -1,0 +1,15 @@
+.slider-panel input[type="range"] {
+  width: 100%;
+  accent-color: #0ea5e9;
+}
+
+.slider-scale {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.slider-scale strong {
+  color: var(--text-primary);
+}

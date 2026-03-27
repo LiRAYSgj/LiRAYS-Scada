@@ -1,0 +1,15 @@
+.tank-shell {
+  height: 130px;
+  border: 1px solid currentColor;
+  border-radius: 14px;
+  position: relative;
+  overflow: hidden;
+}
+
+.tank-level {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(180deg, #60a5fa, #1d4ed8);
+}

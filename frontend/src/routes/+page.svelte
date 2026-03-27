@@ -2,7 +2,7 @@
   import { browser } from "$app/environment";
   import { env } from "$env/dynamic/public";
   import { onDestroy, onMount } from "svelte";
-  import { get, writable } from "svelte/store";
+  import { get } from "svelte/store";
   import {
     addEdge,
     Background,
@@ -22,8 +22,15 @@
   import PageToolbar from "$lib/features/workspace/components/PageToolbar.svelte";
   import NamespaceBuilder from "$lib/features/namespace-builder/components/NamespaceBuilder.svelte";
   import PlantAssetNode from "$lib/features/graph/components/PlantAssetNode.svelte";
-  import { getRegisteredAssetDefinitions } from "$lib/features/graph/assets/registry";
-  import { PlantAssetKind } from "$lib/features/graph/assets/types";
+  import {
+    getRegisteredAssetDefinitions,
+    resolveAssetDefinition,
+  } from "$lib/features/graph/assets/registry";
+  import {
+    type BoundWidgetTag,
+    type PlantAssetNodeData,
+    type WidgetBindingSchema,
+  } from "$lib/features/graph/assets/types";
   import {
     applyLiveValuesToGraphNodes,
     getTrackedTagIds,
@@ -124,6 +131,7 @@ import { Layers, Plus, Trash2, Pencil } from "lucide-svelte";
   let removeMultipleDialog: HTMLDialogElement | null = null;
   let removeMultipleSubmitting = $state(false);
   let removeMultipleError = $state("");
+  let inspectorDockVisible = $state(true);
   const transparentDragImage: HTMLImageElement | null = browser
     ? new Image()
     : null;
@@ -244,20 +252,8 @@ import { Layers, Plus, Trash2, Pencil } from "lucide-svelte";
   }
 
   const dropMenuResolvers: MenuResolverByKind = {
-    folder: (context) => [
-      {
-        id: "drop-folder-assets",
-        label: "Add Plant Asset",
-        children: buildDropAssetMenuOptions(context),
-      },
-    ],
-    tag: (context) => [
-      {
-        id: "drop-tag-assets",
-        label: "Add Plant Asset",
-        children: buildDropAssetMenuOptions(context),
-      },
-    ],
+    folder: (context) => buildDropAssetMenuOptions(context),
+    tag: (context) => buildDropAssetMenuOptions(context),
   };
 
   async function createTreeItem(input: {
@@ -522,40 +518,226 @@ import { Layers, Plus, Trash2, Pencil } from "lucide-svelte";
     graphViewport = viewport;
   }
 
+  function toBoundWidgetTag(node: TreeNode): BoundWidgetTag {
+    return {
+      id: node.id,
+      name: node.name,
+      path: node.path,
+      kind: node.kind,
+      dataType: node.dataType,
+    };
+  }
+
+  function createUnboundSourceNode(symbolId: string): BoundWidgetTag {
+    return {
+      id: `unbound-${symbolId}`,
+      name: "Unbound",
+      path: "-",
+      kind: "folder",
+    };
+  }
+
+  function getNodeDataById(nodeId: string): PlantAssetNodeData | null {
+    const match = graphNodes.find((node) => node.id === nodeId);
+    if (!match) return null;
+    return match.data as PlantAssetNodeData;
+  }
+
+  function updateNodeData(
+    nodeId: string,
+    updater: (current: PlantAssetNodeData) => PlantAssetNodeData,
+  ): void {
+    graphNodes = graphNodes.map((node) => {
+      if (node.id !== nodeId) return node;
+      const current = node.data as PlantAssetNodeData;
+      return {
+        ...node,
+        data: updater(current),
+      };
+    });
+  }
+
+  function getBindingSchema(
+    data: PlantAssetNodeData,
+    bindingKey: string,
+  ): WidgetBindingSchema | undefined {
+    const definition = resolveAssetDefinition(data.assetKind);
+    return definition.bindings.find((binding) => binding.key === bindingKey);
+  }
+
+  function writeWidgetBindingValue(
+    nodeId: string,
+    bindingKey: string,
+    value: TagScalarValue,
+    tagId?: string,
+  ): void {
+    const data = getNodeDataById(nodeId);
+    if (!data) return;
+
+    const tags = data.bindings?.[bindingKey] ?? [];
+    const target = tagId
+      ? tags.find((tag) => tag.id === tagId && tag.kind === "tag")
+      : tags.find((tag) => tag.kind === "tag");
+    if (!target) {
+      snackbarStore.warning(`Binding "${bindingKey}" is not configured.`);
+      return;
+    }
+
+    void realtimeProvider.sendWriteValue(target.id, value);
+  }
+
+  function assignTagToBinding(
+    nodeId: string,
+    bindingKey: string,
+    tagNode: TreeNode,
+  ): void {
+    if (tagNode.kind !== "tag") {
+      snackbarStore.warning("Only variable tags can be bound to widget fields.");
+      return;
+    }
+
+    updateNodeData(nodeId, (current) => {
+      const schema = getBindingSchema(current, bindingKey);
+      if (!schema) return current;
+
+      const currentBindings = { ...(current.bindings ?? {}) };
+      const prev = [...(currentBindings[bindingKey] ?? [])];
+      const alreadyAdded = prev.some((tag) => tag.id === tagNode.id);
+      const nextTag = toBoundWidgetTag(tagNode);
+      const next = schema.multiple
+        ? alreadyAdded
+          ? prev
+          : [...prev, nextTag]
+        : [nextTag];
+
+      currentBindings[bindingKey] = next;
+      const nextPrimary = current.primaryBindingKey ?? schema.key;
+      const sourceNode =
+        currentBindings[nextPrimary]?.[0] ??
+        createUnboundSourceNode(current.symbolId ?? current.title);
+
+      return {
+        ...current,
+        bindings: currentBindings,
+        primaryBindingKey: nextPrimary,
+        sourceNode,
+      };
+    });
+  }
+
+  function removeTagFromBinding(
+    nodeId: string,
+    bindingKey: string,
+    tagId: string,
+  ): void {
+    updateNodeData(nodeId, (current) => {
+      const currentBindings = { ...(current.bindings ?? {}) };
+      const next = (currentBindings[bindingKey] ?? []).filter(
+        (tag) => tag.id !== tagId,
+      );
+      currentBindings[bindingKey] = next;
+
+      const primaryKey = current.primaryBindingKey ?? bindingKey;
+      const primaryTag = currentBindings[primaryKey]?.[0];
+      const sourceNode =
+        primaryTag ?? createUnboundSourceNode(current.symbolId ?? current.title);
+      return {
+        ...current,
+        bindings: currentBindings,
+        sourceNode,
+      };
+    });
+  }
+
+  function resolveDroppedTreeNode(event: DragEvent): TreeNode | null {
+    const id =
+      event.dataTransfer?.getData("text/plain") || draggingNode?.id || null;
+    if (!id) return null;
+    return treeNodes[id] ?? (draggingNode && draggingNode.id === id ? draggingNode : null);
+  }
+
+  function handleBindingDrop(
+    event: DragEvent,
+    nodeId: string,
+    bindingKey: string,
+  ): void {
+    event.preventDefault();
+    event.stopPropagation();
+    const dropped = resolveDroppedTreeNode(event);
+    if (!dropped) return;
+    assignTagToBinding(nodeId, bindingKey, dropped);
+  }
+
+  function focusGraphNodeInInspector(nodeId: string): void {
+    inspectorDockVisible = true;
+    graphNodes = graphNodes.map((node) => ({
+      ...node,
+      selected: node.id === nodeId,
+    }));
+  }
+
+  function createInitialBindings(
+    assetKind: string,
+    droppedNode: TreeNode,
+  ): Record<string, BoundWidgetTag[]> {
+    if (droppedNode.kind !== "tag") return {};
+    const definition = resolveAssetDefinition(assetKind);
+    const primaryKey = definition.primaryBindingKey ?? definition.bindings[0]?.key;
+    if (!primaryKey) return {};
+    return {
+      [primaryKey]: [toBoundWidgetTag(droppedNode)],
+    };
+  }
+
   function onDropAction(
     event: MouseEvent,
     node: TreeNode,
-    assetKind: PlantAssetKind,
+    assetKind: string,
   ): void {
     const position = getGraphPositionFromEvent(event);
     graphNodeCounter += 1;
+    const nodeId = `asset-${assetKind}-${graphNodeCounter}`;
+    const definition = resolveAssetDefinition(assetKind);
+    const primaryBindingKey = definition.primaryBindingKey;
+    const bindings = createInitialBindings(assetKind, node);
+    const initialPrimaryTag = bindings[primaryBindingKey]?.[0];
+    const canWritePrimary =
+      definition.bindings.find((binding) => binding.key === primaryBindingKey)
+        ?.access !== "read";
 
     const newNode: Node = {
-      id: `asset-${assetKind}-${graphNodeCounter}`,
+      id: nodeId,
       type: "plantAsset",
       position,
       data: {
-        symbolId: `asset-${assetKind}-${graphNodeCounter}`,
+        symbolId: nodeId,
         assetKind,
         title: `${assetKind.toUpperCase()} ${graphNodeCounter}`,
-        sourceNode: {
-          id: node.id,
-          name: node.name,
-          path: node.path,
-          kind: node.kind,
-          dataType: node.dataType,
-        },
-        onWriteValue:
-          assetKind === PlantAssetKind.SLIDER ||
-          assetKind === PlantAssetKind.ONOFF ||
-          assetKind === PlantAssetKind.TYPED_INPUT
-            ? (value: TagScalarValue) =>
-                realtimeProvider.sendWriteValue(node.id, value)
-            : undefined,
+        primaryBindingKey,
+        bindings,
+        sourceNode:
+          initialPrimaryTag ??
+          (node.kind === "tag"
+            ? toBoundWidgetTag(node)
+            : createUnboundSourceNode(nodeId)),
+        onWriteValue: canWritePrimary
+          ? (value: TagScalarValue) =>
+              writeWidgetBindingValue(nodeId, primaryBindingKey, value)
+          : undefined,
+        onWriteBindingValue: (
+          bindingKey: string,
+          value: TagScalarValue,
+          tagId?: string,
+        ) => writeWidgetBindingValue(nodeId, bindingKey, value, tagId),
+        onOpenBindingConfig: () => focusGraphNodeInInspector(nodeId),
       },
     };
 
-    graphNodes = [...graphNodes, newNode];
+    graphNodes = [
+      ...graphNodes.map((existingNode) => ({ ...existingNode, selected: false })),
+      { ...newNode, selected: true },
+    ];
+    inspectorDockVisible = true;
   }
 
   function handleConnect(connection: Connection): void {
@@ -710,6 +892,18 @@ import { Layers, Plus, Trash2, Pencil } from "lucide-svelte";
     activeMenu = null;
   }
 
+  const selectedGraphNode = $derived(
+    graphNodes.find((node) => Boolean(node.selected)) ?? null,
+  );
+  const selectedGraphNodeData = $derived<PlantAssetNodeData | null>(
+    selectedGraphNode ? (selectedGraphNode.data as PlantAssetNodeData) : null,
+  );
+  const selectedGraphWidgetDefinition = $derived(
+    selectedGraphNodeData
+      ? resolveAssetDefinition(selectedGraphNodeData.assetKind)
+      : null,
+  );
+
   onMount(() => {
     realtimeProvider.start();
 
@@ -822,33 +1016,201 @@ import { Layers, Plus, Trash2, Pencil } from "lucide-svelte";
       ondragover={handleRightPanelDragOver}
       ondrop={handleRightPanelDrop}
     >
-      <div bind:this={graphHostRef} class="h-full w-full">
-        <SvelteFlow
-          bind:nodes={graphNodes}
-          bind:edges={graphEdges}
-          {nodeTypes}
-          initialViewport={{ x: 0, y: 0, zoom: 1 }}
-          minZoom={0.4}
-          maxZoom={1.6}
-          zoomOnDoubleClick={false}
-          colorMode={$theme ?? "light"}
-          class="h-full w-full rounded-md"
-          style="background-color: var(--bg-muted);"
-          nodesDraggable={canvasMode === "edit"}
-          elementsSelectable={canvasMode === "edit"}
-          nodesConnectable={canvasMode === "edit"}
-          selectionOnDrag={canvasMode === "edit"}
-          panOnDrag={[1]}
-          connectionLineType={ConnectionLineType.Step}
-          connectionLineStyle={PIPE_EDGE_STYLE}
-          proOptions={{ hideAttribution: true }}
-          onmove={handleFlowMove}
-          onconnect={handleConnect}
-        >
-          <Controls />
-          <MiniMap />
-          <Background />
-        </SvelteFlow>
+      <div class="relative flex h-full w-full">
+        <div bind:this={graphHostRef} class="h-full flex-1">
+          <SvelteFlow
+            bind:nodes={graphNodes}
+            bind:edges={graphEdges}
+            {nodeTypes}
+            initialViewport={{ x: 0, y: 0, zoom: 1 }}
+            minZoom={0.4}
+            maxZoom={1.6}
+            zoomOnDoubleClick={false}
+            colorMode={$theme ?? "light"}
+            class="h-full w-full rounded-md"
+            style="background-color: var(--bg-muted);"
+            nodesDraggable={canvasMode === "edit"}
+            elementsSelectable={canvasMode === "edit"}
+            nodesConnectable={canvasMode === "edit"}
+            selectionOnDrag={canvasMode === "edit"}
+            panOnDrag={[1]}
+            connectionLineType={ConnectionLineType.Step}
+            connectionLineStyle={PIPE_EDGE_STYLE}
+            proOptions={{ hideAttribution: true }}
+            onmove={handleFlowMove}
+            onconnect={handleConnect}
+          >
+            <Controls />
+            <MiniMap />
+            <Background />
+          </SvelteFlow>
+        </div>
+
+        {#if inspectorDockVisible}
+          <aside
+            class="h-full w-[340px] shrink-0 border-l border-black/10 bg-(--bg-panel) p-3 dark:border-white/10"
+            ondragover={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+            }}
+            ondrop={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
+          >
+            <div class="mb-3 flex items-center justify-between">
+              <h3 class="text-sm font-semibold text-(--text-primary)">
+                Graph Node Inspector
+              </h3>
+              <Button
+                variant="icon"
+                title="Hide inspector"
+                ariaLabel="Hide inspector"
+                label="×"
+                onclick={() => (inspectorDockVisible = false)}
+              />
+            </div>
+
+            {#if selectedGraphNodeData && selectedGraphWidgetDefinition}
+              {@const selectedGraphNodeId = selectedGraphNode?.id ?? ""}
+              <div class="space-y-3">
+                <div>
+                  <label
+                    for="node-title-input"
+                    class="mb-1 block text-[10px] uppercase text-(--text-muted)"
+                    >Title</label
+                  >
+                  <input
+                    id="node-title-input"
+                    class="w-full rounded border border-black/20 bg-(--bg-muted) px-2 py-1.5 text-xs text-(--text-primary) outline-none focus:border-sky-500 dark:border-white/20"
+                    value={selectedGraphNodeData.title}
+                    oninput={(event) => {
+                      const target = event.currentTarget as HTMLInputElement;
+                      updateNodeData(selectedGraphNodeId, (current) => ({
+                        ...current,
+                        title: target.value,
+                      }));
+                    }}
+                  />
+                </div>
+
+                <div class="rounded border border-black/10 p-2 dark:border-white/10">
+                  <p class="text-[10px] uppercase text-(--text-muted)">Widget</p>
+                  <p class="text-xs font-medium text-(--text-primary)">
+                    {selectedGraphWidgetDefinition.label}
+                  </p>
+                </div>
+
+                <div class="space-y-2">
+                  {#each selectedGraphWidgetDefinition.bindings as binding}
+                    {@const bindingTags = selectedGraphNodeData.bindings?.[binding.key] ?? []}
+                    <div class="rounded border border-black/10 p-2 dark:border-white/10">
+                      <div class="mb-1 flex items-center justify-between">
+                        <span class="font-medium text-(--text-primary)"
+                          >{binding.label}</span
+                        >
+                        <span class="text-[10px] uppercase text-(--text-muted)"
+                          >{binding.access}</span
+                        >
+                      </div>
+                      {#if binding.multiple}
+                        <div
+                          class="min-h-[38px] rounded border border-dashed border-black/20 bg-(--bg-muted) px-2 py-1 dark:border-white/20"
+                          role="group"
+                          ondragover={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            if (event.dataTransfer)
+                              event.dataTransfer.dropEffect = "copy";
+                          }}
+                          ondrop={(event) =>
+                            handleBindingDrop(
+                              event,
+                              selectedGraphNodeId,
+                              binding.key,
+                            )}
+                        >
+                          {#if bindingTags.length === 0}
+                            <span class="text-[10px] text-(--text-muted)"
+                              >Drop tag(s) here</span
+                            >
+                          {:else}
+                            <div class="flex flex-wrap gap-1">
+                              {#each bindingTags as tag (tag.id)}
+                                <span
+                                  class="inline-flex items-center gap-1 rounded bg-(--bg-selected) px-1.5 py-0.5 text-[10px] text-(--text-primary)"
+                                >
+                                  <span class="max-w-[160px] truncate"
+                                    >{tag.name}</span
+                                  >
+                                  <button
+                                    type="button"
+                                    class="text-[10px] opacity-70 hover:opacity-100"
+                                    title="Remove binding"
+                                    onclick={() =>
+                                      removeTagFromBinding(
+                                        selectedGraphNodeId,
+                                        binding.key,
+                                        tag.id,
+                                      )}
+                                  >
+                                    ×
+                                  </button>
+                                </span>
+                              {/each}
+                            </div>
+                          {/if}
+                        </div>
+                      {:else}
+                        <input
+                          class="w-full rounded border border-dashed border-black/20 bg-(--bg-muted) px-2 py-1 text-[10px] text-(--text-primary) outline-none dark:border-white/20"
+                          readonly
+                          value={bindingTags[0]?.path ?? ""}
+                          placeholder="Drop tag here"
+                          ondragover={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            if (event.dataTransfer)
+                              event.dataTransfer.dropEffect = "copy";
+                          }}
+                          ondrop={(event) =>
+                            handleBindingDrop(
+                              event,
+                              selectedGraphNodeId,
+                              binding.key,
+                            )}
+                        />
+                      {/if}
+                      {#if binding.required}
+                        <p class="mt-1 text-[10px] text-(--text-muted)">
+                          Required
+                        </p>
+                      {/if}
+                    </div>
+                  {/each}
+                </div>
+              </div>
+            {:else}
+              <div
+                class="flex h-[calc(100%-2rem)] items-center justify-center text-center text-sm text-(--text-muted)"
+              >
+                Select a node in the graph to configure it.
+              </div>
+            {/if}
+          </aside>
+        {:else}
+          <div class="pointer-events-none absolute right-3 top-3 z-30">
+            <div class="pointer-events-auto">
+              <Button
+                variant="outline-muted"
+                label="Show inspector"
+                title="Show inspector"
+                onclick={() => (inspectorDockVisible = true)}
+              />
+            </div>
+          </div>
+        {/if}
       </div>
       <!-- <div class="pointer-events-none absolute left-3 top-2 text-[11px] text-(--text-muted)">
 				{#if canvasMode === 'edit'}
