@@ -1,6 +1,5 @@
 use anyhow::Result;
 use env_logger::Env;
-use lirays_ws_client::Client;
 use log::info;
 
 mod extress_test;
@@ -9,14 +8,19 @@ mod extress_test;
 async fn main() -> Result<()> {
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
 
-    let demo = std::env::args().nth(1).unwrap_or_else(|| "extress_test".into());
+    let args = std::env::args().skip(1).collect::<Vec<_>>();
+    let demo = args.get(0).cloned().unwrap_or_else(|| "extress_test".into());
+    let do_setup = args.iter().any(|a| a == "--setup");
     info!("demo seleccionado: {demo}");
 
-    let client = Client::connect("127.0.0.1", 8245, false).await?;
-    info!("connected");
-
     match demo.as_str() {
-        "extress_test" | "stress" => extress_test::run(&client).await?,
+        "extress_test" | "stress" => {
+            if do_setup {
+                info!("ejecutando setup de 1M variables float...");
+                extress_test::setup_namespace("127.0.0.1", 8245, false).await?;
+            }
+            extress_test::run("127.0.0.1", 8245, false).await?
+        }
         other => {
             anyhow::bail!("demo desconocido: {other}");
         }
