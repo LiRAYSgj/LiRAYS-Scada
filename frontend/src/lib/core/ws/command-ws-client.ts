@@ -228,10 +228,49 @@ export function createSingleItemMeta(
   name: string,
   itemType: ItemType,
   varType: VarDataType | undefined,
+  meta?: {
+    unit?: string;
+    min?: number;
+    max?: number;
+    options?: string[];
+    maxLen?: number;
+  },
 ): ItemMeta {
   return {
     name,
     iType: itemType,
     varDType: varType,
+    unit: meta?.unit,
+    min: meta?.min,
+    max: meta?.max,
+    options: meta?.options ?? [],
+    maxLen: meta?.maxLen !== undefined ? [meta.maxLen] : [],
+  };
+}
+
+export function createEditMetaCommand(
+  varId: string,
+  meta: {
+    unit?: string;
+    min?: number;
+    max?: number;
+    options?: string[];
+    maxLen?: number;
+  },
+  cmdId = createCommandId("edit-meta"),
+): { cmdId: string; command: Command } {
+  return {
+    cmdId,
+    command: {
+      editMeta: {
+        cmdId,
+        varId,
+        unit: meta.unit,
+        min: meta.min,
+        max: meta.max,
+        options: meta.options ?? [],
+        maxLen: meta.maxLen !== undefined ? [meta.maxLen] : [],
+      },
+    },
   };
 }

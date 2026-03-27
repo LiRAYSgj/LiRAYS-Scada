@@ -84,6 +84,20 @@ message DelResponse {
   string cmd_id = 1;
 }
 
+message EditMetaCommand {
+  string cmd_id = 1;
+  string var_id = 2;
+  optional string unit = 3;
+  optional double min = 4;
+  optional double max = 5;
+  repeated string options = 6;
+  repeated uint64 max_len = 7;
+}
+
+message EditMetaResponse {
+  string cmd_id = 1;
+}
+
 message InvalidCmdResponse {
   string cmd_id = 1;
 }
@@ -99,6 +113,7 @@ message Command {
     AddBulkCommand add_bulk = 6;
     SubscribeCommand sub = 7;
     UnsubscribeCommand unsub = 8;
+    EditMetaCommand edit_meta = 9;
   }
 }
 
@@ -113,6 +128,7 @@ message Response {
     AddBulkResponse add_bulk = 7;
     SubscribeResponse sub = 8;
     UnsubscribeResponse unsub = 9;
+    EditMetaResponse edit_meta = 12;
   }
   OperationStatus status = 10;
   optional string error_msg = 11;

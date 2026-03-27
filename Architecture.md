@@ -30,14 +30,18 @@ Rust runtime
 - `src/http/model/resource`: SeaORM entity + service for static resources.
 - `src/http/model/user`: SeaORM entity + service for `users` table (admin).
 - `src/rtdata/namespace`: Protobuf-derived command/event types (see `proto/`).
+- `src/rtdata/variable.rs`: sled-backed variable tree; supports constraints (min/max/options/max_len) and `EditMetaCommand` for metadata updates (name/type immutable).
 
 ## Frontend Notes
 - Svelte app connects to `ws(s)://<host>:8245` picked from the page scheme (uses `wss` when page is `https`).
+- Tree view shows columns Type → Value → Unit; hover tooltip shows constraints per variable.
+- Right-click a variable → Edit opens metadata dialog issuing `EditMetaCommand`.
 - Built assets live in `frontend/build` and are embedded at compile time.
 
 ## Security/TLS Flow
 - When `WS_TLS_ENABLE` is true:
-  - Uses `WS_TLS_CERT_PATH`/`WS_TLS_KEY_PATH` if provided, otherwise generates a self-signed pair under `${DATA_DIR}/certificates/`.
+  - If `WS_TLS_AUTO=1` a self-signed pair is generated under `${DATA_DIR}/certificates/`.
+  - Otherwise uses `WS_TLS_CERT_PATH`/`WS_TLS_KEY_PATH`.
   - HTTP server serves HTTPS on `BIND_HTTP_PORT`; websocket upgrades to `wss` on `BIND_SERVER_PORT`.
 - When false: plain HTTP + WS.
 - When `AUTH_ENABLED` is true:

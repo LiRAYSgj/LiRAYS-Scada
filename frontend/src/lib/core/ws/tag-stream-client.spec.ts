@@ -252,6 +252,7 @@ describe("TagStreamClient", () => {
       "newRoot",
       ItemType.ITEM_TYPE_FOLDER,
       undefined,
+      undefined,
       "ws://localhost:8787",
     );
     await Promise.resolve();

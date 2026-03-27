@@ -119,27 +119,52 @@ fn _generate_json_examples(folder_path: &str) {
                 ItemMeta {
                     name: "NewFolder".to_string(),
                     i_type: ItemType::Folder as i32,
-                    var_d_type: None
+                    var_d_type: None,
+                    unit: None,
+                    min: None,
+                    max: None,
+                    options: vec![],
+                    max_len: vec![],
                 },
                 ItemMeta {
                     name: "NewFloatVariable".to_string(),
                     i_type: ItemType::Variable as i32,
-                    var_d_type: Some(VarDataType::Float as i32)
+                    var_d_type: Some(VarDataType::Float as i32),
+                    unit: None,
+                    min: None,
+                    max: None,
+                    options: vec![],
+                    max_len: vec![],
                 },
                 ItemMeta {
                     name: "NewTextVariable".to_string(),
                     i_type: ItemType::Variable as i32,
-                    var_d_type: Some(VarDataType::Text as i32)
+                    var_d_type: Some(VarDataType::Text as i32),
+                    unit: None,
+                    min: None,
+                    max: None,
+                    options: vec![],
+                    max_len: vec![],
                 },
                 ItemMeta {
                     name: "NewIntegerVariable".to_string(),
                     i_type: ItemType::Variable as i32,
-                    var_d_type: Some(VarDataType::Integer as i32)
+                    var_d_type: Some(VarDataType::Integer as i32),
+                    unit: None,
+                    min: None,
+                    max: None,
+                    options: vec![],
+                    max_len: vec![],
                 },
                 ItemMeta {
                     name: "NewBooleanVariable".to_string(),
                     i_type: ItemType::Variable as i32,
-                    var_d_type: Some(VarDataType::Boolean as i32)
+                    var_d_type: Some(VarDataType::Boolean as i32),
+                    unit: None,
+                    min: None,
+                    max: None,
+                    options: vec![],
+                    max_len: vec![],
                 }
             ],
         }))
@@ -233,22 +258,42 @@ fn _generate_json_examples(folder_path: &str) {
             VarInfo {
                 id: "/devices/sensors/NewFolder/NewFloatVariable".to_string(),
                 name: "NewFloatVariable".to_string(),
-                var_d_type: VarDataType::Float as i32
+                var_d_type: VarDataType::Float as i32,
+                unit: None,
+                min: None,
+                max: None,
+                options: vec![],
+                max_len: vec![],
             },
             VarInfo {
                 id: "/devices/sensors/NewFolder/NewTextVariable".to_string(),
                 name: "NewTextVariable".to_string(),
-                var_d_type: VarDataType::Text as i32
+                var_d_type: VarDataType::Text as i32,
+                unit: None,
+                min: None,
+                max: None,
+                options: vec![],
+                max_len: vec![],
             },
             VarInfo {
                 id: "/devices/sensors/NewFolder/NewIntegerVariable".to_string(),
                 name: "NewIntegerVariable".to_string(),
-                var_d_type: VarDataType::Integer as i32
+                var_d_type: VarDataType::Integer as i32,
+                unit: None,
+                min: None,
+                max: None,
+                options: vec![],
+                max_len: vec![],
             },
             VarInfo {
                 id: "/devices/sensors/NewFolder/NewBooleanVariable".to_string(),
                 name: "NewBooleanVariable".to_string(),
-                var_d_type: VarDataType::Boolean as i32
+                var_d_type: VarDataType::Boolean as i32,
+                unit: None,
+                min: None,
+                max: None,
+                options: vec![],
+                max_len: vec![],
             }
         ],
     };

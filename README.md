@@ -3,15 +3,18 @@
 Rust WebSocket/HTTP server with an embedded Svelte frontend for browsing and controlling a SCADA‑style variable tree.
 
 ## Components
+
 - Rust backend (WebSocket on 8245, HTTP/HTTPS on 8246).
 - Embedded SQLite (via SeaORM) for static resources and sled for runtime data.
 - Svelte frontend bundled into the binary; optional standalone frontend dev workflow.
 
 ## Quick Start (local)
+
 1. Build the frontend (needed only if you change UI code):
    ```sh
    cd frontend
    npm install
+   npm run generate:proto
    npm run build
    cd ..
    ```
@@ -23,20 +26,29 @@ Rust WebSocket/HTTP server with an embedded Svelte frontend for browsing and con
    API docs: `http(s)://localhost:8246/swagger` (serves Swagger UI backed by generated OpenAPI).
 
 ## Configuration (env vars)
+
 - `BIND_HOST` / `BIND_SERVER_PORT` – WebSocket bind (default `0.0.0.0:8245`).
 - `BIND_HTTP_HOST` / `BIND_HTTP_PORT` – HTTP bind (default `0.0.0.0:8246`).
-- `DATA_DIR` – data root (default `./data_dir`); contains `rt_data/` and `static.db`.
+- `DATA_DIR` – data root (default `./data_dir`); contains `rt_data/` (sled) and `static.db` (SQLite).
 - TLS:
   - `WS_TLS_ENABLE` – when true (`1/true/yes/on`), both WS and HTTP serve over TLS.
-  - `WS_TLS_CERT_PATH` / `WS_TLS_KEY_PATH` – PEM paths. If omitted while TLS is enabled, a self‑signed pair is generated under `DATA_DIR/certificates/`.
-  - Browser will prompt to trust the self‑signed cert.
+  - `WS_TLS_AUTO` – when true, auto‑generate a self‑signed cert/key under `${DATA_DIR}/certificates/` and use them (ignores provided paths).
+  - `WS_TLS_CERT_PATH` / `WS_TLS_KEY_PATH` – PEM paths to use when TLS is on and auto is off.
 - Auth (optional):
   - `AUTH_ENABLED` – when true, all HTTP (SPA, Swagger, API) is gated by a session cookie.
   - `AUTH_SECRET` – optional HMAC secret for signing the session cookie; if missing a random one is generated at startup (sessions invalidate on restart).
   - First visit with auth on: redirected to `/auth/setup` to set the `admin` password (user is created then). Subsequent visits: `/auth/login`.
   - Session: HttpOnly cookie `lirays_session`, 24h TTL, `Secure` when TLS is enabled.
 
+## Variable metadata & constraints
+
+- Variables (ItemMeta/VarInfo) carry optional `unit`, numeric `min`/`max`, text `options`, and text `max_len`.
+- Backend rejects writes outside constraints (numeric range, text length/options).
+- WS command to edit metadata: `EditMetaCommand { var_id, unit?, min?, max?, options[], max_len[] }` (no rename/type change).
+- UI: right‑click a variable → “Edit” opens dialog to update metadata; tree shows Type → Value → Unit columns; hover shows tooltip with constraints.
+
 ## Docker
+
 ```sh
 docker build --target production -t lirays:latest .
 docker run --rm \
@@ -46,8 +58,10 @@ docker run --rm \
 ```
 
 ## API / WebSocket usage
+
 - WebSocket endpoint: `ws://<host>:8245` or `wss://<host>:8245` (matches TLS setting).
 - HTTP API examples (default ports):
+
   ```sh
   curl -X POST http://localhost:8246/api/resources \
     -H "Content-Type: application/json" \
@@ -60,12 +74,16 @@ docker run --rm \
     -d '{"name":"Updated Resource","description":"Updated description"}'
   curl -X DELETE http://localhost:8246/api/resources/1
   ```
+
 - WebSocket command shapes (protobuf/JSON) remain as in `proto/` and `src/rtdata/server`.
+- Metadata edit command response: resolves to `EditMetaResponse`; frontend refreshes the parent folder to display new metadata.
 
 ## Development tips
+
 - Node 24 recommended for frontend tasks (`nvm use 24`).
 - `cargo check` / `cargo test` for backend.
 - The frontend chooses `wss` automatically when the page is loaded over `https` to avoid mixed content.
 
 ## Diagrams
+
 - General schema: `general_schema.png`.

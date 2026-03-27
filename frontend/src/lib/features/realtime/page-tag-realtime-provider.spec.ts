@@ -117,6 +117,7 @@ describe("createPageTagRealtimeProvider", () => {
       "x",
       ItemType.ITEM_TYPE_FOLDER,
       undefined,
+      undefined,
       "ws://localhost:8787",
     );
     expect(removeItems).toHaveBeenCalledWith(["a"], "ws://localhost:8787");
@@ -137,6 +138,7 @@ describe("createPageTagRealtimeProvider", () => {
       null,
       "newRoot",
       ItemType.ITEM_TYPE_FOLDER,
+      undefined,
       undefined,
       "ws://localhost:8787",
     );

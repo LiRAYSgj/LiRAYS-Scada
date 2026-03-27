@@ -29,6 +29,11 @@ message ItemMeta {
   string name = 1;
   ItemType i_type = 2;
   optional VarDataType var_d_type = 3;
+  optional string unit = 4;
+  optional double min = 5;  // For number variables only
+  optional double max = 6;  // For number variables only
+  repeated string options = 7;  // For string variables only
+  repeated uint64 max_len = 8;  // For string variables only
 }
 
 message FolderInfo {
@@ -40,6 +45,11 @@ message VarInfo {
   string id = 1;
   string name = 2;
   VarDataType var_d_type = 3;
+  optional string unit = 4;
+  optional double min = 5;
+  optional double max = 6;
+  repeated string options = 7;
+  repeated uint64 max_len = 8;
 }
 
 message VarIdValue {
@@ -54,10 +64,19 @@ message NamespaceSchema {
 message NamespaceNode {
   oneof node {
     NamespaceFolder folder = 1;
-    string variable_type = 2;
+    NamespaceVariable variable = 2;
   }
 }
 
 message NamespaceFolder {
   map<string, NamespaceNode> children = 1;
+}
+
+message NamespaceVariable {
+  VarDataType var_d_type = 1;
+  optional string unit = 2;
+  optional double min = 3;
+  optional double max = 4;
+  repeated string options = 5;
+  repeated uint64 max_len = 6;
 }

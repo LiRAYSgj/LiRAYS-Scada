@@ -42,6 +42,7 @@ use crate::rtdata::namespace::{
     NamespaceNode,
     EventType,
     Event,
+    EditMetaResponse,
     value::Typed,
     event::Ev,
     command::CommandType,
@@ -85,6 +86,11 @@ impl VariableManager {
                     name: folder_name,
                     i_type: ItemType::Folder as i32,
                     var_d_type: None,
+                    unit: None,
+                    min: None,
+                    max: None,
+                    options: Vec::new(),
+                    max_len: Vec::new(),
                 };
                 batch.insert(h_key.as_bytes(), item.encode_to_vec());
             }
@@ -122,7 +128,16 @@ impl VariableManager {
                 }
                 ItemType::Variable => {
                     let v_dtype = i_meta.var_d_type.ok_or_else(|| "Invalid variable data type".to_string())?;
-                    children_vars.push(VarInfo { id: ch_id, name: i_meta.name, var_d_type: v_dtype });
+                    children_vars.push(VarInfo {
+                        id: ch_id,
+                        name: i_meta.name,
+                        var_d_type: v_dtype,
+                        unit: i_meta.unit,
+                        min: i_meta.min,
+                        max: i_meta.max,
+                        options: i_meta.options,
+                        max_len: i_meta.max_len,
+                    });
                 }
                 _ => return Err("Invalid item type".to_string())
             }
@@ -176,6 +191,11 @@ impl VariableManager {
                                     name,
                                     i_type: ItemType::Folder as i32,
                                     var_d_type: None,
+                                    unit: None,
+                                    min: None,
+                                    max: None,
+                                    options: Vec::new(),
+                                    max_len: Vec::new(),
                                 });
                                 let children = if i == capacity - 1 {
                                     std::mem::take(&mut folder.children)
@@ -185,22 +205,21 @@ impl VariableManager {
                                 folder_children.push((new_parent_path, children));
                             }
                         }
-                        Node::VariableType(v_type) => {
-                            let v_dtype = match v_type.to_lowercase().as_str() {
-                                "integer" | "int" | "i" => VarDataType::Integer as i32,
-                                "float" | "f" => VarDataType::Float as i32,
-                                "text" | "string" | "str" | "t" => VarDataType::Text as i32,
-                                "boolean" | "bool" | "b" => VarDataType::Boolean as i32,
-                                _ => {
-                                    warn!("Bulk ADD: Invalid variable type '{}' for key '{}'", v_type, key);
-                                    VarDataType::Invalid as i32
-                                },
-                            };
+                        Node::Variable(var_def) => {
+                            let v_dtype = cast_var_data_type(Some(var_def.var_d_type));
+                            if v_dtype == VarDataType::Invalid {
+                                warn!("Bulk ADD: Invalid variable type for key '{}'", key);
+                            }
                             for name in item_names {
                                 vars_to_create.push(ItemMeta {
                                     name,
                                     i_type: ItemType::Variable as i32,
-                                    var_d_type: Some(v_dtype),
+                                    var_d_type: Some(v_dtype as i32),
+                                    unit: var_def.unit.clone(),
+                                    min: var_def.min,
+                                    max: var_def.max,
+                                    options: var_def.options.clone(),
+                                    max_len: var_def.max_len.clone(),
                                 });
                             }
                         }
@@ -253,10 +272,13 @@ impl VariableManager {
                 Ok(None) => return Err("Missing variable.".to_string()),
                 Err(e) => return Err(format!("Error reading tree: {e}"))
             };
+            let v_dtype = cast_var_data_type(i_meta.var_d_type);
+            if v_dtype == VarDataType::Invalid {
+                return Err("Invalid var data type.".to_string());
+            }
             let d_key_str = format!("D:{}", var_id);
             let d_key = d_key_str.as_bytes();
             let i_type = cast_item_type(i_meta.i_type);
-            let v_dtype = cast_var_data_type(i_meta.var_d_type);
             match var_id_val.value {
                 Some(value) => {
                     let val = value.typed.ok_or_else(|| "None value".to_string())?;
@@ -267,11 +289,11 @@ impl VariableManager {
                         (ItemType::Variable, VarDataType::Float, Typed::IntegerValue(v)) => Value {typed: Some(Typed::FloatValue(v as f64))},
                         (ItemType::Variable, VarDataType::Text, Typed::TextValue(v)) => Value {typed: Some(Typed::TextValue(v))},
                         (ItemType::Variable, VarDataType::Boolean, Typed::BooleanValue(v)) => Value {typed: Some(Typed::BooleanValue(v))},
-                        (ItemType::Variable, VarDataType::Invalid, _) => return Err("Invalid var data type.".to_string()),
                         (ItemType::Variable, _, _) => return Err("Mismatch data type.".to_string()),
                         (ItemType::Folder, _, _) => return Err("Can't write value to a folder.".to_string()),
                         (ItemType::Invalid, _, _) => return Err("Invalid item type.".to_string()),
                     };
+                    self.validate_constraints(&i_meta, &value_)?;
                     batch.insert(d_key, value_.encode_to_vec());
                     successfully_set_vals.push(VarIdValue { var_id, value: Some(value_)});
                 }
@@ -280,6 +302,38 @@ impl VariableManager {
         }
         self.items_tree.apply_batch(batch).map_err(|e| format!("Error Applying batch op: {e}"))?;
         Ok(successfully_set_vals)
+    }
+
+    fn edit_meta(&self, var_id: &str, patch: ItemMeta) -> Result<(), String> {
+        let h_key = get_hierarchy_key(var_id);
+        let mut current = match self.items_tree.get(h_key.as_bytes()) {
+            Ok(Some(value)) => ItemMeta::decode(value.as_ref()).map_err(|e| format!("Error decoding Item: {e}"))?,
+            Ok(None) => return Err("Variable not found".to_string()),
+            Err(e) => return Err(format!("Error reading tree: {e}")),
+        };
+        if cast_item_type(current.i_type) != ItemType::Variable {
+            return Err("Only variables support metadata updates".to_string());
+        }
+        // Do not allow changing name or type
+        // Apply patch fields when present
+        if patch.unit.is_some() {
+            current.unit = patch.unit;
+        }
+        if patch.min.is_some() {
+            current.min = patch.min;
+        }
+        if patch.max.is_some() {
+            current.max = patch.max;
+        }
+        if !patch.options.is_empty() {
+            current.options = patch.options;
+        }
+        if !patch.max_len.is_empty() {
+            current.max_len = patch.max_len;
+        }
+        let mut batch = Batch::default();
+        batch.insert(h_key.as_bytes(), current.encode_to_vec());
+        self.items_tree.apply_batch(batch).map_err(|e| format!("Error Applying batch op: {e}"))
     }
 
     fn get_vals(&self, var_ids: Vec<String>) -> Result<Vec<OptionalValue>, String> {
@@ -457,6 +511,26 @@ impl VariableManager {
                     error_msg: None
                 }
             }
+            Some(CommandType::EditMeta(edit_cmd)) => {
+                let (status, error_msg) = match self.edit_meta(&edit_cmd.var_id, ItemMeta {
+                    name: String::new(),
+                    i_type: ItemType::Variable as i32,
+                    var_d_type: None,
+                    unit: edit_cmd.unit,
+                    min: edit_cmd.min,
+                    max: edit_cmd.max,
+                    options: edit_cmd.options,
+                    max_len: edit_cmd.max_len,
+                }) {
+                    Ok(_) => (OperationStatus::Ok as i32, None),
+                    Err(e) => (OperationStatus::Err as i32, Some(e)),
+                };
+                Response {
+                    response_type: Some(ResponseType::EditMeta(EditMetaResponse { cmd_id: edit_cmd.cmd_id })),
+                    status,
+                    error_msg,
+                }
+            }
             None => {
                 let uid = Uuid::new_v4().to_string();
                 Response {
@@ -466,5 +540,50 @@ impl VariableManager {
                 }
             }
         }
+    }
+
+    fn validate_constraints(&self, meta: &ItemMeta, value: &Value) -> Result<(), String> {
+        let v_dtype = cast_var_data_type(meta.var_d_type);
+        let typed = value
+            .typed
+            .as_ref()
+            .ok_or_else(|| "Missing value".to_string())?;
+
+        match v_dtype {
+            VarDataType::Integer | VarDataType::Float => {
+                let num = match typed {
+                    Typed::IntegerValue(v) => *v as f64,
+                    Typed::FloatValue(v) => *v,
+                    _ => return Err("Type mismatch for numeric variable".to_string()),
+                };
+                if let Some(min) = meta.min {
+                    if num < min {
+                        return Err(format!("Value {} is below min {}", num, min));
+                    }
+                }
+                if let Some(max) = meta.max {
+                    if num > max {
+                        return Err(format!("Value {} is above max {}", num, max));
+                    }
+                }
+            }
+            VarDataType::Text => {
+                let txt = match typed {
+                    Typed::TextValue(v) => v,
+                    _ => return Err("Type mismatch for text variable".to_string()),
+                };
+                if !meta.options.is_empty() && !meta.options.contains(txt) {
+                    return Err("Text value not in allowed options".to_string());
+                }
+                if let Some(limit) = meta.max_len.first() {
+                    if (txt.chars().count() as u64) > *limit {
+                        return Err(format!("Text length exceeds max {}", limit));
+                    }
+                }
+            }
+            VarDataType::Boolean => {}
+            VarDataType::Invalid => return Err("Invalid var data type.".to_string()),
+        }
+        Ok(())
     }
 }

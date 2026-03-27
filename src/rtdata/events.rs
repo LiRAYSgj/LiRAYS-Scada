@@ -20,7 +20,12 @@ pub fn extract_add_event(
         VarInfo {
             id: normalize_path(&format!("{}/{}", folder_id, i_meta.name), ItemType::Variable),
             name: i_meta.name.to_string(),
-            var_d_type: var_d_type as i32
+            var_d_type: var_d_type as i32,
+            unit: None,
+            min: None,
+            max: None,
+            options: vec![],
+            max_len: vec![],
         }
     }).collect();
 

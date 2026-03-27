@@ -9,6 +9,7 @@ import {
   createListCommand,
   createSetCommand,
   createSingleItemMeta,
+  createEditMetaCommand,
   fromBackendValue,
   namespaceJsonToSchema,
   toBackendValue,
@@ -139,10 +140,35 @@ describe("command-ws-client", () => {
         "node1",
         ItemType.ITEM_TYPE_VARIABLE,
         VarDataType.VAR_DATA_TYPE_FLOAT,
+        { min: 0, max: 10, unit: "°C", maxLen: 4, options: ["x"] },
       );
       expect(meta.name).toBe("node1");
       expect(meta.iType).toBe(ItemType.ITEM_TYPE_VARIABLE);
       expect(meta.varDType).toBe(VarDataType.VAR_DATA_TYPE_FLOAT);
+      expect(meta.min).toBe(0);
+      expect(meta.max).toBe(10);
+      expect(meta.unit).toBe("°C");
+      expect(meta.maxLen).toEqual([4]);
+      expect(meta.options).toEqual(["x"]);
+    });
+  });
+
+  describe("createEditMetaCommand", () => {
+    it("builds editMeta envelope with optional fields", () => {
+      const { command, cmdId } = createEditMetaCommand("var-1", {
+        unit: "kPa",
+        min: 1,
+        max: 5,
+        options: ["A", "B"],
+        maxLen: 8,
+      });
+      expect(command.editMeta?.varId).toBe("var-1");
+      expect(command.editMeta?.unit).toBe("kPa");
+      expect(command.editMeta?.min).toBe(1);
+      expect(command.editMeta?.max).toBe(5);
+      expect(command.editMeta?.options).toEqual(["A", "B"]);
+      expect(command.editMeta?.maxLen).toEqual([8]);
+      expect(cmdId).toMatch(/^edit-meta-/);
     });
   });
 });

@@ -49,9 +49,27 @@ export interface TagRealtimeClient {
     name: string,
     itemType: ItemType,
     varType: VarDataType | undefined,
+    meta?: {
+      unit?: string;
+      min?: number;
+      max?: number;
+      options?: string[];
+      maxLen?: number;
+    },
     endpoint?: string,
   ) => Promise<string[]>;
   removeItems: (itemIds: string[], endpoint?: string) => Promise<void>;
+  updateMeta: (
+    varId: string,
+    meta: {
+      unit?: string;
+      min?: number;
+      max?: number;
+      options?: string[];
+      maxLen?: number;
+    },
+    endpoint?: string,
+  ) => Promise<void>;
 }
 
 export function createPageTagRealtimeProvider(
@@ -99,11 +117,30 @@ export function createPageTagRealtimeProvider(
       name: string,
       itemType: ItemType,
       varType: VarDataType | undefined,
+      meta?: {
+        unit?: string;
+        min?: number;
+        max?: number;
+        options?: string[];
+        maxLen?: number;
+      },
     ) => {
-      return client.addItem(parentId, name, itemType, varType, endpoint);
+      return client.addItem(parentId, name, itemType, varType, meta, endpoint);
     },
     removeItems: (itemIds: string[]) => {
       return client.removeItems(itemIds, endpoint);
+    },
+    updateMeta: (
+      varId: string,
+      meta: {
+        unit?: string;
+        min?: number;
+        max?: number;
+        options?: string[];
+        maxLen?: number;
+      },
+    ) => {
+      return client.updateMeta(varId, meta, endpoint);
     },
   };
 }

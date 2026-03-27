@@ -46,7 +46,7 @@
     getLoadedDescendantIds,
     getMinimalAncestorSet,
   } from "$lib/features/tree/tree-selection";
-  import { Layers, Plus, Trash2 } from "lucide-svelte";
+import { Layers, Plus, Trash2, Pencil } from "lucide-svelte";
 
   interface ActiveMenuState {
     x: number;
@@ -209,27 +209,19 @@
       },
     ],
     tag: (context) => [
-      /* {
-				id: 'tag-inspect',
-				label: `Inspect ${context.node.name}`,
-				onSelect: () => console.info('Inspect tag', context.node.path)
-			}, */
-      /* {
-				id: 'tag-history',
-				label: 'Trend & History',
-				children: [
-					{
-						id: 'tag-history-1h',
-						label: 'Last 1 hour',
-						onSelect: () => console.info('History 1h', context.node.path)
-					},
-					{
-						id: 'tag-history-24h',
-						label: 'Last 24 hours',
-						onSelect: () => console.info('History 24h', context.node.path)
-					}
-				]
-			}, */
+      {
+        id: "tag-edit",
+        label: "Edit",
+        icon: Pencil,
+        disabled: get(wsStatus) !== "connected",
+        onSelect: () => {
+          window.dispatchEvent(
+            new CustomEvent<{ node: TreeNode }>("tree:open-edit-dialog", {
+              detail: { node: context.node },
+            }),
+          );
+        },
+      },
       {
         id: "tag-remove",
         label: "Remove",
@@ -273,13 +265,42 @@
     name: string;
     itemType: ItemType;
     varType: VarDataType | undefined;
+    unit?: string;
+    min?: number;
+    max?: number;
+    options?: string[];
+    maxLen?: number;
   }): Promise<void> {
     await realtimeProvider.addItem(
       input.parentId,
       input.name,
       input.itemType,
       input.varType,
+      {
+        unit: input.unit,
+        min: input.min,
+        max: input.max,
+        options: input.options,
+        maxLen: input.maxLen,
+      },
     );
+  }
+
+  async function editTreeMeta(input: {
+    varId: string;
+    unit?: string;
+    min?: number;
+    max?: number;
+    options?: string[];
+    maxLen?: number;
+  }): Promise<void> {
+    await realtimeProvider.updateMeta(input.varId, {
+      unit: input.unit,
+      min: input.min,
+      max: input.max,
+      options: input.options,
+      maxLen: input.maxLen,
+    });
   }
 
   async function removeTreeNode(node: TreeNode): Promise<void> {
@@ -778,6 +799,7 @@
         onNodeDragEnd={handleNodeDragEnd}
         onRootId={(id) => (treeRootId = id)}
         onCreateItem={createTreeItem}
+        onEditMeta={editTreeMeta}
         websocketStatus={$wsStatus}
         realtimeEnabled={canvasMode === "play"}
         liveTagValues={$tagValues}

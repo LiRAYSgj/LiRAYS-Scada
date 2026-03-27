@@ -41,6 +41,11 @@ function toTreeNodes(
       variable.varDType !== undefined
         ? varDataTypeToJSON(variable.varDType)
         : undefined,
+    unit: variable.unit ?? undefined,
+    min: variable.min ?? undefined,
+    max: variable.max ?? undefined,
+    options: variable.options ?? [],
+    maxLen: variable.maxLen ?? [],
   }));
 
   return [...folders, ...vars];

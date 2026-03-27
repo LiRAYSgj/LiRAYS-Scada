@@ -37,6 +37,19 @@
       name: string;
       itemType: ItemType;
       varType: VarDataType | undefined;
+      unit?: string;
+      min?: number;
+      max?: number;
+      options?: string[];
+      maxLen?: number;
+    }) => Promise<void>;
+    onEditMeta: (input: {
+      varId: string;
+      unit?: string;
+      min?: number;
+      max?: number;
+      options?: string[];
+      maxLen?: number;
     }) => Promise<void>;
     /** When true, show checkboxes and use multi-selection instead of single select/drag/context. */
     multiSelectMode?: boolean;
@@ -64,6 +77,7 @@
     liveTagValues = {},
     onRootId,
     onCreateItem,
+    onEditMeta,
     multiSelectMode = false,
     selection = new Set<string>(),
     propagateDown = true,
@@ -87,14 +101,29 @@
 
   let treeViewportEl: HTMLDivElement | null = null;
   let addDialog: HTMLDialogElement | null = null;
+  let editDialog: HTMLDialogElement | null = null;
   let scrollTop = $state(0);
   let viewportHeight = $state(0);
   let addName = $state("");
   let addKind = $state<ItemType>(ItemType.ITEM_TYPE_VARIABLE);
   let addDataType = $state<VarDataType>(VarDataType.VAR_DATA_TYPE_TEXT);
+  let addUnit = $state("");
+  let addMin = $state("");
+  let addMax = $state("");
+  let addOptions = $state("");
+  let addMaxLen = $state("");
   let addError = $state("");
   let addSubmitting = $state(false);
   let addParentId = $state<string | null | undefined>(undefined);
+  let editVarId = $state<string | null>(null);
+  let editUnit = $state("");
+  let editMin = $state("");
+  let editMax = $state("");
+  let editOptions = $state("");
+  let editMaxLen = $state("");
+  let editDataType = $state<string>("");
+  let editError = $state("");
+  let editSubmitting = $state(false);
   const isConnected = $derived(
     websocketStatus === WebSocketConnectionStatus.CONNECTED,
   );
@@ -224,6 +253,15 @@
       "tree:open-add-dialog",
       openAddDialogHandler as EventListener,
     );
+    const openEditDialogHandler = (event: Event) => {
+      const custom = event as CustomEvent<{ node: TreeNode }>;
+      if (!custom.detail?.node) return;
+      openEditDialog(custom.detail.node);
+    };
+    window.addEventListener(
+      "tree:open-edit-dialog",
+      openEditDialogHandler as EventListener,
+    );
 
     return () => {
       unsubTree();
@@ -235,6 +273,10 @@
       window.removeEventListener(
         "tree:open-add-dialog",
         openAddDialogHandler as EventListener,
+      );
+      window.removeEventListener(
+        "tree:open-edit-dialog",
+        openEditDialogHandler as EventListener,
       );
     };
   });
@@ -350,8 +392,29 @@
     addName = "";
     addKind = ItemType.ITEM_TYPE_VARIABLE;
     addDataType = VarDataType.VAR_DATA_TYPE_TEXT;
+    addUnit = "";
+    addMin = "";
+    addMax = "";
+    addOptions = "";
+    addMaxLen = "";
     addError = "";
     addDialog.showModal();
+  }
+
+  function openEditDialog(node: TreeNode): void {
+    if (!isConnected || !editDialog || node.kind !== "tag") {
+      return;
+    }
+    editVarId = node.id;
+    editUnit = node.unit ?? "";
+    editMin = node.min !== undefined ? String(node.min) : "";
+    editMax = node.max !== undefined ? String(node.max) : "";
+    editOptions = node.options ? node.options.join(", ") : "";
+    editMaxLen =
+      node.maxLen && node.maxLen.length > 0 ? String(node.maxLen[0]) : "";
+    editDataType = node.dataType ?? "";
+    editError = "";
+    editDialog.showModal();
   }
 
   function closeAddDialog(): void {
@@ -359,6 +422,13 @@
     if (addDialog?.open) {
       addDialog.close();
     }
+  }
+
+  function closeEditDialog(): void {
+    if (editDialog?.open) {
+      editDialog.close();
+    }
+    editVarId = null;
   }
 
   function resolveParentIdForCreate(): string | null {
@@ -398,11 +468,61 @@
       const itemType: ItemType = addKind;
       const varType: VarDataType | undefined =
         itemType === ItemType.ITEM_TYPE_VARIABLE ? addDataType : undefined;
+      const unit = addUnit.trim() || undefined;
+      const minStr =
+        itemType === ItemType.ITEM_TYPE_VARIABLE && typeof addMin === "string"
+          ? addMin.trim()
+          : "";
+      const maxStr =
+        itemType === ItemType.ITEM_TYPE_VARIABLE && typeof addMax === "string"
+          ? addMax.trim()
+          : "";
+      const maxLenStr =
+        addDataType === VarDataType.VAR_DATA_TYPE_TEXT &&
+        typeof addMaxLen === "string"
+          ? addMaxLen.trim()
+          : "";
+
+      const min =
+        minStr.length > 0 ? Number(minStr) : undefined;
+      const max =
+        maxStr.length > 0 ? Number(maxStr) : undefined;
+      if (min !== undefined && Number.isNaN(min)) {
+        addError = "Min must be a number";
+        addSubmitting = false;
+        return;
+      }
+      if (max !== undefined && Number.isNaN(max)) {
+        addError = "Max must be a number";
+        addSubmitting = false;
+        return;
+      }
+      const options =
+        addDataType === VarDataType.VAR_DATA_TYPE_TEXT &&
+        typeof addOptions === "string" &&
+        addOptions.trim()
+          ? addOptions
+              .split(",")
+              .map((opt) => opt.trim())
+              .filter(Boolean)
+          : undefined;
+      const maxLen =
+        maxLenStr.length > 0 ? Number(maxLenStr) : undefined;
+      if (maxLen !== undefined && Number.isNaN(maxLen)) {
+        addError = "Max length must be a number";
+        addSubmitting = false;
+        return;
+      }
       await onCreateItem({
         parentId: parentId ?? null,
         name: addName.trim(),
         itemType,
         varType,
+        unit,
+        min,
+        max,
+        options,
+        maxLen,
       });
       closeAddDialog();
     } catch (error) {
@@ -412,6 +532,64 @@
       addSubmitting = false;
     }
   }
+
+  async function submitEditDialog(event: SubmitEvent): Promise<void> {
+    event.preventDefault();
+    if (!editVarId) return;
+    editError = "";
+    editSubmitting = true;
+
+    const minStr = typeof editMin === "string" ? editMin.trim() : "";
+    const maxStr = typeof editMax === "string" ? editMax.trim() : "";
+    const maxLenStr = typeof editMaxLen === "string" ? editMaxLen.trim() : "";
+
+    const min = minStr.length > 0 ? Number(minStr) : undefined;
+    const max = maxStr.length > 0 ? Number(maxStr) : undefined;
+    const maxLen = maxLenStr.length > 0 ? Number(maxLenStr) : undefined;
+
+    if (min !== undefined && Number.isNaN(min)) {
+      editError = "Min must be a number";
+      editSubmitting = false;
+      return;
+    }
+    if (max !== undefined && Number.isNaN(max)) {
+      editError = "Max must be a number";
+      editSubmitting = false;
+      return;
+    }
+    if (maxLen !== undefined && Number.isNaN(maxLen)) {
+      editError = "Max length must be a number";
+      editSubmitting = false;
+      return;
+    }
+
+    const options =
+      editDataType === "VAR_DATA_TYPE_TEXT" && typeof editOptions === "string"
+        ? editOptions
+            .split(",")
+            .map((opt) => opt.trim())
+            .filter(Boolean)
+        : undefined;
+
+    try {
+      await onEditMeta({
+        varId: editVarId,
+        unit: editUnit.trim() || undefined,
+        min,
+        max,
+        options,
+        maxLen,
+      });
+      const node = get(treeState).nodes[editVarId];
+      await tree.refreshNode(node?.parentId ?? null);
+      closeEditDialog();
+    } catch (error) {
+      editError =
+        error instanceof Error ? error.message : "Failed to update metadata";
+    } finally {
+      editSubmitting = false;
+    }
+  }
 </script>
 
 <section
@@ -419,11 +597,12 @@
   style="background-color: var(--bg-panel);"
 >
   <header
-    class="grid h-9 grid-cols-[1fr_90px_90px] items-center border-b border-black/10 px-2 text-[11px] tracking-wider text-(--text-muted) uppercase dark:border-white/10"
+    class="grid h-9 grid-cols-[1fr_90px_90px_80px] items-center border-b border-black/10 px-2 text-[11px] tracking-wider text-(--text-muted) uppercase dark:border-white/10"
   >
     <span> </span>
-    <span>Value</span>
     <span>Type</span>
+    <span>Value</span>
+    <span>Unit</span>
   </header>
 
   <div
@@ -440,8 +619,9 @@
       <div class="space-y-2 p-2">
         {#each skeletonRows as rowKey (rowKey)}
           <div
-            class="grid h-8 grid-cols-[1fr_90px_90px] items-center gap-2 rounded px-2"
+            class="grid h-8 grid-cols-[1fr_90px_90px_80px] items-center gap-2 rounded px-2"
           >
+            <div class="h-3.5 animate-pulse rounded bg-(--bg-muted)"></div>
             <div class="h-3.5 animate-pulse rounded bg-(--bg-muted)"></div>
             <div class="h-3.5 animate-pulse rounded bg-(--bg-muted)"></div>
             <div class="h-3.5 animate-pulse rounded bg-(--bg-muted)"></div>
@@ -509,14 +689,14 @@
 
 <dialog
   bind:this={addDialog}
-  class="fixed inset-0 m-auto h-[380px] w-[420px] rounded-md border border-black/10 bg-(--bg-panel) p-0 text-(--text-primary) shadow-xl backdrop:bg-black/50 dark:border-white/10"
+  class="fixed inset-0 m-auto w-[420px] max-w-[90vw] rounded-md border border-black/10 bg-(--bg-panel) p-0 text-(--text-primary) shadow-xl backdrop:bg-black/50 dark:border-white/10"
 >
   <form class="flex h-full flex-col p-4" onsubmit={submitAddDialog}>
     <div class="flex items-center justify-between pb-4">
       <h2 class="text-sm font-semibold">Add Variable/Folder</h2>
     </div>
 
-    <div class="space-y-4">
+    <div class="space-y-4 overflow-y-auto pr-1">
       <div class="space-y-1">
         <label class="text-xs text-(--text-muted)" for="add-name">Name</label>
         <input
@@ -561,6 +741,77 @@
           <option value={VarDataType.VAR_DATA_TYPE_BOOLEAN}>Boolean</option>
         </select>
       </div>
+
+      {#if addKind === ItemType.ITEM_TYPE_VARIABLE}
+        <div class="space-y-3">
+          <div class="space-y-1">
+            <label class="text-xs text-(--text-muted)" for="add-unit"
+              >Unit (optional)</label
+            >
+            <input
+              id="add-unit"
+              type="text"
+              class="w-full rounded border border-black/15 bg-(--bg-muted) px-2 py-1.5 text-sm outline-none ring-0 focus:border-blue-500 dark:border-white/10"
+              bind:value={addUnit}
+              placeholder="e.g. °C, kPa"
+            />
+          </div>
+
+          {#if addDataType === VarDataType.VAR_DATA_TYPE_INTEGER || addDataType === VarDataType.VAR_DATA_TYPE_FLOAT}
+            <div class="grid grid-cols-2 gap-2">
+              <div class="space-y-1">
+                <label class="text-xs text-(--text-muted)" for="add-min"
+                  >Min (optional)</label
+                >
+                <input
+                  id="add-min"
+                  type="text"
+                  class="w-full rounded border border-black/15 bg-(--bg-muted) px-2 py-1.5 text-sm outline-none ring-0 focus:border-blue-500 dark:border-white/10"
+                  bind:value={addMin}
+                  placeholder="e.g. 0"
+                />
+              </div>
+              <div class="space-y-1">
+                <label class="text-xs text-(--text-muted)" for="add-max"
+                  >Max (optional)</label
+                >
+                <input
+                  id="add-max"
+                  type="text"
+                  class="w-full rounded border border-black/15 bg-(--bg-muted) px-2 py-1.5 text-sm outline-none ring-0 focus:border-blue-500 dark:border-white/10"
+                  bind:value={addMax}
+                  placeholder="e.g. 100"
+                />
+              </div>
+            </div>
+          {:else if addDataType === VarDataType.VAR_DATA_TYPE_TEXT}
+            <div class="space-y-1">
+              <label class="text-xs text-(--text-muted)" for="add-options"
+                >Allowed options (comma separated)</label
+              >
+              <input
+                id="add-options"
+                type="text"
+                class="w-full rounded border border-black/15 bg-(--bg-muted) px-2 py-1.5 text-sm outline-none ring-0 focus:border-blue-500 dark:border-white/10"
+                bind:value={addOptions}
+                placeholder="e.g. ON,OFF,IDLE"
+              />
+            </div>
+            <div class="space-y-1">
+              <label class="text-xs text-(--text-muted)" for="add-maxlen"
+                >Max length (optional)</label
+              >
+              <input
+                id="add-maxlen"
+                type="text"
+                class="w-full rounded border border-black/15 bg-(--bg-muted) px-2 py-1.5 text-sm outline-none ring-0 focus:border-blue-500 dark:border-white/10"
+                bind:value={addMaxLen}
+                placeholder="e.g. 32"
+              />
+            </div>
+          {/if}
+        </div>
+      {/if}
     </div>
 
     {#if addError}
@@ -584,6 +835,112 @@
         loading={addSubmitting}
         loadingLabel="Saving…"
         disabled={addSubmitting || !isConnected}
+      />
+    </div>
+  </form>
+</dialog>
+
+<dialog
+  bind:this={editDialog}
+  class="fixed inset-0 m-auto w-[420px] max-w-[90vw] rounded-md border border-black/10 bg-(--bg-panel) p-0 text-(--text-primary) shadow-xl backdrop:bg-black/50 dark:border-white/10"
+>
+  <form class="flex h-full flex-col p-4" onsubmit={submitEditDialog}>
+    <div class="flex items-center justify-between pb-4">
+      <h2 class="text-sm font-semibold">Edit Variable Metadata</h2>
+    </div>
+
+    <div class="space-y-3 overflow-y-auto pr-1">
+      <div class="space-y-1">
+        <label class="text-xs text-(--text-muted)">Variable ID</label>
+        <div class="rounded border border-black/15 bg-(--bg-muted) px-2 py-1.5 text-[11px] text-(--text-secondary) dark:border-white/10">
+          {editVarId}
+        </div>
+      </div>
+
+      <div class="space-y-1">
+        <label class="text-xs text-(--text-muted)" for="edit-unit">Unit</label>
+        <input
+          id="edit-unit"
+          type="text"
+          class="w-full rounded border border-black/15 bg-(--bg-muted) px-2 py-1.5 text-sm outline-none ring-0 focus:border-blue-500 dark:border-white/10"
+          bind:value={editUnit}
+          placeholder="e.g. °C, kPa"
+        />
+      </div>
+
+      {#if editDataType === "VAR_DATA_TYPE_INTEGER" || editDataType === "VAR_DATA_TYPE_FLOAT"}
+        <div class="grid grid-cols-2 gap-2">
+          <div class="space-y-1">
+            <label class="text-xs text-(--text-muted)" for="edit-min">Min</label>
+            <input
+              id="edit-min"
+              type="text"
+              class="w-full rounded border border-black/15 bg-(--bg-muted) px-2 py-1.5 text-sm outline-none ring-0 focus:border-blue-500 dark:border-white/10"
+              bind:value={editMin}
+              placeholder="e.g. 0"
+            />
+          </div>
+          <div class="space-y-1">
+            <label class="text-xs text-(--text-muted)" for="edit-max">Max</label>
+            <input
+              id="edit-max"
+              type="text"
+              class="w-full rounded border border-black/15 bg-(--bg-muted) px-2 py-1.5 text-sm outline-none ring-0 focus:border-blue-500 dark:border-white/10"
+              bind:value={editMax}
+              placeholder="e.g. 100"
+            />
+          </div>
+        </div>
+      {:else if editDataType === "VAR_DATA_TYPE_TEXT"}
+        <div class="space-y-1">
+          <label class="text-xs text-(--text-muted)" for="edit-options"
+            >Options (comma separated)</label
+          >
+          <input
+            id="edit-options"
+            type="text"
+            class="w-full rounded border border-black/15 bg-(--bg-muted) px-2 py-1.5 text-sm outline-none ring-0 focus:border-blue-500 dark:border-white/10"
+            bind:value={editOptions}
+            placeholder="e.g. ON,OFF"
+          />
+        </div>
+        <div class="space-y-1">
+          <label class="text-xs text-(--text-muted)" for="edit-maxlen"
+            >Max length</label
+          >
+          <input
+            id="edit-maxlen"
+            type="text"
+            class="w-full rounded border border-black/15 bg-(--bg-muted) px-2 py-1.5 text-sm outline-none ring-0 focus:border-blue-500 dark:border-white/10"
+            bind:value={editMaxLen}
+            placeholder="e.g. 32"
+          />
+        </div>
+      {/if}
+    </div>
+
+    {#if editError}
+      <p class="pt-2 text-xs text-red-500">{editError}</p>
+    {/if}
+
+    <div
+      class="mt-auto flex justify-end gap-2 border-t border-black/10 pt-4 dark:border-white/10"
+    >
+      <Button
+        variant="outline-muted"
+        label="Cancel"
+        title="Cancel"
+        onclick={closeEditDialog}
+        type="button"
+      />
+      <Button
+        type="submit"
+        variant="filled-accent"
+        label="Save"
+        title="Save"
+        loading={editSubmitting}
+        loadingLabel="Saving…"
+        disabled={editSubmitting || !isConnected}
       />
     </div>
   </form>

@@ -10,6 +10,7 @@ import {
   createUnsubscribeCommand,
   createListCommand,
   createSetCommand,
+  createEditMetaCommand,
   fromBackendValue,
   namespaceJsonToSchema,
 } from "./command-ws-client";
@@ -46,7 +47,8 @@ type PendingType =
   | "del"
   | "add_bulk"
   | "sub"
-  | "unsub";
+  | "unsub"
+  | "edit_meta";
 
 interface PendingCommand {
   type: PendingType;
@@ -187,6 +189,13 @@ export class TagStreamClient {
     name: string,
     itemType: ItemType,
     varType: VarDataType | undefined,
+    meta?: {
+      unit?: string;
+      min?: number;
+      max?: number;
+      options?: string[];
+      maxLen?: number;
+    },
     endpoint?: string,
   ): Promise<string[]> {
     await this.ensureConnected(endpoint);
@@ -195,6 +204,7 @@ export class TagStreamClient {
         name,
         itemType,
         itemType === ItemType.ITEM_TYPE_FOLDER ? undefined : varType,
+        meta,
       ),
     ]);
     return new Promise<string[]>((resolve, reject) => {
@@ -206,6 +216,35 @@ export class TagStreamClient {
       this.pendingByCmdId.set(cmdId, {
         type: "add",
         resolve: () => resolve([] as string[]),
+        reject,
+        timeoutId,
+      });
+      this.send(command);
+    });
+  }
+
+  async updateMeta(
+    varId: string,
+    meta: {
+      unit?: string;
+      min?: number;
+      max?: number;
+      options?: string[];
+      maxLen?: number;
+    },
+    endpoint?: string,
+  ): Promise<void> {
+    await this.ensureConnected(endpoint);
+    const { cmdId, command } = createEditMetaCommand(varId, meta);
+    return new Promise<void>((resolve, reject) => {
+      const timeoutId = setTimeout(() => {
+        this.pendingByCmdId.delete(cmdId);
+        snackbarStore.error(TIMEOUT_USER_MESSAGE);
+        reject(new Error("EDIT_META request timed out"));
+      }, COMMAND_TIMEOUT_MS);
+      this.pendingByCmdId.set(cmdId, {
+        type: "edit_meta",
+        resolve: () => resolve(),
         reject,
         timeoutId,
       });
@@ -451,6 +490,7 @@ export class TagStreamClient {
       payload.del?.cmdId ??
       payload.sub?.cmdId ??
       payload.unsub?.cmdId ??
+      payload.editMeta?.cmdId ??
       payload.inv?.cmdId ??
       payload.addBulk?.cmdId ??
       ""
@@ -509,6 +549,7 @@ export class TagStreamClient {
         payload.addBulk != null ||
         payload.sub != null ||
         payload.unsub != null ||
+        payload.editMeta != null ||
         payload.inv != null;
 
       if (hasEnvelopeType) {

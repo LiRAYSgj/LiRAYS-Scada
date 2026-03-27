@@ -12,6 +12,11 @@ export interface TreeNode {
   dataType?: string;
   quality?: "good" | "uncertain" | "bad";
   timestamp?: string;
+  unit?: string;
+  min?: number;
+  max?: number;
+  options?: string[];
+  maxLen?: number[];
 }
 
 export interface TreeState {
