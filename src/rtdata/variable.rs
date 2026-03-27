@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
-use log::{debug, warn, info};
-use tokio::sync::broadcast;
+use log::{debug, info, warn};
+use tokio::sync::{mpsc, RwLock};
 use uuid::Uuid;
 use prost::Message;
 use sled::{Tree, Batch};
@@ -42,6 +42,7 @@ use crate::rtdata::namespace::{
     NamespaceNode,
     EventType,
     Event,
+    EventBatch,
     EditMetaResponse,
     value::Typed,
     event::Ev,
@@ -52,7 +53,7 @@ use crate::rtdata::namespace::{
 
 pub struct VariableManager {
     pub items_tree: Tree,
-    pub events_tx: broadcast::Sender<Event>,
+    event_senders: RwLock<Vec<mpsc::Sender<EventBatch>>>,
 }
 
 impl VariableManager {
@@ -61,9 +62,31 @@ impl VariableManager {
         let db = sled::open(files_dir).unwrap();
         let items_tree = db.open_tree("mainTree").unwrap();
 
-        let (tx, _) = broadcast::channel(1024);
-        // generate_json_examples();
-        Self { items_tree, events_tx: tx }
+        Self {
+            items_tree,
+            event_senders: RwLock::new(Vec::new()),
+        }
+    }
+
+    /// Register a new listener; returns an mpsc receiver for event batches.
+    pub async fn register_listener(&self) -> mpsc::Receiver<EventBatch> {
+        let (tx, rx) = mpsc::channel(64);
+        self.event_senders.write().await.push(tx);
+        rx
+    }
+
+    async fn broadcast_batch(&self, batch: EventBatch) {
+        let senders = { self.event_senders.read().await.clone() };
+        let mut closed_indices = Vec::new();
+        for (idx, tx) in senders.iter().enumerate() {
+            if tx.send(batch.clone()).await.is_err() {
+                closed_indices.push(idx);
+            }
+        }
+        if !closed_indices.is_empty() {
+            let mut guard = self.event_senders.write().await;
+            guard.retain(|tx| !tx.is_closed());
+        }
     }
 
     fn add_items(
@@ -261,7 +284,7 @@ impl VariableManager {
         Ok((first_level_folders, first_level_variables))
     }
 
-    fn set_vals(&self, var_id_vals: Vec<VarIdValue>) -> Result<Vec<VarIdValue>, String> {
+    fn set_vals(&self, var_id_vals: Vec<VarIdValue>) -> Result<EventBatch, String> {
         let mut batch = Batch::default();
         let mut successfully_set_vals = Vec::with_capacity(var_id_vals.len());
         for var_id_val in var_id_vals {
@@ -301,7 +324,12 @@ impl VariableManager {
             }
         }
         self.items_tree.apply_batch(batch).map_err(|e| format!("Error Applying batch op: {e}"))?;
-        Ok(successfully_set_vals)
+        let events: Vec<Event> = successfully_set_vals
+            .iter()
+            .cloned()
+            .map(|v| Event { ev: Some(Ev::VarValueEv(v)) })
+            .collect();
+        Ok(EventBatch { events })
     }
 
     fn edit_meta(&self, var_id: &str, patch: ItemMeta) -> Result<(), String> {
@@ -378,7 +406,7 @@ impl VariableManager {
         self.items_tree.apply_batch(batch).map_err(|e| format!("Error removing items: {e}"))
     }
 
-    pub fn exec_cmd(
+    pub async fn exec_cmd(
         &self,
         cmd: Command,
         subscribed_set: &mut HashSet<String>,
@@ -395,9 +423,7 @@ impl VariableManager {
                             Ok(_) => {
                                 let folder_id = add_cmd.parent_id.unwrap_or("/".to_string());
                                 if let Ok(event) = extract_add_event(&folder_id, reload, new_folders, new_variables) {
-                                    if let Err(e) = self.events_tx.send(event) {
-                                        warn!("Error sending event: {e}");
-                                    }
+                                    let _ = self.broadcast_batch(EventBatch { events: vec![event] }).await;
                                 } else {
                                     warn!("Error extracting event");
                                 }
@@ -422,12 +448,8 @@ impl VariableManager {
             }
             Some(CommandType::Set(set_cmd)) => {
                 let (status, error_msg) = match self.set_vals(set_cmd.var_ids_values) {
-                    Ok(successfully_set_vals) => {
-                        for v in successfully_set_vals {
-                            if let Err(e) = self.events_tx.send(Event { ev: Some(Ev::VarValueEv(v)) }) {
-                                warn!("Error sending event: {e}");
-                            }
-                        }
+                    Ok(batch) => {
+                        let _ = self.broadcast_batch(batch).await;
                         (OperationStatus::Ok as i32, None)
                     }
                     Err(e) => (OperationStatus::Err as i32, Some(e))
@@ -445,9 +467,7 @@ impl VariableManager {
                 let (status, error_msg) = match self.del_items(del_cmd.item_ids.clone()) {
                     Ok(_) => {
                         if let Ok(event) = extract_del_event(&del_cmd) {
-                            if let Err(e) = self.events_tx.send(event) {
-                                warn!("Error sending event: {e}");
-                            }
+                            let _ = self.broadcast_batch(EventBatch { events: vec![event] }).await;
                         } else {
                             warn!("Error extracting event");
                         }
@@ -465,9 +485,7 @@ impl VariableManager {
                             Ok((new_folders, new_variables)) => match self.items_tree.apply_batch(batch) {
                                 Ok(_) => {
                                     if let Ok(event) = extract_add_event(&addb_cmd.parent_id, false, new_folders, new_variables) {
-                                        if let Err(e) = self.events_tx.send(event) {
-                                            warn!("Error sending event: {e}");
-                                        }
+                                        let _ = self.broadcast_batch(EventBatch { events: vec![event] }).await;
                                     } else {
                                         warn!("Error extracting event");
                                     }

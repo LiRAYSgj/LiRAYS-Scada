@@ -1,0 +1,36 @@
+[package]
+name = "lirays-ws-client"
+version = "0.1.0"
+edition = "2024"
+description = "Rust client for LiRAYS-SCADA over WebSocket + Protobuf"
+license = "MIT"
+authors = ["LiRAYS Team"]
+readme = "README.md"
+keywords = ["websocket", "protobuf", "scada", "client"]
+repository = ""
+
+[lib]
+name = "lirays_ws_client"
+path = "src/lib.rs"
+
+[[bin]]
+name = "demo"
+path = "demo/src/main.rs"
+
+[dependencies]
+bytes = "1.11"
+futures-util = "0.3"
+prost = "0.14"
+serde = { version = "1.0", features = ["derive"] }
+thiserror = "1.0"
+tokio = { version = "1.50", features = ["full"] }
+tokio-tungstenite = { version = "0.28", features = ["rustls-tls-native-roots"] }
+uuid = { version = "1.21", features = ["v4"] }
+url = "2.5"
+anyhow = "1.0"
+env_logger = "0.11"
+log = "0.4"
+rand = "0.8"
+
+[build-dependencies]
+prost-build = "0.14"

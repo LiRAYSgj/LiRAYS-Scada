@@ -22,3 +22,8 @@ message Event {
     TreeChanged tree_changed_ev = 2;
   }
 }
+
+// Internal batch used between server components; not sent directly to frontend.
+message EventBatch {
+  repeated Event events = 1;
+}

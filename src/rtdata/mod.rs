@@ -5,7 +5,7 @@ pub mod utils;
 pub mod events;
 
 use futures_util::{SinkExt, StreamExt};
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use prost::Message as ProstMessage;
 use serde_json;
 use std::{collections::HashSet, sync::Arc};
@@ -23,7 +23,7 @@ where
     match accept_async(stream).await {
         Ok(mut ws_stream) => {
             info!("Accepting client from {addr}");
-            let mut events_rx = vm.events_tx.subscribe();
+            let mut events_rx = vm.register_listener().await;
             let mut subscribed_set: HashSet<String> = HashSet::new();
             let mut get_tree_changes = false;
             let mut as_json = false;
@@ -32,6 +32,7 @@ where
                     cmd_result = ws_stream.next() => {
                         match cmd_result {
                             Some(Ok(msg)) => {
+                                let start = std::time::Instant::now();
                                 let (command, is_json_cmd) = match msg {
                                     Message::Binary(bin) => {
                                         match Command::decode(&*bin) {
@@ -49,7 +50,10 @@ where
                                 };
                                 as_json = is_json_cmd;
 
-                                let response = vm.exec_cmd(command, &mut subscribed_set, &mut get_tree_changes);
+                                let cmd_kind = command.command_type.as_ref().map(|ct| std::mem::discriminant(ct));
+                                let response = vm.exec_cmd(command, &mut subscribed_set, &mut get_tree_changes).await;
+                                let elapsed = start.elapsed();
+                                info!("exec_cmd handled in {:?} for client {} kind {:?}", elapsed, addr, cmd_kind);
                                 let resp_msg = if as_json {
                                     match serde_json::to_string(&response) {
                                         Ok(str_) => Message::Text(str_.into()),
@@ -79,29 +83,35 @@ where
                     }
                     data_result = events_rx.recv() => {
                         match data_result {
-                            Ok(event) => {
-                                let send_event = match &event.ev {
-                                    Some(Ev::VarValueEv(var_id_val)) => subscribed_set.contains(&var_id_val.var_id),
-                                    Some(Ev::TreeChangedEv(_)) => get_tree_changes,
-                                    None => false
-                                };
-                                if send_event {
-                                    let resp_msg = if as_json {
-                                        match serde_json::to_string(&event) {
-                                            Ok(str_) => Message::Text(str_.into()),
-                                            Err(e) => Message::Text(format!("Error: {e}").into())
-                                        }
-                                    } else {
-                                        Message::Binary(event.encode_to_vec().into())
+                            Some(batch) => {
+                                let start_batch = std::time::Instant::now();
+                                for event in batch.events {
+                                    let send_event = match &event.ev {
+                                        Some(Ev::VarValueEv(var_id_val)) => subscribed_set.contains(&var_id_val.var_id),
+                                        Some(Ev::TreeChangedEv(_)) => get_tree_changes,
+                                        None => false
                                     };
-                                    match ws_stream.send(resp_msg).await {
-                                        Ok(_) => (),
-                                        Err(e) => error!("Error sending response client {addr}. Err: {e}")
+                                    if send_event {
+                                        let resp_msg = if as_json {
+                                            match serde_json::to_string(&event) {
+                                                Ok(str_) => Message::Text(str_.into()),
+                                                Err(e) => Message::Text(format!("Error: {e}").into())
+                                            }
+                                        } else {
+                                            Message::Binary(event.encode_to_vec().into())
+                                        };
+                                        match ws_stream.send(resp_msg).await {
+                                            Ok(_) => (),
+                                            Err(e) => error!("Error sending response client {addr}. Err: {e}")
+                                        }
                                     }
                                 }
+                                let elapsed = start_batch.elapsed();
+                                info!("event batch processed in {:?} for client {}", elapsed, addr);
                             }
-                            Err(e) => {
-                                warn!("Error receiving message client {addr}: {e}")
+                            None => {
+                                warn!("Event channel closed for client {addr}");
+                                break;
                             }
                         }
                     }
