@@ -43,6 +43,7 @@ axum-extra = { version = "0.10", features = ["cookie"] }
 chrono = { version = "0.4", features = ["clock"] }
 constant_time_eq = "0.3"
 time = "0.3"
+dashmap = "5.5"
 
 [build-dependencies]
 prost-build = "0.14.3"

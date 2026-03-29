@@ -1,15 +1,20 @@
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use log::{debug, info, warn};
 use tokio::sync::{mpsc, RwLock};
 use uuid::Uuid;
 use prost::Message;
 use sled::{Tree, Batch};
+use dashmap::DashMap;
+use tokio::sync::mpsc::error::TrySendError;
+use std::sync::Arc;
 
 // use crate::rtdata::namespace::{AddCommand, ListCommand, SetCommand, SubscribeCommand};
 
 use super::parser::{parse_repeated_name, clone_name};
 use super::events::{extract_add_event, extract_del_event};
+use super::metrics::Metrics;
 use super::utils::{
     CachedValue,
     normalize_path,
@@ -52,12 +57,14 @@ pub struct VariableManager {
     pub items_tree: Tree,
     pub values_tree: Tree,
     pub values_cache: RwLock<HashMap<String, CachedValue>>,
-    event_senders: RwLock<Vec<mpsc::Sender<EventBatch>>>,
+    event_senders: DashMap<u64, mpsc::Sender<Arc<EventBatch>>>,
+    next_listener_id: AtomicU64,
+    metrics: Arc<Metrics>,
 }
 
 impl VariableManager {
 
-    pub fn new(files_dir: &str) -> Self {
+    pub fn new(files_dir: &str, metrics: Arc<Metrics>) -> Self {
         let db = sled::open(files_dir).unwrap();
         let items_tree = db.open_tree("mainTree").unwrap();
         let values_tree = db.open_tree("valuesTree").unwrap();
@@ -67,27 +74,44 @@ impl VariableManager {
             items_tree,
             values_tree,
             values_cache,
-            event_senders: RwLock::new(Vec::new()),
+            event_senders: DashMap::new(),
+            next_listener_id: AtomicU64::new(0),
+            metrics,
         }
     }
 
-    pub async fn register_listener(&self) -> mpsc::Receiver<EventBatch> {
-        let (tx, rx) = mpsc::channel(64);
-        self.event_senders.write().await.push(tx);
+    // ===================== Event dispatching =====================
+    /// Register a new subscriber; returns an mpsc receiver of shared `EventBatch`.
+    /// Each listener gets its own bounded queue; backlog drops are handled per client.
+    pub async fn register_listener(&self) -> mpsc::Receiver<Arc<EventBatch>> {
+        let (tx, rx) = mpsc::channel(256);
+        let id = self.next_listener_id.fetch_add(1, Ordering::Relaxed);
+        self.event_senders.insert(id, tx);
         rx
     }
 
-    async fn broadcast_batch(&self, batch: EventBatch) {
-        let senders = { self.event_senders.read().await.clone() };
-        let mut closed_indices = Vec::new();
-        for (idx, tx) in senders.iter().enumerate() {
-            if tx.send(batch.clone()).await.is_err() {
-                closed_indices.push(idx);
+    /// Fan-out an event batch to all listeners using non-blocking send.
+    /// Drops the batch for slow/full clients; removes closed listeners.
+    async fn broadcast_batch(&self, batch: Arc<EventBatch>) {
+        let mut closed_keys = Vec::new();
+        for entry in self.event_senders.iter() {
+            match entry.value().try_send(batch.clone()) {
+                Ok(_) => {}
+                Err(TrySendError::Closed(_)) => closed_keys.push(*entry.key()),
+                Err(TrySendError::Full(_)) => {
+                    // Drop for this client; optionally log at debug to avoid noise.
+                    debug!("Event queue full for listener {}, dropping batch", entry.key());
+                }
             }
         }
-        if !closed_indices.is_empty() {
-            let mut guard = self.event_senders.write().await;
-            guard.retain(|tx| !tx.is_closed());
+        if self.metrics.enabled() {
+            self.metrics.event_batches.fetch_add(1, Ordering::Relaxed);
+            if !closed_keys.is_empty() {
+                self.metrics.event_closed.fetch_add(closed_keys.len() as u64, Ordering::Relaxed);
+            }
+        }
+        for k in closed_keys {
+            self.event_senders.remove(&k);
         }
     }
 
@@ -131,6 +155,10 @@ impl VariableManager {
         {
             let mut val_cache_guard = self.values_cache.write().await;
             for i_meta in items_meta {
+                // Reject names with reserved characters
+                if i_meta.name.contains('/') || i_meta.name.contains('\0') {
+                    return Err("Item name cannot contain '/' or NUL".to_string());
+                }
                 let h_key = format!("{}/\0{}", parent_path, i_meta.name);
                 if self.items_tree.contains_key(&h_key).map_err(|e| format!("Reading error: {e}"))? {
                     return Err(format!("Can't create existing item {}", h_key));
@@ -437,15 +465,16 @@ impl VariableManager {
                 let cmd_id = add_cmd.cmd_id.clone();
                 let parent_id = add_cmd.parent_id.clone().unwrap_or_else(|| "/".to_string());
                 let mut batch = Batch::default();
+                let t0 = std::time::Instant::now();
                 let (status, error_msg) = match self.add_items(&parent_id, add_cmd.items_meta.clone(), &mut batch).await {
                     Ok((reload, new_folders, new_variables)) => {
                         match self.items_tree.apply_batch(batch) {
                             Ok(_) => {
                                 let folder_id = add_cmd.parent_id.unwrap_or("/".to_string());
                                 if let Ok(event) = extract_add_event(&folder_id, reload, new_folders, new_variables) {
-                                    let _ = self.broadcast_batch(EventBatch { events: vec![event] }).await;
+                                    let _ = self.broadcast_batch(Arc::new(EventBatch { events: vec![event] })).await;
                                 } else {
-                                    warn!("Error extracting event");
+                                    warn!("Error extracting add event");
                                 }
                                 (OperationStatus::Ok as i32, None)
                             }
@@ -454,40 +483,48 @@ impl VariableManager {
                     }
                     Err(e) => (OperationStatus::Err as i32, Some(format!("Inserting error: {e}")))
                 };
+                self.metrics.record_add(t0.elapsed());
                 Response { response_type: Some(ResponseType::Add(AddResponse { cmd_id })), status, error_msg }
             }
             Some(CommandType::List(list_cmd)) => {
                 let folder_to_list = list_cmd.folder_id.unwrap_or_else(|| "/".to_string());
+                let t0 = std::time::Instant::now();
                 let (status, error_msg, folders, variables) = match self.list_path(&folder_to_list).await {
                     Ok((children_folders, children_vars)) => {
                         (OperationStatus::Ok as i32, None, children_folders, children_vars)
                     }
                     Err(e) => (OperationStatus::Err as i32, Some(e), Vec::new(), Vec::new())
                 };
+                self.metrics.record_list(t0.elapsed());
                 Response { response_type: Some(ResponseType::List(ListResponse { cmd_id: list_cmd.cmd_id, folders, variables })), status, error_msg }
             }
             Some(CommandType::Set(set_cmd)) => {
+                let t0 = std::time::Instant::now();
                 let (status, error_msg) = match self.set_vals(set_cmd.var_ids_values).await {
                     Ok(batch) => {
-                        let _ = self.broadcast_batch(batch).await;
+                        let _ = self.broadcast_batch(Arc::new(batch)).await;
                         (OperationStatus::Ok as i32, None)
                     }
                     Err(e) => (OperationStatus::Err as i32, Some(e))
                 };
+                self.metrics.record_set(t0.elapsed());
                 Response { response_type: Some(ResponseType::Set(SetResponse { cmd_id: set_cmd.cmd_id })), status, error_msg }
             }
             Some(CommandType::Get(get_cmd)) => {
+                let t0 = std::time::Instant::now();
                 let (status, error_msg, var_values) = match self.get_vals(get_cmd.var_ids).await {
                     Ok(vals) => (OperationStatus::Ok as i32, None, vals),
                     Err(e) => (OperationStatus::Err as i32, Some(e), Vec::new())
                 };
+                self.metrics.record_get(t0.elapsed());
                 Response { response_type: Some(ResponseType::Get(GetResponse { cmd_id: get_cmd.cmd_id, var_values })), status, error_msg }
             }
             Some(CommandType::Del(del_cmd)) => {
+                let t0 = std::time::Instant::now();
                 let (status, error_msg) = match self.del_items(del_cmd.item_ids.clone()).await {
                     Ok(_) => {
                         if let Ok(event) = extract_del_event(&del_cmd) {
-                            let _ = self.broadcast_batch(EventBatch { events: vec![event] }).await;
+                            let _ = self.broadcast_batch(Arc::new(EventBatch { events: vec![event] })).await;
                         } else {
                             warn!("Error extracting event");
                         }
@@ -495,6 +532,7 @@ impl VariableManager {
                     }
                     Err(e) => (OperationStatus::Err as i32, Some(e))
                 };
+                self.metrics.record_del(t0.elapsed());
                 Response { response_type: Some(ResponseType::Del(DelResponse { cmd_id: del_cmd.cmd_id })), status, error_msg }
             }
             Some(CommandType::AddBulk(addb_cmd)) => {

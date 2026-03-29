@@ -48,7 +48,7 @@ pub struct TextVar {
     pub name: String,
     pub unit: Option<String>,
     pub options: Vec<String>,
-    pub max_len: Vec<u64>,
+    pub max_len: Option<u64>,
 }
 
 #[derive(Clone, Debug)]
@@ -142,7 +142,7 @@ impl Client {
     }
 
     /// List folders/variables under `folder_id` (root if None).
-    /// Returns the raw protobuf structs from the server.
+    /// Returns raw protobuf structs from the server.
     pub async fn list(
         &self,
         folder_id: Option<String>,
@@ -176,46 +176,7 @@ impl Client {
         res
     }
 
-    /// Igual que `list`, pero devuelve datos primitivos para no exponer tipos protobuf.
-    pub async fn list_raw(
-        &self,
-        folder_id: Option<String>,
-        timeout_ms: u64,
-    ) -> Result<
-        (
-            Vec<(String, String)>, // (folder_id, name)
-            Vec<(String, String, String, Option<String>, Option<f64>, Option<f64>, Vec<String>, Vec<u64>)>, // (var_id, name, var_d_type, unit, min, max, options, max_len)
-        ),
-        ClientError,
-    > {
-        let (folders, vars) = self.list(folder_id, timeout_ms).await?;
-
-        let folders_mapped = folders.into_iter().map(|f| (f.id, f.name)).collect();
-
-        let vars_mapped = vars
-            .into_iter()
-            .map(|v| {
-                let v_type = VarDataType::try_from(v.var_d_type)
-                    .map(|t| t.as_str_name().to_string())
-                    .unwrap_or_else(|_| "VAR_DATA_TYPE_INVALID".to_string());
-                (
-                    v.id,
-                    v.name,
-                    v_type,
-                    v.unit,
-                    v.min,
-                    v.max,
-                    v.options,
-                    v.max_len,
-                )
-            })
-            .collect();
-
-        Ok((folders_mapped, vars_mapped))
-    }
-
-    /// Crea una carpeta bajo `parent_id` (root si None) usando solo datos primitivos.
-    /// Crea múltiples carpetas bajo `parent_id` en un solo AddCommand.
+    /// Create multiple folders under `parent_id` (root if None) in a single AddCommand.
     pub async fn create_folders(
         &self,
         names: Vec<String>,
@@ -232,7 +193,7 @@ impl Client {
                 min: None,
                 max: None,
                 options: vec![],
-                max_len: vec![],
+                max_len: None,
             })
             .collect();
 
@@ -287,7 +248,7 @@ impl Client {
         .await?
     }
 
-    /// Crea variables enteras en lote.
+    /// Create integer variables in batch.
     pub async fn create_integer_variables(
         &self,
         vars: Vec<IntegerVar>,
@@ -304,13 +265,68 @@ impl Client {
                 min: v.min,
                 max: v.max,
                 options: vec![],
-                max_len: vec![],
+                max_len: None,
             })
             .collect();
         self.send_add(items, parent_id, timeout_ms).await
     }
 
-    /// Crea variables float en lote.
+    /// Delete items (folders or variables) by id.
+    pub async fn delete_items(
+        &self,
+        item_ids: Vec<String>,
+        timeout_ms: u64,
+    ) -> Result<(), ClientError> {
+        let cmd_id = Uuid::new_v4().to_string();
+        let cmd = Command {
+            command_type: Some(command::CommandType::Del(namespace::DelCommand {
+                cmd_id: cmd_id.clone(),
+                item_ids,
+            })),
+        };
+
+        self._send_command(cmd, timeout_ms, |resp| {
+            ensure_ok(&resp)?;
+            match resp.response_type {
+                Some(response::ResponseType::Del(_)) => Ok(()),
+                _ => Err(ClientError::UnexpectedFrame),
+            }
+        })
+        .await?
+    }
+
+    /// Get current values; returns Vec matching input order with Option<Typed> for each var_id.
+    pub async fn get_values(
+        &self,
+        var_ids: Vec<String>,
+        timeout_ms: u64,
+    ) -> Result<Vec<Option<value::Typed>>, ClientError> {
+        let cmd_id = Uuid::new_v4().to_string();
+        let cmd = Command {
+            command_type: Some(command::CommandType::Get(namespace::GetCommand {
+                cmd_id: cmd_id.clone(),
+                var_ids,
+            })),
+        };
+
+        self._send_command(cmd, timeout_ms, |resp| {
+            ensure_ok(&resp)?;
+            match resp.response_type {
+                Some(response::ResponseType::Get(get_resp)) => {
+                    let vals = get_resp
+                        .var_values
+                        .into_iter()
+                        .map(|ov| ov.value.and_then(|v| v.typed))
+                        .collect();
+                    Ok(vals)
+                }
+                _ => Err(ClientError::UnexpectedFrame),
+            }
+        })
+        .await?
+    }
+
+    /// Create float variables in batch.
     pub async fn create_float_variables(
         &self,
         vars: Vec<FloatVar>,
@@ -327,13 +343,13 @@ impl Client {
                 min: v.min,
                 max: v.max,
                 options: vec![],
-                max_len: vec![],
+                max_len: None,
             })
             .collect();
         self.send_add(items, parent_id, timeout_ms).await
     }
 
-    /// Crea variables de texto en lote.
+    /// Create text variables in batch.
     pub async fn create_text_variables(
         &self,
         vars: Vec<TextVar>,
@@ -356,7 +372,7 @@ impl Client {
         self.send_add(items, parent_id, timeout_ms).await
     }
 
-    /// Crea variables booleanas en lote.
+    /// Create boolean variables in batch.
     pub async fn create_boolean_variables(
         &self,
         vars: Vec<BooleanVar>,
@@ -373,13 +389,13 @@ impl Client {
                 min: None,
                 max: None,
                 options: vec![],
-                max_len: vec![],
+                max_len: None,
             })
             .collect();
         self.send_add(items, parent_id, timeout_ms).await
     }
 
-    /// Setea variables enteras en lote (misma cantidad de ids y valores).
+    /// Set integer variables in batch (ids and values must match length).
     pub async fn set_integer_variables(
         &self,
         var_ids: Vec<String>,
@@ -390,7 +406,7 @@ impl Client {
         self.send_set(pairs, timeout_ms).await
     }
 
-    /// Setea variables float en lote.
+    /// Set float variables in batch.
     pub async fn set_float_variables(
         &self,
         var_ids: Vec<String>,
@@ -401,7 +417,7 @@ impl Client {
         self.send_set(pairs, timeout_ms).await
     }
 
-    /// Setea variables de texto en lote.
+    /// Set text variables in batch.
     pub async fn set_text_variables(
         &self,
         var_ids: Vec<String>,
@@ -412,7 +428,7 @@ impl Client {
         self.send_set(pairs, timeout_ms).await
     }
 
-    /// Setea variables booleanas en lote.
+    /// Set boolean variables in batch.
     pub async fn set_boolean_variables(
         &self,
         var_ids: Vec<String>,

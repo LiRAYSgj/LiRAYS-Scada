@@ -77,6 +77,21 @@ docker run --rm \
 
 - WebSocket command shapes (protobuf/JSON) remain as in `proto/` and `src/rtdata/server`.
 - Metadata edit command response: resolves to `EditMetaResponse`; frontend refreshes the parent folder to display new metadata.
+- Observability (optional):
+  - `METRICS_DIR` – optional directory; when set, metrics are emitted every 5s. A live snapshot with ANSI colors is written to `metrics_rt.txt` (overwritten each interval) and a history is appended to `metrics_hist.csv` with timestamps. If empty/unset, metrics collection stays off.
+  - Live view of the realtime file with colors:
+    - macOS / shells without `watch`:
+      ```bash
+      while true; do clear; cat "$METRICS_DIR/metrics_rt.txt"; sleep 1; done
+      ```
+    - Linux with `watch` installed:
+      ```bash
+      watch -n1 cat "$METRICS_DIR/metrics_rt.txt"
+      ```
+    - Windows (PowerShell):
+      ```powershell
+      while ($true) { cls; Get-Content "$env:METRICS_DIR/metrics_rt.txt"; Start-Sleep -Seconds 1 }
+      ```
 
 ## Development tips
 

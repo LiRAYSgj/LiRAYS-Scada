@@ -3,6 +3,8 @@ use std::collections::HashMap;
 use crate::rtdata::namespace::{FolderInfo, ItemMeta, VarInfo, Event, DelCommand, TreeChanged, FolderChanged, event::Ev};
 use super::utils::{normalize_path, get_parent_and_name};
 
+/// Build a TreeChanged event for newly added folders/variables under `folder_id`.
+/// Carries the metadata from ItemMeta (name/id/type; other meta left empty for now).
 pub fn extract_add_event(
     folder_id: &str,
     reload: bool,
@@ -21,11 +23,11 @@ pub fn extract_add_event(
             id: normalize_path(&format!("{}/{}", folder_id, i_meta.name)),
             name: i_meta.name.to_string(),
             var_d_type: var_d_type as i32,
-            unit: None,
-            min: None,
-            max: None,
-            options: vec![],
-            max_len: None,
+            unit: i_meta.unit.clone(),
+            min: i_meta.min,
+            max: i_meta.max,
+            options: i_meta.options.clone(),
+            max_len: i_meta.max_len,
         }
     }).collect();
 
@@ -44,18 +46,20 @@ pub fn extract_add_event(
     })
 }
 
+/// Build a TreeChanged event reflecting deletions grouped by parent folder.
+/// Groups removed item ids by parent path to minimize event payload.
 pub fn extract_del_event(
     del_cmd: &DelCommand
 ) -> Result<Event, String> {
     let mut removed_data: HashMap<String, Vec<String>> = HashMap::new();
-    for item_id in del_cmd.item_ids.clone() {
-        let (parent, _) = get_parent_and_name(&item_id);
+    for item_id in del_cmd.item_ids.iter() {
+        let (parent, _) = get_parent_and_name(item_id);
         match removed_data.get_mut(&parent) {
             Some(removed_items) => {
-                removed_items.push(item_id.to_string());
+                removed_items.push(item_id.clone());
             }
             None => {
-                removed_data.insert(parent, vec![item_id.to_string()]);
+                removed_data.insert(parent, vec![item_id.clone()]);
             }
         }
     }

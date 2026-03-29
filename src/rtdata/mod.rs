@@ -3,6 +3,7 @@ pub mod variable;
 pub mod parser;
 pub mod utils;
 pub mod events;
+pub mod metrics;
 
 use futures_util::{SinkExt, StreamExt};
 use log::{error, info, warn};
@@ -11,8 +12,12 @@ use serde_json;
 use std::{collections::HashSet, sync::Arc};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::{net::TcpListener, select};
-use tokio_tungstenite::{accept_async, tungstenite::Message};
+use tokio_tungstenite::{
+    accept_async,
+    tungstenite::{Message, Error as WsError, error::ProtocolError},
+};
 use variable::VariableManager;
+use crate::rtdata::metrics::Metrics;
 use super::rtdata::namespace::{event::Ev, Command};
 use super::tls::{ServerTlsConfig, build_tls_acceptor};
 
@@ -32,7 +37,6 @@ where
                     cmd_result = ws_stream.next() => {
                         match cmd_result {
                             Some(Ok(msg)) => {
-                                let start = std::time::Instant::now();
                                 let (command, is_json_cmd) = match msg {
                                     Message::Binary(bin) => {
                                         match Command::decode(&*bin) {
@@ -49,11 +53,7 @@ where
                                     _ => (Command { command_type: None }, false)
                                 };
                                 as_json = is_json_cmd;
-
-                                let cmd_kind = command.command_type.as_ref().map(|ct| std::mem::discriminant(ct));
                                 let response = vm.exec_cmd(command, &mut subscribed_set, &mut get_tree_changes).await;
-                                let elapsed = start.elapsed();
-                                info!("exec_cmd handled in {:?} for client {} kind {:?}", elapsed, addr, cmd_kind);
                                 let resp_msg = if as_json {
                                     match serde_json::to_string(&response) {
                                         Ok(str_) => Message::Text(str_.into()),
@@ -72,7 +72,15 @@ where
                                 }
                             }
                             Some(Err(e)) => {
-                                error!("Error reading next message from {addr}, Disconnecting. {e}");
+                                match e {
+                                    WsError::Protocol(ProtocolError::ResetWithoutClosingHandshake) |
+                                    WsError::ConnectionClosed => {
+                                        info!("Client from {addr} disconnected");
+                                    }
+                                    other => {
+                                        error!("Error reading next message from {addr}, Disconnecting. {other}");
+                                    }
+                                }
                                 break;
                             },
                             None => {
@@ -84,8 +92,7 @@ where
                     data_result = events_rx.recv() => {
                         match data_result {
                             Some(batch) => {
-                                let start_batch = std::time::Instant::now();
-                                for event in batch.events {
+                                for event in batch.events.iter() {
                                     let send_event = match &event.ev {
                                         Some(Ev::VarValueEv(var_id_val)) => subscribed_set.contains(&var_id_val.var_id),
                                         Some(Ev::TreeChangedEv(_)) => get_tree_changes,
@@ -93,7 +100,7 @@ where
                                     };
                                     if send_event {
                                         let resp_msg = if as_json {
-                                            match serde_json::to_string(&event) {
+                                            match serde_json::to_string(event) {
                                                 Ok(str_) => Message::Text(str_.into()),
                                                 Err(e) => Message::Text(format!("Error: {e}").into())
                                             }
@@ -106,8 +113,6 @@ where
                                         }
                                     }
                                 }
-                                let elapsed = start_batch.elapsed();
-                                info!("event batch processed in {:?} for client {}", elapsed, addr);
                             }
                             None => {
                                 warn!("Event channel closed for client {addr}");
@@ -124,7 +129,11 @@ where
 }
 
 pub async fn run_server(host: &str, port: u16, db_dir: &str, tls_config: Option<ServerTlsConfig>) {
-    let var_manager = Arc::new(VariableManager::new(db_dir));
+    let metrics = Arc::new(Metrics::new_from_env());
+    if metrics.enabled() {
+        Metrics::spawn_logger(metrics.clone());
+    }
+    let var_manager = Arc::new(VariableManager::new(db_dir, metrics));
 
     // println!("------------------");
     // for key in var_manager.list_keys_with_prefix("H:").unwrap() {
