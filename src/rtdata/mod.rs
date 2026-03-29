@@ -18,8 +18,17 @@ use tokio_tungstenite::{
 };
 use variable::VariableManager;
 use crate::rtdata::metrics::Metrics;
-use super::rtdata::namespace::{event::Ev, Command};
+use super::rtdata::namespace::{event::Ev, Command, Event};
 use super::tls::{ServerTlsConfig, build_tls_acceptor};
+
+/// Decide if an event should be sent to a client based on current subscriptions.
+fn should_send(event: &Event, subscribed_set: &HashSet<String>, get_tree_changes: bool) -> bool {
+    match &event.ev {
+        Some(Ev::VarValueEv(var_id_val)) => subscribed_set.contains(&var_id_val.var_id),
+        Some(Ev::TreeChangedEv(_)) => get_tree_changes,
+        _ => false,
+    }
+}
 
 async fn handle_client_cmd<S>(vm: Arc<VariableManager>, stream: S, addr: String)
 where
@@ -92,24 +101,24 @@ where
                     data_result = events_rx.recv() => {
                         match data_result {
                             Some(batch) => {
-                                for event in batch.events.iter() {
-                                    let send_event = match &event.ev {
-                                        Some(Ev::VarValueEv(var_id_val)) => subscribed_set.contains(&var_id_val.var_id),
-                                        Some(Ev::TreeChangedEv(_)) => get_tree_changes,
-                                        None => false
-                                    };
-                                    if send_event {
+                                // Pre-serialize once per batch per client.
+                                let mut encoded: Vec<(&Event, Vec<u8>, String)> = Vec::with_capacity(batch.events.len());
+                                for ev in batch.events.iter() {
+                                    let bin = ev.encode_to_vec();
+                                    let json = serde_json::to_string(ev).unwrap_or_else(|_| "{}".to_string());
+                                    encoded.push((ev, bin, json));
+                                }
+
+                                for (event, bin, json) in encoded.into_iter() {
+                                    if should_send(event, &subscribed_set, get_tree_changes) {
                                         let resp_msg = if as_json {
-                                            match serde_json::to_string(event) {
-                                                Ok(str_) => Message::Text(str_.into()),
-                                                Err(e) => Message::Text(format!("Error: {e}").into())
-                                            }
+                                            Message::Text(json.clone().into())
                                         } else {
-                                            Message::Binary(event.encode_to_vec().into())
+                                            Message::Binary(bin.clone().into())
                                         };
-                                        match ws_stream.send(resp_msg).await {
-                                            Ok(_) => (),
-                                            Err(e) => error!("Error sending response client {addr}. Err: {e}")
+                                        if let Err(e) = ws_stream.send(resp_msg).await {
+                                            error!("Error sending response client {addr}. Err: {e}");
+                                            break;
                                         }
                                     }
                                 }
@@ -128,12 +137,60 @@ where
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::rtdata::namespace;
+    use crate::rtdata::namespace::Event;
+
+    #[test]
+    fn should_send_respects_subscriptions() {
+        let mut subs = HashSet::new();
+        subs.insert("/a/b".to_string());
+        let ev_var = Event { ev: Some(Ev::VarValueEv(namespace::VarIdValue { var_id: "/a/b".into(), value: None })) };
+        let ev_other = Event { ev: Some(Ev::VarValueEv(namespace::VarIdValue { var_id: "/c".into(), value: None })) };
+        let ev_tree = Event { ev: Some(Ev::TreeChangedEv(namespace::TreeChanged { folder_changed_event: vec![] })) };
+
+        assert!(should_send(&ev_var, &subs, false));
+        assert!(!should_send(&ev_other, &subs, false));
+        assert!(!should_send(&ev_tree, &subs, false));
+        assert!(should_send(&ev_tree, &subs, true));
+    }
+}
+
 pub async fn run_server(host: &str, port: u16, db_dir: &str, tls_config: Option<ServerTlsConfig>) {
     let metrics = Arc::new(Metrics::new_from_env());
     if metrics.enabled() {
         Metrics::spawn_logger(metrics.clone());
     }
     let var_manager = Arc::new(VariableManager::new(db_dir, metrics));
+
+    // Persist cache periodically
+    let flush_ms: u64 = std::env::var("PERSIST_FLUSH_MS").ok().and_then(|v| v.parse().ok()).unwrap_or(15_000);
+    let _flush_handle = var_manager.clone().start_flush_loop(flush_ms);
+
+    // Flush on shutdown signals (best effort)
+    let vm_shutdown = var_manager.clone();
+    tokio::spawn(async move {
+        #[cfg(unix)]
+        {
+            use tokio::signal::unix::{signal, SignalKind};
+            let mut sigterm = signal(SignalKind::terminate()).expect("install SIGTERM handler");
+            let mut sigint = signal(SignalKind::interrupt()).expect("install SIGINT handler");
+            tokio::select! {
+                _ = sigterm.recv() => {},
+                _ = sigint.recv() => {},
+            }
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = tokio::signal::ctrl_c().await;
+        }
+        info!("Shutdown signal received; flushing dirty cache");
+        vm_shutdown.flush_dirty_now().await;
+        info!("Cache flush complete; exiting");
+        std::process::exit(0);
+    });
 
     // println!("------------------");
     // for key in var_manager.list_keys_with_prefix("H:").unwrap() {

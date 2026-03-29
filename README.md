@@ -92,6 +92,27 @@ docker run --rm \
       ```powershell
       while ($true) { cls; Get-Content "$env:METRICS_DIR/metrics_rt.txt"; Start-Sleep -Seconds 1 }
       ```
+- Runtime persistence:
+  - `PERSIST_FLUSH_MS` – interval in milliseconds to flush in-memory variable values to sled (`valuesTree`). Defaults to 1000 ms. On shutdown signals (SIGINT/SIGTERM) a final flush is attempted.
+
+## Server Architecture (overview)
+
+- Runtime data store: sled. Two trees: `mainTree` (namespace metadata) and `valuesTree` (persisted last value). `values_cache` keeps hot values in memory; writes mark `dirty_values` which are flushed every `PERSIST_FLUSH_MS` or on shutdown.
+- Event dispatch: `DashMap<u64, mpsc::Sender<Arc<EventBatch>>>`. `broadcast_batch` sends non-blocking; slow clients drop batches. Subscriptions are per-client (var-value or tree-change).
+- Commands handled: Add / AddBulk / List / Set / Get / Del / Sub / Unsub / EditMeta. `AddBulk` consumes `NamespaceSchema` (folders/variables, optional range or option-list expansions).
+- Validation: `set_vals` validates type/constraints (min/max, options, length) and coalesces to cache + dirty set.
+- Metrics: if `METRICS_DIR` set, writes color table to `metrics_rt.txt` and CSV history to `metrics_hist.csv` every 5s.
+
+## Client Library (Rust, `clients/rust-client`)
+
+- Async WS client matching responses by `cmd_id` with per-command oneshot channels.
+- Convenience methods: add folders/vars (int/float/text/bool), set/get batch by type, list/delete.
+- Bulk: `create_bulk_from_json(&str, parent, timeout)` builds `NamespaceSchema` from JSON (same shape as `frontend/__mocks__/ns.json`) and sends `AddBulk`.
+- Demos (`cargo run --manifest-path clients/rust-client/Cargo.toml --bin demo <name>`):
+  - `basic`
+  - `tree_stress`
+  - `data_stress`
+  - `bulk_test` (inline ~1k vars via AddBulk)
 
 ## Development tips
 

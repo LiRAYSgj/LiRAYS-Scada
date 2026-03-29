@@ -14,7 +14,7 @@ use tokio_tungstenite::{connect_async, tungstenite::Message as WsMessage, MaybeT
 use types::errors::ClientError;
 use namespace::{
     command, response, value, Command, FolderInfo, ItemMeta, ItemType, OperationStatus, Response, VarDataType,
-    VarIdValue, VarInfo,
+    VarIdValue, VarInfo, NamespaceSchema, NamespaceNode, NamespaceFolder, NamespaceVariable,
 };
 use uuid::Uuid;
 
@@ -438,6 +438,44 @@ impl Client {
         let pairs = build_pairs(var_ids, values, |v| value::Typed::BooleanValue(v))?;
         self.send_set(pairs, timeout_ms).await
     }
+
+    /// Create folders/variables in bulk from a JSON string with the same shape as `frontend/__mocks__/ns.json`.
+    /// Leaf nodes can be a simple type string ("Float", "Int", etc.) or an object `{ "variable": { ...metadata } }`.
+    pub async fn create_bulk_from_json(
+        &self,
+        json: &str,
+        parent_id: Option<String>,
+        timeout_ms: u64,
+    ) -> Result<(), ClientError> {
+        let value: serde_json::Value = serde_json::from_str(json)
+            .map_err(|_| ClientError::InvalidInput("Invalid JSON"))?;
+        let roots_obj = value
+            .as_object()
+            .ok_or_else(|| ClientError::InvalidInput("Root JSON must be an object".into()))?;
+
+        let mut roots = std::collections::HashMap::new();
+        for (k, v) in roots_obj {
+            roots.insert(k.clone(), build_namespace_node(v)?);
+        }
+
+        let cmd_id = Uuid::new_v4().to_string();
+        let cmd = Command {
+            command_type: Some(command::CommandType::AddBulk(namespace::AddBulkCommand {
+                cmd_id: cmd_id.clone(),
+                parent_id: parent_id.unwrap_or_else(|| "/".to_string()),
+                schema: Some(NamespaceSchema { roots }),
+            })),
+        };
+
+        self._send_command(cmd, timeout_ms, |resp| {
+            ensure_ok(&resp)?;
+            match resp.response_type {
+                Some(response::ResponseType::AddBulk(_)) => Ok(()),
+                _ => Err(ClientError::UnexpectedFrame),
+            }
+        })
+        .await?
+    }
 }
 
 fn build_pairs<T, F>(
@@ -463,6 +501,71 @@ where
         })
         .collect();
     Ok(pairs)
+}
+
+fn build_namespace_node(value: &serde_json::Value) -> Result<NamespaceNode, ClientError> {
+    if let Some(obj) = value.as_object() {
+        if let Some(var_val) = obj.get("variable") {
+            return Ok(NamespaceNode {
+                node: Some(namespace::namespace_node::Node::Variable(build_namespace_variable(var_val)?)),
+            });
+        }
+
+        let mut children = std::collections::HashMap::new();
+        for (k, v) in obj {
+            children.insert(k.clone(), build_namespace_node(v)?);
+        }
+        return Ok(NamespaceNode {
+            node: Some(namespace::namespace_node::Node::Folder(NamespaceFolder { children })),
+        });
+    }
+
+    if let Some(s) = value.as_str() {
+        let var = NamespaceVariable {
+            var_d_type: string_to_dtype(s) as i32,
+            unit: None,
+            min: None,
+            max: None,
+            options: vec![],
+            max_len: None,
+        };
+        return Ok(NamespaceNode { node: Some(namespace::namespace_node::Node::Variable(var)) });
+    }
+
+    Err(ClientError::InvalidInput("Invalid namespace JSON structure".into()))
+}
+
+fn build_namespace_variable(val: &serde_json::Value) -> Result<NamespaceVariable, ClientError> {
+    let obj = val
+        .as_object()
+        .ok_or_else(|| ClientError::InvalidInput("variable must be an object".into()))?;
+    let dtype_str = obj
+        .get("var_d_type")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| ClientError::InvalidInput("variable.var_d_type missing".into()))?;
+
+    Ok(NamespaceVariable {
+        var_d_type: string_to_dtype(dtype_str) as i32,
+        unit: obj.get("unit").and_then(|v| v.as_str()).map(|s| s.to_string()),
+        min: obj.get("min").and_then(|v| v.as_f64()),
+        max: obj.get("max").and_then(|v| v.as_f64()),
+        options: obj
+            .get("options")
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect())
+            .unwrap_or_default(),
+        max_len: obj.get("max_len").and_then(|v| v.as_u64()),
+    })
+}
+
+fn string_to_dtype(s: &str) -> VarDataType {
+    match s.to_lowercase().as_str() {
+        "float" => VarDataType::Float,
+        "integer" | "int" => VarDataType::Integer,
+        "text" | "string" => VarDataType::Text,
+        "boolean" | "bool" => VarDataType::Boolean,
+        _ => VarDataType::Invalid,
+    }
 }
 
 fn ensure_ok(resp: &Response) -> Result<(), ClientError> {

@@ -2,7 +2,8 @@ use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use log::{debug, info, warn};
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{mpsc, RwLock, Mutex};
+use tokio::task::{JoinHandle, block_in_place};
 use uuid::Uuid;
 use prost::Message;
 use sled::{Tree, Batch};
@@ -60,6 +61,7 @@ pub struct VariableManager {
     event_senders: DashMap<u64, mpsc::Sender<Arc<EventBatch>>>,
     next_listener_id: AtomicU64,
     metrics: Arc<Metrics>,
+    dirty_values: Mutex<HashMap<String, Option<Typed>>>,
 }
 
 impl VariableManager {
@@ -70,13 +72,51 @@ impl VariableManager {
         let values_tree = db.open_tree("valuesTree").unwrap();
         let values_cache = RwLock::new(HashMap::new());
 
-        Self {
+        let vm = Self {
             items_tree,
             values_tree,
             values_cache,
             event_senders: DashMap::new(),
             next_listener_id: AtomicU64::new(0),
             metrics,
+            dirty_values: Mutex::new(HashMap::new()),
+        };
+        vm.load_cache_from_storage();
+        vm
+    }
+
+    /// Build `values_cache` from item metadata and persisted values on startup.
+    fn load_cache_from_storage(&self) {
+        let mut cache = block_in_place(|| self.values_cache.blocking_write());
+        for result in self.items_tree.iter() {
+            if let Ok((key, value)) = result {
+                if let Ok(i_meta) = ItemMeta::decode(value.as_ref()) {
+                    if i_meta.i_type() == ItemType::Variable {
+                        let key_str = String::from_utf8_lossy(&key);
+                        let (parent, _) = match key_str.rsplit_once("/\\0") {
+                            Some((p, _)) => (p.to_string(), i_meta.name.clone()),
+                            None => continue,
+                        };
+                        let full_path = format!("{}/{}", parent, i_meta.name);
+                        let persisted_val = self
+                            .values_tree
+                            .get(full_path.as_bytes())
+                            .ok()
+                            .flatten()
+                            .and_then(|v| Value::decode(v.as_ref()).ok())
+                            .and_then(|vv| vv.typed);
+
+                        cache.insert(full_path, CachedValue {
+                            val: persisted_val,
+                            dtype: i_meta.var_d_type(),
+                            min: i_meta.min,
+                            max: i_meta.max,
+                            options: i_meta.options.clone(),
+                            max_len: i_meta.max_len,
+                        });
+                    }
+                }
+            }
         }
     }
 
@@ -113,6 +153,41 @@ impl VariableManager {
         for k in closed_keys {
             self.event_senders.remove(&k);
         }
+    }
+
+    /// Flush dirty variable values to `values_tree` (coalesced last write wins).
+    pub async fn flush_dirty_now(&self) {
+        let mut dirty_guard = self.dirty_values.lock().await;
+        if dirty_guard.is_empty() { return; }
+        let mut batch = Batch::default();
+        for (var_id, val_opt) in dirty_guard.drain() {
+            match val_opt {
+                Some(typed) => {
+                    let val = Value { typed: Some(typed) };
+                    batch.insert(var_id.as_bytes(), val.encode_to_vec());
+                }
+                None => {
+                    batch.remove(var_id.as_bytes());
+                }
+            }
+        }
+        if let Err(e) = self.values_tree.apply_batch(batch) {
+            warn!("flush_dirty_now: apply_batch error {e}");
+        }
+        if let Err(e) = self.values_tree.flush_async().await {
+            warn!("flush_dirty_now: flush_async error {e}");
+        }
+    }
+
+    /// Spawn periodic flush of dirty values. Interval in ms.
+    pub fn start_flush_loop(self: Arc<Self>, interval_ms: u64) -> JoinHandle<()> {
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_millis(interval_ms));
+            loop {
+                interval.tick().await;
+                self.flush_dirty_now().await;
+            }
+        })
     }
 
     // ===================== Methods to handle static namespace structure =====================
@@ -310,7 +385,7 @@ impl VariableManager {
     }
 
     /// (Unused) Recursively insert hierarchy from `NamespaceNode`, collecting first-level nodes.
-    async fn add_bulk_recursive(
+    async fn add_bulk(
         &self,
         root_parent_id: &str,
         root_nodes: HashMap<String, NamespaceNode>,
@@ -325,8 +400,8 @@ impl VariableManager {
             let is_first_level = parent_id == root_parent_id;
             for (key, val) in nodes {
                 let mut name_ = key.as_str();
-                let (start, stop, step) = parse_repeated_name(&mut name_);
-                let item_names = clone_name(name_, start, stop, step);
+                let (start, stop, step, options) = parse_repeated_name(&mut name_);
+                let item_names = clone_name(name_, start, stop, step, options);
 
                 let capacity = item_names.len();
                 let mut vars_to_create: Vec<ItemMeta> = Vec::with_capacity(capacity);
@@ -435,6 +510,8 @@ impl VariableManager {
                 None => None
             };
             cached_val.val = new_value.clone();
+            // Mark dirty for persistence
+            self.dirty_values.lock().await.insert(var_id_val.var_id.clone(), new_value.clone());
             ev_batch.events.push(Event { ev: Some(Ev::VarValueEv(VarIdValue {
                 var_id: var_id_val.var_id,
                 value: Some(Value { typed: new_value })
@@ -536,28 +613,29 @@ impl VariableManager {
                 Response { response_type: Some(ResponseType::Del(DelResponse { cmd_id: del_cmd.cmd_id })), status, error_msg }
             }
             Some(CommandType::AddBulk(addb_cmd)) => {
-                // let (status, error_msg) = match addb_cmd.schema {
-                //     Some(schema) => {
-                //         let mut batch = sled::Batch::default();
-                //         match self.add_bulk_recursive(&addb_cmd.parent_id, schema.roots, &mut batch) {
-                //             Ok((new_folders, new_variables)) => match self.items_tree.apply_batch(batch) {
-                //                 Ok(_) => {
-                //                     if let Ok(event) = extract_add_event(&addb_cmd.parent_id, false, new_folders, new_variables) {
-                //                         let _ = self.broadcast_batch(EventBatch { events: vec![event] }).await;
-                //                     } else {
-                //                         warn!("Error extracting event");
-                //                     }
-                //                     (OperationStatus::Ok as i32, None)
-                //                 }
-                //                 Err(e) => (OperationStatus::Err as i32, Some(format!("On apply batch: {e}"))),
-                //             },
-                //             Err(e) => (OperationStatus::Err as i32, Some(format!("Bulk insert error: {e}"))),
-                //         }
-                //     }
-                //     None => (OperationStatus::Err as i32, Some("No schema provided".to_string()))
-                // };
-                let (status, error_msg) = (OperationStatus::Err as i32, Some("Not implemented".to_string()));
-                Response { response_type: Some(ResponseType::AddBulk(AddBulkResponse { cmd_id: addb_cmd.cmd_id })), status, error_msg }
+                let cmd_id = addb_cmd.cmd_id.clone();
+                let parent_id = normalize_path(&addb_cmd.parent_id);
+                let mut batch = sled::Batch::default();
+                let t0 = std::time::Instant::now();
+                let (status, error_msg) = match addb_cmd.schema {
+                    Some(schema) => match self.add_bulk(&parent_id, schema.roots, &mut batch).await {
+                        Ok((new_folders, new_variables)) => match self.items_tree.apply_batch(batch) {
+                            Ok(_) => {
+                                if let Ok(event) = extract_add_event(&parent_id, false, new_folders, new_variables) {
+                                    let _ = self.broadcast_batch(Arc::new(EventBatch { events: vec![event] })).await;
+                                } else {
+                                    warn!("Error extracting event");
+                                }
+                                (OperationStatus::Ok as i32, None)
+                            }
+                            Err(e) => (OperationStatus::Err as i32, Some(format!("On apply batch: {e}"))),
+                        },
+                        Err(e) => (OperationStatus::Err as i32, Some(format!("Bulk insert error: {e}"))),
+                    },
+                    None => (OperationStatus::Err as i32, Some("No schema provided".to_string())),
+                };
+                self.metrics.record_add(t0.elapsed());
+                Response { response_type: Some(ResponseType::AddBulk(AddBulkResponse { cmd_id })), status, error_msg }
             }
             Some(CommandType::Sub(sub_cmd)) => {
                 if sub_cmd.events.contains(&(EventType::VarValues as i32)) {
