@@ -97,6 +97,9 @@ impl VariableManager {
     // deep folders example: "/folder1/\0sub-folder": <meta>, "/folder1/sub-folder/\0sub-folder2": <meta>
     // deep variables example: "/folder1/\0sub-var1": <meta>, "/folder1/sub-folder/\0sub-var2": <meta>
 
+    /// Create folders/variables under `parent_id`, auto-creating missing ancestors,
+    /// and seed `values_cache` with metadata for each new variable.
+    /// Uses key `parent/\0name` in `items_tree`; `values_cache` keyed by full path without `\0`.
     async fn add_items(
         &self,
         parent_id: &str,
@@ -157,6 +160,8 @@ impl VariableManager {
         Ok((false, new_folders, new_variables))
     }
 
+    /// Update variable metadata (unit/min/max/options/max_len) and mirror changes in cache.
+    /// Does not alter type or name. Requires presence in `items_tree` and `values_cache`.
     async fn edit_variables(
         &self,
         var_id: &str,
@@ -203,6 +208,8 @@ impl VariableManager {
         Ok(())
     }
 
+    /// List direct children of `parent_id` from `items_tree` (key `parent/\0name`).
+    /// Skips vars missing `var_d_type`, logs warn, continues.
     async fn list_path(&self, parent_id: &str) -> Result<(Vec<FolderInfo>, Vec<VarInfo>), String> {
         let parent_path = normalize_path(parent_id);
         let prefix = format!("{}/\0", parent_path);
@@ -219,7 +226,10 @@ impl VariableManager {
                     children_folders.push(FolderInfo {id: ch_id, name: i_meta.name});
                 }
                 ItemType::Variable => {
-                    let v_dtype = i_meta.var_d_type.ok_or_else(|| "Invalid variable data type".to_string())?;
+                    let Some(v_dtype) = i_meta.var_d_type else {
+                        warn!("list_path: variable '{}' without var_d_type, skipping", ch_id);
+                        continue;
+                    };
                     children_vars.push(VarInfo {
                         id: ch_id,
                         name: i_meta.name,
@@ -238,6 +248,8 @@ impl VariableManager {
         Ok((children_folders, children_vars))
     }
 
+    /// Remove items (folders or vars) and descendants from `items_tree`,
+    /// and purge `values_cache` for those paths. Does not touch `values_tree` yet.
     async fn del_items(&self, item_ids: Vec<String>) -> Result<(), String> {
         let mut batch = Batch::default();
         for id in item_ids {
@@ -269,6 +281,7 @@ impl VariableManager {
         self.items_tree.apply_batch(batch).map_err(|e| format!("Error removing items: {e}"))
     }
 
+    /// (Unused) Recursively insert hierarchy from `NamespaceNode`, collecting first-level nodes.
     async fn add_bulk_recursive(
         &self,
         root_parent_id: &str,
@@ -379,6 +392,8 @@ impl VariableManager {
     // Values are stored in a cache HashMap
     // /folder/path/var1: (varDataType, Option<Typed>)
 
+    /// Apply values to `values_cache` (no persistence), validate against cached metadata,
+    /// and build an `EventBatch` for broadcast. Missing cache entries are skipped.
     async fn set_vals(&self, var_id_vals: Vec<VarIdValue>) -> Result<EventBatch, String> {
         let mut ev_batch = EventBatch { events: Vec::with_capacity(var_id_vals.len()) };
         let mut var_cache_guard = self.values_cache.write().await;
@@ -400,6 +415,7 @@ impl VariableManager {
         Ok(ev_batch)
     }
 
+    /// Read values from `values_cache` only; error if a variable is missing.
     async fn get_vals(&self, var_ids: Vec<String>) -> Result<Vec<OptionalValue>, String> {
         let mut values = Vec::with_capacity(var_ids.len());
         let var_cache_guard = self.values_cache.read().await;
