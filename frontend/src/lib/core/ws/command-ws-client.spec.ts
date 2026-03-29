@@ -119,12 +119,34 @@ describe("command-ws-client", () => {
   describe("namespaceJsonToSchema", () => {
     it("converts leaf string to variableType", () => {
       const schema = namespaceJsonToSchema({ P: "Float" });
-      expect(schema.roots.P).toEqual({ variableType: "Float" });
+      expect(schema.roots.P).toEqual({
+        variable: {
+          varDType: VarDataType.VAR_DATA_TYPE_FLOAT,
+          unit: undefined,
+          min: undefined,
+          max: undefined,
+          options: [],
+          maxLen: undefined,
+        },
+      });
     });
     it("converts nested object to folder with children", () => {
       const schema = namespaceJsonToSchema({ Area: { P: "Float" } });
       expect(schema.roots.Area).toEqual({
-        folder: { children: { P: { variableType: "Float" } } },
+        folder: {
+          children: {
+            P: {
+              variable: {
+                varDType: VarDataType.VAR_DATA_TYPE_FLOAT,
+                unit: undefined,
+                min: undefined,
+                max: undefined,
+                options: [],
+                maxLen: undefined,
+              },
+            },
+          },
+        },
       });
     });
     it("throws on invalid node type", () => {
@@ -148,7 +170,7 @@ describe("command-ws-client", () => {
       expect(meta.min).toBe(0);
       expect(meta.max).toBe(10);
       expect(meta.unit).toBe("°C");
-      expect(meta.maxLen).toEqual([4]);
+      expect(meta.maxLen).toEqual(4);
       expect(meta.options).toEqual(["x"]);
     });
   });
@@ -167,7 +189,7 @@ describe("command-ws-client", () => {
       expect(command.editMeta?.min).toBe(1);
       expect(command.editMeta?.max).toBe(5);
       expect(command.editMeta?.options).toEqual(["A", "B"]);
-      expect(command.editMeta?.maxLen).toEqual([8]);
+      expect(command.editMeta?.maxLen).toEqual(8);
       expect(cmdId).toMatch(/^edit-meta-/);
     });
   });

@@ -815,8 +815,11 @@ import { Layers, Plus, Trash2, Pencil } from "lucide-svelte";
   }
 
   async function onNamespaceBuilderCreate(): Promise<void> {
+    if (!namespaceBuilderRef) {
+      snackbarStore.error("Namespace builder is not ready yet.");
+      return;
+    }
     if (
-      !namespaceBuilderRef ||
       typeof namespaceBuilderRef.buildNamespaceJsonFromYaml !== "function" ||
       namespaceBuilderCreateLoading
     ) {
@@ -835,19 +838,23 @@ import { Layers, Plus, Trash2, Pencil } from "lucide-svelte";
     }
     namespaceBuilderCreateLoading = true;
     try {
-      await tagStreamClient.addBulkNamespace(
-        namespaceBuilderParentId,
-        json,
-        DEMO_WS_ENDPOINT,
-      );
+      const parentForBulk =
+        namespaceBuilderParentId && namespaceBuilderParentId.trim() !== ""
+          ? namespaceBuilderParentId
+          : "/";
+      await tagStreamClient.addBulkNamespace(parentForBulk, json, DEMO_WS_ENDPOINT);
       if (browser) {
         (
           window as unknown as { __lastNamespaceJson?: unknown }
         ).__lastNamespaceJson = json;
       }
       closeNamespaceBuilderDialog();
-    } catch {
-      /* Error already shown via snackbar; re-enable actions immediately so user can retry without waiting for snackbar to dismiss */
+    } catch (err) {
+      const msg =
+        err instanceof Error && err.message
+          ? err.message
+          : "Bulk creation failed. Check connection and YAML.";
+      snackbarStore.error(msg);
       namespaceBuilderCreateLoading = false;
     } finally {
       namespaceBuilderCreateLoading = false;

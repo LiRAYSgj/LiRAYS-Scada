@@ -7,14 +7,30 @@ import type {
   Value,
   ItemMeta,
 } from "../../proto/namespace/types";
-import {
-  EventType,
-  type ItemType,
-  type VarDataType,
-} from "../../proto/namespace/enums";
+import { EventType, ItemType, VarDataType } from "../../proto/namespace/enums";
 
 export function createCommandId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function stringToVarType(t: string): VarDataType {
+  const v = t.toLowerCase();
+  if (v === "float") return VarDataType.VAR_DATA_TYPE_FLOAT;
+  if (v === "integer" || v === "int") return VarDataType.VAR_DATA_TYPE_INTEGER;
+  if (v === "text" || v === "string") return VarDataType.VAR_DATA_TYPE_TEXT;
+  if (v === "boolean" || v === "bool") return VarDataType.VAR_DATA_TYPE_BOOLEAN;
+  return VarDataType.VAR_DATA_TYPE_INVALID;
+}
+
+function buildNamespaceVariable(t: string) {
+  return {
+    varDType: stringToVarType(t),
+    unit: undefined,
+    min: undefined,
+    max: undefined,
+    options: [],
+    maxLen: undefined,
+  };
 }
 
 export function toBackendValue(value: TagScalarValue): Value {
@@ -183,28 +199,27 @@ export function createDelCommand(
 export function namespaceJsonToSchema(
   json: Record<string, unknown>,
 ): NamespaceSchema {
-  function nodeFromJson(val: unknown): NamespaceNode {
-    if (typeof val === "string") {
-      return { variableType: val };
-    }
-    if (val !== null && typeof val === "object" && !Array.isArray(val)) {
-      const children: { [key: string]: NamespaceNode } = {};
-      for (const [key, child] of Object.entries(
-        val as Record<string, unknown>,
-      )) {
-        children[key] = nodeFromJson(child);
-      }
-      return { folder: { children } as NamespaceFolder };
-    }
-    throw new Error(
-      `Invalid namespace node (expected string or object): ${typeof val}`,
-    );
-  }
   const roots: { [key: string]: NamespaceNode } = {};
   for (const [key, val] of Object.entries(json)) {
     roots[key] = nodeFromJson(val);
   }
   return { roots };
+}
+
+function nodeFromJson(val: unknown): NamespaceNode {
+  if (typeof val === "string") {
+    return { variable: buildNamespaceVariable(val) };
+  }
+  if (val !== null && typeof val === "object" && !Array.isArray(val)) {
+    const children: { [key: string]: NamespaceNode } = {};
+    for (const [key, child] of Object.entries(val as Record<string, unknown>)) {
+      children[key] = nodeFromJson(child);
+    }
+    return { folder: { children } as NamespaceFolder };
+  }
+  throw new Error(
+    `Invalid namespace node (expected string or object): ${typeof val}`,
+  );
 }
 
 export function createAddBulkCommand(
@@ -244,7 +259,7 @@ export function createSingleItemMeta(
     min: meta?.min,
     max: meta?.max,
     options: meta?.options ?? [],
-    maxLen: meta?.maxLen !== undefined ? [meta.maxLen] : [],
+    maxLen: meta?.maxLen,
   };
 }
 
@@ -269,7 +284,7 @@ export function createEditMetaCommand(
         min: meta.min,
         max: meta.max,
         options: meta.options ?? [],
-        maxLen: meta.maxLen !== undefined ? [meta.maxLen] : [],
+        maxLen: meta.maxLen,
       },
     },
   };
