@@ -393,14 +393,14 @@ impl VariableManager {
     // /folder/path/var1: (varDataType, Option<Typed>)
 
     /// Apply values to `values_cache` (no persistence), validate against cached metadata,
-    /// and build an `EventBatch` for broadcast. Missing cache entries are skipped.
+    /// and build an `EventBatch` for broadcast. Errors if a var is missing in cache.
     async fn set_vals(&self, var_id_vals: Vec<VarIdValue>) -> Result<EventBatch, String> {
         let mut ev_batch = EventBatch { events: Vec::with_capacity(var_id_vals.len()) };
         let mut var_cache_guard = self.values_cache.write().await;
         for var_id_val in var_id_vals {
             let cached_val = match var_cache_guard.get_mut(&var_id_val.var_id) {
                 Some(x) => x,
-                None => continue
+                None => return Err(format!("Variable {} not found", var_id_val.var_id)),
             };
             let new_value = match var_id_val.value {
                 Some(value) => Some(self.validate_constraints(cached_val, &value)?),
@@ -579,6 +579,10 @@ impl VariableManager {
         }
     }
 
+    /// Validate an incoming `Value` against cached dtype/constraints and return normalized `Typed`.
+    /// - Numeric: checks min/max; preserves integer dtype (casts float input to i64).
+    /// - Text: checks options/max_len.
+    /// - Boolean: accepts bool or non-zero int/float as true.
     fn validate_constraints(&self, cached_val: &CachedValue, value: &Value) -> Result<Typed, String> {
         let typed = value
             .typed
@@ -587,14 +591,20 @@ impl VariableManager {
 
         match cached_val.dtype {
             VarDataType::Float | VarDataType::Integer => {
-                let v = match typed {
+                // Allow int or float input; ensure bounds against min/max (as f64),
+                // but preserve integer dtype when dtype == Integer.
+                let v_f64 = match typed {
                     Typed::FloatValue(x) => x,
                     Typed::IntegerValue(x) => x as f64,
-                    _ => return Err("Type mismatch for text variable".to_string()),
+                    _ => return Err("Type mismatch for numeric variable".to_string()),
                 };
-                if let Some(min) = cached_val.min { if v < min { return Err(format!("Value {} is below min {}", v, min)); }}
-                if let Some(max) = cached_val.max { if v > max { return Err(format!("Value {} is above max {}", v, max)); }}
-                Ok(Typed::FloatValue(v))
+                if let Some(min) = cached_val.min { if v_f64 < min { return Err(format!("Value {} is below min {}", v_f64, min)); }}
+                if let Some(max) = cached_val.max { if v_f64 > max { return Err(format!("Value {} is above max {}", v_f64, max)); }}
+                match cached_val.dtype {
+                    VarDataType::Integer => Ok(Typed::IntegerValue(v_f64 as i64)),
+                    VarDataType::Float => Ok(Typed::FloatValue(v_f64)),
+                    _ => unreachable!(),
+                }
             }
             VarDataType::Text => {
                 let v = match typed {
