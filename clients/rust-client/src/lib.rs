@@ -11,6 +11,7 @@ use tokio::sync::{Mutex, oneshot};
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
 use tokio_tungstenite::{connect_async, tungstenite::Message as WsMessage, MaybeTlsStream, WebSocketStream};
+use tokio_stream::wrappers::ReceiverStream;
 use types::errors::ClientError;
 use namespace::{
     command, response, value, Command, FolderInfo, ItemMeta, ItemType, OperationStatus, Response, VarDataType,
@@ -25,6 +26,7 @@ pub struct Client {
     sink: Arc<Mutex<WsSink>>,
     pending: Arc<Mutex<HashMap<String, oneshot::Sender<Response>>>>,
     reader: JoinHandle<()>,
+    url: String,
 }
 
 #[derive(Clone, Debug)]
@@ -60,7 +62,7 @@ pub struct BooleanVar {
 impl Client {
     pub async fn connect(host: &str, port: i64, tls: bool) -> Result<Self, ClientError> {
         let url = format!("{}://{}:{}", if tls {"wss"} else {"ws"}, host, port);
-        let (ws, _) = connect_async(url).await?;
+        let (ws, _) = connect_async(url.clone()).await?;
         let (sink, stream) = ws.split();
 
         let pending: Arc<Mutex<HashMap<String, oneshot::Sender<Response>>>> = Arc::new(Mutex::new(HashMap::new()));
@@ -93,6 +95,7 @@ impl Client {
             sink: Arc::new(Mutex::new(sink)),
             pending,
             reader,
+            url,
         })
     }
 
@@ -475,6 +478,60 @@ impl Client {
             }
         })
         .await?
+    }
+
+    /// Subscribe to variable value events; returns a stream of `(var_id, Option<value::Typed>)`.
+    /// Opens a dedicated WebSocket connection. Dropping the stream stops receiving.
+    pub async fn subscribe_var_values(
+        &self,
+        var_ids: Vec<String>,
+        timeout_ms: u64,
+    ) -> Result<impl futures_util::Stream<Item = (String, Option<value::Typed>)>, ClientError> {
+        let (ws, _) = connect_async(self.url.clone()).await?;
+        let (mut sink, mut stream) = ws.split();
+
+        let cmd_id = Uuid::new_v4().to_string();
+        let cmd = Command {
+            command_type: Some(command::CommandType::Sub(namespace::SubscribeCommand {
+                cmd_id: cmd_id.clone(),
+                var_ids,
+                events: vec![namespace::EventType::VarValues as i32],
+            })),
+        };
+
+        sink.send(WsMessage::Binary(cmd.encode_to_vec().into())).await?;
+
+        // Await Sub response
+        let resp = timeout(Duration::from_millis(timeout_ms), stream.next())
+            .await
+            .map_err(|_| ClientError::Timeout)?
+            .ok_or(ClientError::ConnectionClosed)??;
+        match resp {
+            WsMessage::Binary(bin) => {
+                let resp = Response::decode(&*bin)?;
+                ensure_ok(&resp)?;
+            }
+            _ => return Err(ClientError::UnexpectedFrame),
+        }
+
+        let (tx, rx) = tokio::sync::mpsc::channel(256);
+        tokio::spawn(async move {
+            while let Some(msg) = stream.next().await {
+                match msg {
+                    Ok(WsMessage::Binary(data)) => {
+                        if let Ok(ev) = namespace::Event::decode(&*data) {
+                            if let Some(namespace::event::Ev::VarValueEv(v)) = ev.ev {
+                                let _ = tx.send((v.var_id, v.value.and_then(|val| val.typed))).await;
+                            }
+                        }
+                    }
+                    Ok(WsMessage::Close(_)) | Err(_) => break,
+                    _ => {}
+                }
+            }
+        });
+
+        Ok(ReceiverStream::new(rx))
     }
 }
 
