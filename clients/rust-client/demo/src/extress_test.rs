@@ -8,7 +8,7 @@ use futures_util::future;
 
 use lirays_ws_client::{Client, FloatVar};
 
-const NUM_CLIENTS: usize = 10;
+const NUM_CLIENTS: usize = 2;
 const VARS_PER_CLIENT: usize = 1000;
 const ROOT: &str = "/Root";
 
@@ -43,6 +43,12 @@ pub async fn setup_namespace(host: &str, port: i64, tls: bool) -> Result<()> {
         info!("setup: variables creadas en {}", parent);
     }
 
+    Ok(())
+}
+
+pub async fn run2(host: &str, port: i64, tls: bool) -> Result<()> {
+    let client = Client::connect(&h, port, tls).await.unwrap();
+    let data = client
     Ok(())
 }
 

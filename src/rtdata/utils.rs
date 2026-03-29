@@ -22,29 +22,21 @@ use crate::rtdata::namespace::{
     value::Typed,
 };
 
-pub fn cast_item_type(value: i32) -> ItemType {
-    ItemType::try_from(value).unwrap_or(ItemType::Invalid)
+pub struct CachedValue {
+    pub val: Option<Typed>,
+    pub dtype: VarDataType,
+    pub min: Option<f64>,
+    pub max: Option<f64>,
+    pub options: Vec<String>,
+    pub max_len: Option<u64>,
 }
 
-pub fn cast_var_data_type(value: Option<i32>) -> VarDataType {
-    value.and_then(|v| VarDataType::try_from(v).ok()).unwrap_or(VarDataType::Invalid)
-}
+pub fn normalize_path(path: &str) -> String {
+    let mut base = String::with_capacity(path.len());
 
-pub fn normalize_path(path: &str, i_type: ItemType) -> String {
-    let mut base = String::with_capacity(path.len() + 2);
-    base.push('/');
-
-    let mut first = true;
     for part in path.split('/').filter(|s| !s.is_empty()) {
-        if !first {
-            base.push('/');
-        }
-        base.push_str(part);
-        first = false;
-    }
-
-    if i_type == ItemType::Folder && !base.ends_with('/') {
         base.push('/');
+        base.push_str(part);
     }
     base
 }
@@ -75,12 +67,6 @@ pub fn get_parent_and_name(path: &str) -> (String, String) {
             (parent, name.to_string())
         }
     }
-}
-
-pub fn get_hierarchy_key(full_path: &str) -> String {
-    let normalized = normalize_path(full_path, ItemType::Variable);
-    let (parent, name) = normalized.rsplit_once('/').unwrap_or(("", &normalized));
-    format!("H:{}/\0{}", parent, name)
 }
 
 fn _generate_json_examples(folder_path: &str) {
@@ -124,7 +110,7 @@ fn _generate_json_examples(folder_path: &str) {
                     min: None,
                     max: None,
                     options: vec![],
-                    max_len: vec![],
+                    max_len: None,
                 },
                 ItemMeta {
                     name: "NewFloatVariable".to_string(),
@@ -134,7 +120,7 @@ fn _generate_json_examples(folder_path: &str) {
                     min: None,
                     max: None,
                     options: vec![],
-                    max_len: vec![],
+                    max_len: None,
                 },
                 ItemMeta {
                     name: "NewTextVariable".to_string(),
@@ -144,7 +130,7 @@ fn _generate_json_examples(folder_path: &str) {
                     min: None,
                     max: None,
                     options: vec![],
-                    max_len: vec![],
+                    max_len: None,
                 },
                 ItemMeta {
                     name: "NewIntegerVariable".to_string(),
@@ -154,7 +140,7 @@ fn _generate_json_examples(folder_path: &str) {
                     min: None,
                     max: None,
                     options: vec![],
-                    max_len: vec![],
+                    max_len: None,
                 },
                 ItemMeta {
                     name: "NewBooleanVariable".to_string(),
@@ -164,7 +150,7 @@ fn _generate_json_examples(folder_path: &str) {
                     min: None,
                     max: None,
                     options: vec![],
-                    max_len: vec![],
+                    max_len: None,
                 }
             ],
         }))
@@ -263,7 +249,7 @@ fn _generate_json_examples(folder_path: &str) {
                 min: None,
                 max: None,
                 options: vec![],
-                max_len: vec![],
+                max_len: None,
             },
             VarInfo {
                 id: "/devices/sensors/NewFolder/NewTextVariable".to_string(),
@@ -273,7 +259,7 @@ fn _generate_json_examples(folder_path: &str) {
                 min: None,
                 max: None,
                 options: vec![],
-                max_len: vec![],
+                max_len: None,
             },
             VarInfo {
                 id: "/devices/sensors/NewFolder/NewIntegerVariable".to_string(),
@@ -283,7 +269,7 @@ fn _generate_json_examples(folder_path: &str) {
                 min: None,
                 max: None,
                 options: vec![],
-                max_len: vec![],
+                max_len: None,
             },
             VarInfo {
                 id: "/devices/sensors/NewFolder/NewBooleanVariable".to_string(),
@@ -293,7 +279,7 @@ fn _generate_json_examples(folder_path: &str) {
                 min: None,
                 max: None,
                 options: vec![],
-                max_len: vec![],
+                max_len: None,
             }
         ],
     };
@@ -366,23 +352,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_cast_item_type() {
-        assert_eq!(cast_item_type(0), ItemType::Invalid);
-        // Test with valid ItemType values if needed
-    }
-
-    #[test]
-    fn test_cast_var_data_type() {
-        assert_eq!(cast_var_data_type(None), VarDataType::Invalid);
-        // Test with valid VarDataType values if needed
-    }
-
-    #[test]
     fn test_normalize_path() {
-        assert_eq!(normalize_path("/a/b/c", ItemType::Variable), "/a/b/c");
-        assert_eq!(normalize_path("/a/b/c", ItemType::Folder), "/a/b/c/");
-        assert_eq!(normalize_path("a/b/c", ItemType::Variable), "/a/b/c");
-        assert_eq!(normalize_path("", ItemType::Variable), "/");
+        assert_eq!(normalize_path("/a/b/c/"), "/a/b/c");
+        assert_eq!(normalize_path("//a////b/c/d"), "/a/b/c/d");
+        assert_eq!(normalize_path("/a/b/c//d//"), "/a/b/c/d");
+        assert_eq!(normalize_path(""), "");
+        assert_eq!(normalize_path("/"), "");
+        assert_eq!(normalize_path("//"), "");
+        assert_eq!(normalize_path("///"), "");
     }
 
     #[test]
@@ -407,11 +384,5 @@ mod tests {
 
         // Test path with trailing slash
         assert_eq!(get_parent_and_name("/a/b/c/"), (String::from("/a/b"), String::from("c")));
-    }
-
-    #[test]
-    fn test_get_hierarchy_key() {
-        assert_eq!(get_hierarchy_key("/a/b/c"), "H:/a/b/\0c");
-        assert_eq!(get_hierarchy_key("/"), "H:/\0");
     }
 }

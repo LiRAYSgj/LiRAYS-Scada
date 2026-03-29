@@ -33,7 +33,7 @@ message ItemMeta {
   optional double min = 5;  // For number variables only
   optional double max = 6;  // For number variables only
   repeated string options = 7;  // For string variables only
-  repeated uint64 max_len = 8;  // For string variables only
+  optional uint64 max_len = 8;  // For string variables only
 }
 
 message FolderInfo {
@@ -49,7 +49,7 @@ message VarInfo {
   optional double min = 5;
   optional double max = 6;
   repeated string options = 7;
-  repeated uint64 max_len = 8;
+  optional uint64 max_len = 8;
 }
 
 message VarIdValue {
@@ -78,5 +78,5 @@ message NamespaceVariable {
   optional double min = 3;
   optional double max = 4;
   repeated string options = 5;
-  repeated uint64 max_len = 6;
+  optional uint64 max_len = 6;
 }

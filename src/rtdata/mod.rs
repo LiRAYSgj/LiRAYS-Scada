@@ -5,7 +5,7 @@ pub mod utils;
 pub mod events;
 
 use futures_util::{SinkExt, StreamExt};
-use log::{debug, error, info, warn};
+use log::{error, info, warn};
 use prost::Message as ProstMessage;
 use serde_json;
 use std::{collections::HashSet, sync::Arc};

@@ -91,7 +91,7 @@ message EditMetaCommand {
   optional double min = 4;
   optional double max = 5;
   repeated string options = 6;
-  repeated uint64 max_len = 7;
+  optional uint64 max_len = 7;
 }
 
 message EditMetaResponse {

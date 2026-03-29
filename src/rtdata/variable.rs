@@ -11,12 +11,9 @@ use sled::{Tree, Batch};
 use super::parser::{parse_repeated_name, clone_name};
 use super::events::{extract_add_event, extract_del_event};
 use super::utils::{
-    cast_item_type,
-    cast_var_data_type,
+    CachedValue,
     normalize_path,
-    get_ancestors,
-    get_hierarchy_key,
-    // generate_json_examples
+    get_ancestors
 };
 use crate::rtdata::namespace::{
     ItemType,
@@ -53,6 +50,8 @@ use crate::rtdata::namespace::{
 
 pub struct VariableManager {
     pub items_tree: Tree,
+    pub values_tree: Tree,
+    pub values_cache: RwLock<HashMap<String, CachedValue>>,
     event_senders: RwLock<Vec<mpsc::Sender<EventBatch>>>,
 }
 
@@ -61,14 +60,17 @@ impl VariableManager {
     pub fn new(files_dir: &str) -> Self {
         let db = sled::open(files_dir).unwrap();
         let items_tree = db.open_tree("mainTree").unwrap();
+        let values_tree = db.open_tree("valuesTree").unwrap();
+        let values_cache = RwLock::new(HashMap::new());
 
         Self {
             items_tree,
+            values_tree,
+            values_cache,
             event_senders: RwLock::new(Vec::new()),
         }
     }
 
-    /// Register a new listener; returns an mpsc receiver for event batches.
     pub async fn register_listener(&self) -> mpsc::Receiver<EventBatch> {
         let (tx, rx) = mpsc::channel(64);
         self.event_senders.write().await.push(tx);
@@ -89,21 +91,25 @@ impl VariableManager {
         }
     }
 
-    fn add_items(
+    // ===================== Methods to handle static namespace structure =====================
+    // root folders example: "/\0folder1": <meta>, "/\0folder2": <meta>
+    // root variables example:  "/\0var1": <meta>, "/\0var2": <meta>
+    // deep folders example: "/folder1/\0sub-folder": <meta>, "/folder1/sub-folder/\0sub-folder2": <meta>
+    // deep variables example: "/folder1/\0sub-var1": <meta>, "/folder1/sub-folder/\0sub-var2": <meta>
+
+    async fn add_items(
         &self,
         parent_id: &str,
         items_meta: Vec<ItemMeta>,
         batch: &mut Batch
     ) -> Result<(bool, Vec<ItemMeta>, Vec<ItemMeta>), String> {
-        // Let's verify parent_id is an existing folder. Or create it otherwise
-        // Returns (reload: bool, new folders: Vec, new variables: Vec)
-        let parent_path = normalize_path(parent_id, ItemType::Folder);
+        let parent_path = normalize_path(parent_id);
         let ancestors = get_ancestors(&parent_path);
         let mut new_folders = Vec::new();
         let mut new_variables = Vec::new();
 
         for (parent, folder_name) in ancestors {
-            let h_key = format!("H:{}\0{}", parent, folder_name);
+            let h_key = format!("{}/\0{}", parent, folder_name);
             if !self.items_tree.contains_key(&h_key).map_err(|e| format!("Reading error: {e}"))? {
                 let item = ItemMeta {
                     name: folder_name,
@@ -113,38 +119,101 @@ impl VariableManager {
                     min: None,
                     max: None,
                     options: Vec::new(),
-                    max_len: Vec::new(),
+                    max_len: None,
                 };
                 batch.insert(h_key.as_bytes(), item.encode_to_vec());
             }
         }
-
-        for i_meta in items_meta {
-            let h_key = format!("H:{}\0{}", parent_path, i_meta.name);
-            if self.items_tree.contains_key(&h_key).map_err(|e| format!("Reading error: {e}"))? {
-                return Err(format!("Can't create existing item {}", h_key));
-            }
-            batch.insert(h_key.as_bytes(), i_meta.encode_to_vec());
-            match cast_item_type(i_meta.i_type) {
-                ItemType::Folder => new_folders.push(i_meta),
-                ItemType::Variable => new_variables.push(i_meta),
-                ItemType::Invalid => warn!("Invalid item type in create")
+        // Create a context to force guard to be drop.
+        {
+            let mut val_cache_guard = self.values_cache.write().await;
+            for i_meta in items_meta {
+                let h_key = format!("{}/\0{}", parent_path, i_meta.name);
+                if self.items_tree.contains_key(&h_key).map_err(|e| format!("Reading error: {e}"))? {
+                    return Err(format!("Can't create existing item {}", h_key));
+                }
+                match i_meta.i_type() {
+                    ItemType::Folder => {
+                        batch.insert(h_key.as_bytes(), i_meta.encode_to_vec());
+                        new_folders.push(i_meta)
+                    }
+                    ItemType::Variable => {
+                        let d_key = format!("{}/{}", parent_path, i_meta.name);
+                        batch.insert(h_key.as_bytes(), i_meta.encode_to_vec());
+                        val_cache_guard.insert(d_key, CachedValue {
+                            val: None,
+                            dtype: i_meta.var_d_type(),
+                            min: i_meta.min,
+                            max: i_meta.max,
+                            options: i_meta.options.clone(),
+                            max_len: i_meta.max_len,
+                        });
+                        new_variables.push(i_meta)
+                    }
+                    ItemType::Invalid => return Err("Invalid item type in create".to_string())
+                }
             }
         }
         Ok((false, new_folders, new_variables))
     }
 
-    fn list_path(&self, parent_id: &str) -> Result<(Vec<FolderInfo>, Vec<VarInfo>), String> {
-        let path = normalize_path(parent_id, ItemType::Folder);
-        let prefix = format!("H:{}\0", path);
+    async fn edit_variables(
+        &self,
+        var_id: &str,
+        patch_unit: Option<String>,
+        patch_min: Option<f64>,
+        patch_max: Option<f64>,
+        patch_options: Vec<String>,
+        patch_max_len: Option<u64>
+    ) -> Result<(), String> {
+        let normalized = normalize_path(var_id);
+        let (parent, name) = normalized.rsplit_once('/').ok_or("Invalid normalized path".to_string())?;
+        let h_key = format!("{}/\0{}", parent, name);
+        let mut current: ItemMeta = match self.items_tree.get(h_key.as_bytes()) {
+            Ok(Some(value)) => ItemMeta::decode(value.as_ref()).map_err(|e| format!("Error decoding Item: {e}"))?,
+            Ok(None) => return Err("Variable not found".to_string()),
+            Err(e) => return Err(format!("Error reading tree: {e}")),
+        };
+        let mut val_cache_guard = self.values_cache.write().await;
+        let current_cached = val_cache_guard.get_mut(&normalized).ok_or("Variable cache not found".to_string())?;
+        if current.i_type() != ItemType::Variable {
+            return Err("Only variables support metadata updates".to_string());
+        }
+        match current.var_d_type() {
+            VarDataType::Float | VarDataType::Integer => {
+                current.unit = patch_unit;
+                current.min = patch_min;
+                current.max = patch_max;
+                current_cached.min = patch_min;
+                current_cached.max = patch_max;
+            }
+            VarDataType::Text => {
+                current.unit = patch_unit;
+                current.options = patch_options.clone();
+                current.max_len = patch_max_len;
+                current_cached.options = patch_options;
+                current_cached.max_len = patch_max_len;
+            }
+            VarDataType::Boolean => {
+                current.unit = patch_unit;
+            }
+            VarDataType::Invalid => warn!("Invalid variable stored: {}", normalized)
+        }
+        self.items_tree.insert(h_key.as_bytes(), current.encode_to_vec()).map_err(|e| format!("Error Applying batch op: {e}"))?;
+        Ok(())
+    }
+
+    async fn list_path(&self, parent_id: &str) -> Result<(Vec<FolderInfo>, Vec<VarInfo>), String> {
+        let parent_path = normalize_path(parent_id);
+        let prefix = format!("{}/\0", parent_path);
         let mut children_folders = Vec::new();
         let mut children_vars = Vec::new();
 
         for result in self.items_tree.scan_prefix(prefix) {
             let (_, value) = result.map_err(|e| format!("Error reading tree: {e}"))?;
             let i_meta = ItemMeta::decode(value.as_ref()).map_err(|e| format!("Error decoding Item: {e}"))?;
-            let i_type = cast_item_type(i_meta.i_type);
-            let ch_id = normalize_path(&format!("{}/{}", path, i_meta.name), ItemType::Variable);
+            let i_type = i_meta.i_type();
+            let ch_id = format!("{}/{}", parent_path, i_meta.name);
             match i_type {
                 ItemType::Folder => {
                     children_folders.push(FolderInfo {id: ch_id, name: i_meta.name});
@@ -169,16 +238,38 @@ impl VariableManager {
         Ok((children_folders, children_vars))
     }
 
-    fn _list_keys_with_prefix(&self, prefix: &str) -> Result<Vec<String>, String> {
-        let mut keys = Vec::new();
-        for result in self.items_tree.scan_prefix(prefix) {
-            let (key, _) = result.map_err(|e| format!("Error reading tree: {e}"))?;
-            keys.push(String::from_utf8(key.to_vec()).map_err(|e| format!("Error decoding key: {e}"))?);
+    async fn del_items(&self, item_ids: Vec<String>) -> Result<(), String> {
+        let mut batch = Batch::default();
+        for id in item_ids {
+            let item_path = normalize_path(&id);
+            let (parent, name) = item_path.rsplit_once('/').ok_or("Invalid normalized path".to_string())?;
+            let h_key = format!("{}/\0{}", parent, name);
+            let prefix = format!("{}/", item_path);
+
+            // Remove var value and children variable values
+            let mut vars_to_remove: Vec<String> = self.values_cache.read().await
+                .keys()
+                .filter(|k| k.starts_with(&prefix))
+                .cloned()
+                .collect();
+            vars_to_remove.push(item_path);
+            {
+                let mut val_cache_guard = self.values_cache.write().await;
+                for key in vars_to_remove { val_cache_guard.remove(&key); }
+            }
+
+            batch.remove(h_key.as_bytes());  // Remove current reference
+
+            // Remove All potential children references
+            for result in self.items_tree.scan_prefix(prefix) {
+                let (key, _) = result.map_err(|e| format!("Error reading tree: {e}"))?;
+                batch.remove(key);
+            }
         }
-        Ok(keys)
+        self.items_tree.apply_batch(batch).map_err(|e| format!("Error removing items: {e}"))
     }
 
-    fn add_bulk_recursive(
+    async fn add_bulk_recursive(
         &self,
         root_parent_id: &str,
         root_nodes: HashMap<String, NamespaceNode>,
@@ -218,7 +309,7 @@ impl VariableManager {
                                     min: None,
                                     max: None,
                                     options: Vec::new(),
-                                    max_len: Vec::new(),
+                                    max_len: None,
                                 });
                                 let children = if i == capacity - 1 {
                                     std::mem::take(&mut folder.children)
@@ -229,7 +320,7 @@ impl VariableManager {
                             }
                         }
                         Node::Variable(var_def) => {
-                            let v_dtype = cast_var_data_type(Some(var_def.var_d_type));
+                            let v_dtype = var_def.var_d_type();
                             if v_dtype == VarDataType::Invalid {
                                 warn!("Bulk ADD: Invalid variable type for key '{}'", key);
                             }
@@ -253,7 +344,7 @@ impl VariableManager {
 
                 if !vars_to_create.is_empty() {
                     let prev_m = total_count / 1_000_000;
-                    let (_, _, new_vars) = self.add_items(&parent_id, vars_to_create, batch)?;
+                    let (_, _, new_vars) = self.add_items(&parent_id, vars_to_create, batch).await?;
                     total_count += new_vars.len();
                     let curr_m = total_count / 1_000_000;
                     if curr_m > prev_m {
@@ -266,7 +357,7 @@ impl VariableManager {
                 }
                 if !folders_to_create.is_empty() {
                     let prev_m = total_count / 1_000_000;
-                    let (_, new_folders, _) = self.add_items(&parent_id, folders_to_create, batch)?;
+                    let (_, new_folders, _) = self.add_items(&parent_id, folders_to_create, batch).await?;
                     total_count += new_folders.len();
                     let curr_m = total_count / 1_000_000;
                     if curr_m > prev_m {
@@ -284,126 +375,39 @@ impl VariableManager {
         Ok((first_level_folders, first_level_variables))
     }
 
-    fn set_vals(&self, var_id_vals: Vec<VarIdValue>) -> Result<EventBatch, String> {
-        let mut batch = Batch::default();
-        let mut successfully_set_vals = Vec::with_capacity(var_id_vals.len());
+    // ===================== Methods to handle variable values =====================
+    // Values are stored in a cache HashMap
+    // /folder/path/var1: (varDataType, Option<Typed>)
+
+    async fn set_vals(&self, var_id_vals: Vec<VarIdValue>) -> Result<EventBatch, String> {
+        let mut ev_batch = EventBatch { events: Vec::with_capacity(var_id_vals.len()) };
+        let mut var_cache_guard = self.values_cache.write().await;
         for var_id_val in var_id_vals {
-            let var_id = normalize_path(&var_id_val.var_id, ItemType::Variable);
-            let h_key = get_hierarchy_key(&var_id_val.var_id);
-            let i_meta = match self.items_tree.get(h_key.as_bytes()) {
-                Ok(Some(value)) => ItemMeta::decode(value.as_ref()).map_err(|e| format!("Error decoding Item: {e}"))?,
-                Ok(None) => return Err("Missing variable.".to_string()),
-                Err(e) => return Err(format!("Error reading tree: {e}"))
+            let cached_val = match var_cache_guard.get_mut(&var_id_val.var_id) {
+                Some(x) => x,
+                None => continue
             };
-            let v_dtype = cast_var_data_type(i_meta.var_d_type);
-            if v_dtype == VarDataType::Invalid {
-                return Err("Invalid var data type.".to_string());
-            }
-            let d_key_str = format!("D:{}", var_id);
-            let d_key = d_key_str.as_bytes();
-            let i_type = cast_item_type(i_meta.i_type);
-            match var_id_val.value {
-                Some(value) => {
-                    let val = value.typed.ok_or_else(|| "None value".to_string())?;
-                    let value_ = match (i_type, v_dtype, val) {
-                        (ItemType::Variable, VarDataType::Integer, Typed::IntegerValue(v)) => Value {typed: Some(Typed::IntegerValue(v))},
-                        (ItemType::Variable, VarDataType::Integer, Typed::FloatValue(v)) => Value {typed: Some(Typed::IntegerValue(v as i64))},
-                        (ItemType::Variable, VarDataType::Float, Typed::FloatValue(v)) => Value {typed: Some(Typed::FloatValue(v))},
-                        (ItemType::Variable, VarDataType::Float, Typed::IntegerValue(v)) => Value {typed: Some(Typed::FloatValue(v as f64))},
-                        (ItemType::Variable, VarDataType::Text, Typed::TextValue(v)) => Value {typed: Some(Typed::TextValue(v))},
-                        (ItemType::Variable, VarDataType::Boolean, Typed::BooleanValue(v)) => Value {typed: Some(Typed::BooleanValue(v))},
-                        (ItemType::Variable, _, _) => return Err("Mismatch data type.".to_string()),
-                        (ItemType::Folder, _, _) => return Err("Can't write value to a folder.".to_string()),
-                        (ItemType::Invalid, _, _) => return Err("Invalid item type.".to_string()),
-                    };
-                    self.validate_constraints(&i_meta, &value_)?;
-                    batch.insert(d_key, value_.encode_to_vec());
-                    successfully_set_vals.push(VarIdValue { var_id, value: Some(value_)});
-                }
-                None => return Err("Error setting variable values. Can't set a null value".to_string())
-            }
+            let new_value = match var_id_val.value {
+                Some(value) => Some(self.validate_constraints(cached_val, &value)?),
+                None => None
+            };
+            cached_val.val = new_value.clone();
+            ev_batch.events.push(Event { ev: Some(Ev::VarValueEv(VarIdValue {
+                var_id: var_id_val.var_id,
+                value: Some(Value { typed: new_value })
+            }))});
         }
-        self.items_tree.apply_batch(batch).map_err(|e| format!("Error Applying batch op: {e}"))?;
-        let events: Vec<Event> = successfully_set_vals
-            .iter()
-            .cloned()
-            .map(|v| Event { ev: Some(Ev::VarValueEv(v)) })
-            .collect();
-        Ok(EventBatch { events })
+        Ok(ev_batch)
     }
 
-    fn edit_meta(&self, var_id: &str, patch: ItemMeta) -> Result<(), String> {
-        let h_key = get_hierarchy_key(var_id);
-        let mut current = match self.items_tree.get(h_key.as_bytes()) {
-            Ok(Some(value)) => ItemMeta::decode(value.as_ref()).map_err(|e| format!("Error decoding Item: {e}"))?,
-            Ok(None) => return Err("Variable not found".to_string()),
-            Err(e) => return Err(format!("Error reading tree: {e}")),
-        };
-        if cast_item_type(current.i_type) != ItemType::Variable {
-            return Err("Only variables support metadata updates".to_string());
-        }
-        // Do not allow changing name or type
-        // Apply patch fields when present
-        if patch.unit.is_some() {
-            current.unit = patch.unit;
-        }
-        if patch.min.is_some() {
-            current.min = patch.min;
-        }
-        if patch.max.is_some() {
-            current.max = patch.max;
-        }
-        if !patch.options.is_empty() {
-            current.options = patch.options;
-        }
-        if !patch.max_len.is_empty() {
-            current.max_len = patch.max_len;
-        }
-        let mut batch = Batch::default();
-        batch.insert(h_key.as_bytes(), current.encode_to_vec());
-        self.items_tree.apply_batch(batch).map_err(|e| format!("Error Applying batch op: {e}"))
-    }
-
-    fn get_vals(&self, var_ids: Vec<String>) -> Result<Vec<OptionalValue>, String> {
+    async fn get_vals(&self, var_ids: Vec<String>) -> Result<Vec<OptionalValue>, String> {
         let mut values = Vec::with_capacity(var_ids.len());
+        let var_cache_guard = self.values_cache.read().await;
         for var_id in var_ids {
-            let d_key_str = format!("D:{}", var_id);
-            match self.items_tree.get(&d_key_str) {
-                Ok(Some(bytes)) => {
-                    let value = Value::decode(bytes.as_ref()).map_err(|e| format!("Error decoding Value: {e}"))?;
-                    values.push(OptionalValue { value: Some(value) });
-                }
-                Ok(None) => values.push(OptionalValue { value: None }),
-                Err(e) => return Err(format!("Error getting variable values. Getting variable '{var_id}': {e}"))
-            }
+            let typed = var_cache_guard.get(&var_id).ok_or(format!("Variable {var_id} not found"))?.val.clone();
+            values.push(OptionalValue { value: Some(Value { typed }) });
         }
         Ok(values)
-    }
-
-    fn del_items(&self, items_ids: Vec<String>) -> Result<(), String> {
-        let mut batch = Batch::default();
-        for id in items_ids {
-            let as_var_id = normalize_path(&id, ItemType::Variable);
-            let potential_d_key = format!("D:{}", as_var_id);
-            let potential_ref = get_hierarchy_key(&id);
-
-            batch.remove(potential_d_key.as_bytes());  // Remove value if it is a var and has a value
-            batch.remove(potential_ref.as_bytes());  // Remove current reference
-
-            // Remove All potential children references
-            let prefix_h = format!("H:{}/", as_var_id);
-            for result in self.items_tree.scan_prefix(prefix_h) {
-                let (key, _) = result.map_err(|e| format!("Error reading tree: {e}"))?;
-                batch.remove(key);
-            }
-            // Remove All potential children values
-            let prefix_d = format!("D:{}/", as_var_id);
-            for result in self.items_tree.scan_prefix(prefix_d) {
-                let (key, _) = result.map_err(|e| format!("Error reading tree: {e}"))?;
-                batch.remove(key);
-            }
-        }
-        self.items_tree.apply_batch(batch).map_err(|e| format!("Error removing items: {e}"))
     }
 
     pub async fn exec_cmd(
@@ -417,7 +421,7 @@ impl VariableManager {
                 let cmd_id = add_cmd.cmd_id.clone();
                 let parent_id = add_cmd.parent_id.clone().unwrap_or_else(|| "/".to_string());
                 let mut batch = Batch::default();
-                let (status, error_msg) = match self.add_items(&parent_id, add_cmd.items_meta.clone(), &mut batch) {
+                let (status, error_msg) = match self.add_items(&parent_id, add_cmd.items_meta.clone(), &mut batch).await {
                     Ok((reload, new_folders, new_variables)) => {
                         match self.items_tree.apply_batch(batch) {
                             Ok(_) => {
@@ -438,7 +442,7 @@ impl VariableManager {
             }
             Some(CommandType::List(list_cmd)) => {
                 let folder_to_list = list_cmd.folder_id.unwrap_or_else(|| "/".to_string());
-                let (status, error_msg, folders, variables) = match self.list_path(&folder_to_list) {
+                let (status, error_msg, folders, variables) = match self.list_path(&folder_to_list).await {
                     Ok((children_folders, children_vars)) => {
                         (OperationStatus::Ok as i32, None, children_folders, children_vars)
                     }
@@ -447,7 +451,7 @@ impl VariableManager {
                 Response { response_type: Some(ResponseType::List(ListResponse { cmd_id: list_cmd.cmd_id, folders, variables })), status, error_msg }
             }
             Some(CommandType::Set(set_cmd)) => {
-                let (status, error_msg) = match self.set_vals(set_cmd.var_ids_values) {
+                let (status, error_msg) = match self.set_vals(set_cmd.var_ids_values).await {
                     Ok(batch) => {
                         let _ = self.broadcast_batch(batch).await;
                         (OperationStatus::Ok as i32, None)
@@ -457,14 +461,14 @@ impl VariableManager {
                 Response { response_type: Some(ResponseType::Set(SetResponse { cmd_id: set_cmd.cmd_id })), status, error_msg }
             }
             Some(CommandType::Get(get_cmd)) => {
-                let (status, error_msg, var_values) = match self.get_vals(get_cmd.var_ids) {
+                let (status, error_msg, var_values) = match self.get_vals(get_cmd.var_ids).await {
                     Ok(vals) => (OperationStatus::Ok as i32, None, vals),
                     Err(e) => (OperationStatus::Err as i32, Some(e), Vec::new())
                 };
                 Response { response_type: Some(ResponseType::Get(GetResponse { cmd_id: get_cmd.cmd_id, var_values })), status, error_msg }
             }
             Some(CommandType::Del(del_cmd)) => {
-                let (status, error_msg) = match self.del_items(del_cmd.item_ids.clone()) {
+                let (status, error_msg) = match self.del_items(del_cmd.item_ids.clone()).await {
                     Ok(_) => {
                         if let Ok(event) = extract_del_event(&del_cmd) {
                             let _ = self.broadcast_batch(EventBatch { events: vec![event] }).await;
@@ -478,26 +482,27 @@ impl VariableManager {
                 Response { response_type: Some(ResponseType::Del(DelResponse { cmd_id: del_cmd.cmd_id })), status, error_msg }
             }
             Some(CommandType::AddBulk(addb_cmd)) => {
-                let (status, error_msg) = match addb_cmd.schema {
-                    Some(schema) => {
-                        let mut batch = sled::Batch::default();
-                        match self.add_bulk_recursive(&addb_cmd.parent_id, schema.roots, &mut batch) {
-                            Ok((new_folders, new_variables)) => match self.items_tree.apply_batch(batch) {
-                                Ok(_) => {
-                                    if let Ok(event) = extract_add_event(&addb_cmd.parent_id, false, new_folders, new_variables) {
-                                        let _ = self.broadcast_batch(EventBatch { events: vec![event] }).await;
-                                    } else {
-                                        warn!("Error extracting event");
-                                    }
-                                    (OperationStatus::Ok as i32, None)
-                                }
-                                Err(e) => (OperationStatus::Err as i32, Some(format!("On apply batch: {e}"))),
-                            },
-                            Err(e) => (OperationStatus::Err as i32, Some(format!("Bulk insert error: {e}"))),
-                        }
-                    }
-                    None => (OperationStatus::Err as i32, Some("No schema provided".to_string()))
-                };
+                // let (status, error_msg) = match addb_cmd.schema {
+                //     Some(schema) => {
+                //         let mut batch = sled::Batch::default();
+                //         match self.add_bulk_recursive(&addb_cmd.parent_id, schema.roots, &mut batch) {
+                //             Ok((new_folders, new_variables)) => match self.items_tree.apply_batch(batch) {
+                //                 Ok(_) => {
+                //                     if let Ok(event) = extract_add_event(&addb_cmd.parent_id, false, new_folders, new_variables) {
+                //                         let _ = self.broadcast_batch(EventBatch { events: vec![event] }).await;
+                //                     } else {
+                //                         warn!("Error extracting event");
+                //                     }
+                //                     (OperationStatus::Ok as i32, None)
+                //                 }
+                //                 Err(e) => (OperationStatus::Err as i32, Some(format!("On apply batch: {e}"))),
+                //             },
+                //             Err(e) => (OperationStatus::Err as i32, Some(format!("Bulk insert error: {e}"))),
+                //         }
+                //     }
+                //     None => (OperationStatus::Err as i32, Some("No schema provided".to_string()))
+                // };
+                let (status, error_msg) = (OperationStatus::Err as i32, Some("Not implemented".to_string()));
                 Response { response_type: Some(ResponseType::AddBulk(AddBulkResponse { cmd_id: addb_cmd.cmd_id })), status, error_msg }
             }
             Some(CommandType::Sub(sub_cmd)) => {
@@ -530,16 +535,14 @@ impl VariableManager {
                 }
             }
             Some(CommandType::EditMeta(edit_cmd)) => {
-                let (status, error_msg) = match self.edit_meta(&edit_cmd.var_id, ItemMeta {
-                    name: String::new(),
-                    i_type: ItemType::Variable as i32,
-                    var_d_type: None,
-                    unit: edit_cmd.unit,
-                    min: edit_cmd.min,
-                    max: edit_cmd.max,
-                    options: edit_cmd.options,
-                    max_len: edit_cmd.max_len,
-                }) {
+                let (status, error_msg) = match self.edit_variables(
+                    &edit_cmd.var_id,
+                    edit_cmd.unit,
+                    edit_cmd.min,
+                    edit_cmd.max,
+                    edit_cmd.options,
+                    edit_cmd.max_len
+                ).await {
                     Ok(_) => (OperationStatus::Ok as i32, None),
                     Err(e) => (OperationStatus::Err as i32, Some(e)),
                 };
@@ -560,48 +563,48 @@ impl VariableManager {
         }
     }
 
-    fn validate_constraints(&self, meta: &ItemMeta, value: &Value) -> Result<(), String> {
-        let v_dtype = cast_var_data_type(meta.var_d_type);
+    fn validate_constraints(&self, cached_val: &CachedValue, value: &Value) -> Result<Typed, String> {
         let typed = value
             .typed
             .as_ref()
-            .ok_or_else(|| "Missing value".to_string())?;
+            .ok_or_else(|| "Missing value".to_string())?.to_owned();
 
-        match v_dtype {
-            VarDataType::Integer | VarDataType::Float => {
-                let num = match typed {
-                    Typed::IntegerValue(v) => *v as f64,
-                    Typed::FloatValue(v) => *v,
-                    _ => return Err("Type mismatch for numeric variable".to_string()),
-                };
-                if let Some(min) = meta.min {
-                    if num < min {
-                        return Err(format!("Value {} is below min {}", num, min));
-                    }
-                }
-                if let Some(max) = meta.max {
-                    if num > max {
-                        return Err(format!("Value {} is above max {}", num, max));
-                    }
-                }
-            }
-            VarDataType::Text => {
-                let txt = match typed {
-                    Typed::TextValue(v) => v,
+        match cached_val.dtype {
+            VarDataType::Float | VarDataType::Integer => {
+                let v = match typed {
+                    Typed::FloatValue(x) => x,
+                    Typed::IntegerValue(x) => x as f64,
                     _ => return Err("Type mismatch for text variable".to_string()),
                 };
-                if !meta.options.is_empty() && !meta.options.contains(txt) {
+                if let Some(min) = cached_val.min { if v < min { return Err(format!("Value {} is below min {}", v, min)); }}
+                if let Some(max) = cached_val.max { if v > max { return Err(format!("Value {} is above max {}", v, max)); }}
+                Ok(Typed::FloatValue(v))
+            }
+            VarDataType::Text => {
+                let v = match typed {
+                    Typed::TextValue(x) => x,
+                    _ => return Err("Type mismatch for text variable".to_string()),
+                };
+                if !cached_val.options.is_empty() && !cached_val.options.contains(&v) {
                     return Err("Text value not in allowed options".to_string());
                 }
-                if let Some(limit) = meta.max_len.first() {
-                    if (txt.chars().count() as u64) > *limit {
+                if let Some(limit) = cached_val.max_len {
+                    if (v.chars().count() as u64) > limit {
                         return Err(format!("Text length exceeds max {}", limit));
                     }
                 }
+                Ok(Typed::TextValue(v))
             }
-            VarDataType::Boolean => {}
+            VarDataType::Boolean => {
+                let v = match typed {
+                    Typed::BooleanValue(x) => x,
+                    Typed::FloatValue(x) => x != 0.0,
+                    Typed::IntegerValue(x) => x != 0,
+                    _ => return Err("Type mismatch for boolean variable".to_string()),
+                };
+                Ok(Typed::BooleanValue(v))
+            }
             VarDataType::Invalid => return Err("Invalid var data type.".to_string()),
         }
-        Ok(())
     }
 }

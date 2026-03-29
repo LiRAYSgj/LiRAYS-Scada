@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use crate::rtdata::namespace::{FolderInfo, ItemMeta, ItemType, VarInfo, Event, DelCommand, TreeChanged, FolderChanged, event::Ev};
-use super::utils::{cast_var_data_type, normalize_path, get_parent_and_name};
+use crate::rtdata::namespace::{FolderInfo, ItemMeta, VarInfo, Event, DelCommand, TreeChanged, FolderChanged, event::Ev};
+use super::utils::{normalize_path, get_parent_and_name};
 
 pub fn extract_add_event(
     folder_id: &str,
@@ -11,21 +11,21 @@ pub fn extract_add_event(
 ) -> Result<Event, String> {
     let new_folders = new_folders_imeta.iter().map(|i_meta| {
         FolderInfo {
-            id: normalize_path(&format!("{}/{}", folder_id, i_meta.name), ItemType::Folder),
+            id: normalize_path(&format!("{}/{}", folder_id, i_meta.name)),
             name: i_meta.name.to_string()
         }
     }).collect();
     let new_variables = new_variables_imeta.iter().map(|i_meta| {
-        let var_d_type = cast_var_data_type(i_meta.var_d_type);
+        let var_d_type = i_meta.var_d_type();
         VarInfo {
-            id: normalize_path(&format!("{}/{}", folder_id, i_meta.name), ItemType::Variable),
+            id: normalize_path(&format!("{}/{}", folder_id, i_meta.name)),
             name: i_meta.name.to_string(),
             var_d_type: var_d_type as i32,
             unit: None,
             min: None,
             max: None,
             options: vec![],
-            max_len: vec![],
+            max_len: None,
         }
     }).collect();
 
@@ -52,10 +52,10 @@ pub fn extract_del_event(
         let (parent, _) = get_parent_and_name(&item_id);
         match removed_data.get_mut(&parent) {
             Some(removed_items) => {
-                removed_items.push(item_id);
+                removed_items.push(item_id.to_string());
             }
             None => {
-                removed_data.insert(parent, vec![item_id]);
+                removed_data.insert(parent, vec![item_id.to_string()]);
             }
         }
     }
