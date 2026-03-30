@@ -69,7 +69,14 @@ import { Layers, Plus, Trash2, Pencil } from "lucide-svelte";
 
   type CanvasMode = "edit" | "play";
 
-  const DEMO_WS_ENDPOINT = env.PUBLIC_DEMO_WS_ENDPOINT || "ws://127.0.0.1:8245";
+  const DEFAULT_WS_ENDPOINT =
+    browser
+      ? `${location.protocol === "https:" ? "wss" : "ws"}://${
+          location.host || location.hostname
+        }/ws`
+      : "ws://127.0.0.1:8245/ws";
+
+  const DEMO_WS_ENDPOINT = env.PUBLIC_DEMO_WS_ENDPOINT || DEFAULT_WS_ENDPOINT;
   const PIPE_EDGE_TYPE = "step";
   const PIPE_EDGE_STYLE = "stroke:#5b708a;stroke-width:8;";
   const theme = themeStore;

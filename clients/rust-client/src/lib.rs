@@ -61,7 +61,8 @@ pub struct BooleanVar {
 
 impl Client {
     pub async fn connect(host: &str, port: i64, tls: bool) -> Result<Self, ClientError> {
-        let url = format!("{}://{}:{}", if tls {"wss"} else {"ws"}, host, port);
+        let url = format!("{}://{}:{}/ws", if tls {"wss"} else {"ws"}, host, port);
+        println!("--- {}", url);
         let (ws, _) = connect_async(url.clone()).await?;
         let (sink, stream) = ws.split();
 

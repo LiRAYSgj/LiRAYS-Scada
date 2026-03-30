@@ -8,7 +8,7 @@ use std::{
 
 use axum::{
     body::Body,
-    extract::State,
+    extract::{State, ws::{WebSocketUpgrade, WebSocket, Message as WsMessage}},
     http::{StatusCode, Uri},
     middleware::{self, Next},
     response::{IntoResponse, Redirect, Response},
@@ -16,12 +16,14 @@ use axum::{
     Json, Router,
 };
 use axum::serve::Listener;
+use futures_util::StreamExt;
 use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+use prost::Message as ProstMessage;
 use constant_time_eq::constant_time_eq;
 use hmac::{Hmac, Mac};
 use include_dir::{include_dir, Dir};
-use log::error;
+use log::{error, info, warn};
 use model::resource::service::{
     StaticResource, StaticResourceInput, StaticResourceManager,
 };
@@ -38,6 +40,7 @@ use tokio_rustls::{server::TlsStream, TlsAcceptor};
 use utoipa::{OpenApi, ToSchema};
 
 use super::tls::{build_tls_acceptor, ServerTlsConfig};
+use crate::rtdata::{variable::VariableManager, metrics::Metrics, namespace::Command, should_send};
 
 static FRONTEND: Dir = include_dir!("$CARGO_MANIFEST_DIR/frontend/build");
 
@@ -82,6 +85,7 @@ struct AppState {
     resources: Arc<StaticResourceManager>,
     users: Arc<UserManager>,
     auth: AuthConfig,
+    var_manager: Arc<VariableManager>,
 }
 
 fn hmac_sign(secret: &[u8], data: &[u8]) -> String {
@@ -470,6 +474,126 @@ fn session_cookie(token: String, secure: bool, ttl: Duration) -> Cookie<'static>
     cookie
 }
 
+async fn ws_handler(
+    State(state): State<Arc<AppState>>,
+    ws: WebSocketUpgrade,
+) -> impl IntoResponse {
+    let vm = state.var_manager.clone();
+    ws.on_upgrade(move |socket| async move {
+        handle_ws_session(vm, socket).await;
+    })
+}
+
+async fn handle_ws_session(vm: Arc<VariableManager>, mut socket: WebSocket) {
+    let mut events_rx = vm.register_listener().await;
+    let mut subscribed_set: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut get_tree_changes = false;
+    let mut as_json = false;
+
+    loop {
+        tokio::select! {
+            msg_result = socket.next() => {
+                match msg_result {
+                    Some(Ok(msg)) => {
+                        match msg {
+                            WsMessage::Binary(bin) => {
+                                let (command, is_json_cmd) = match Command::decode(&*bin) {
+                                    Ok(cmd) => (cmd, false),
+                                    Err(_) => (Command { command_type: None }, false),
+                                };
+                                as_json = is_json_cmd;
+                                let response = vm.exec_cmd(command, &mut subscribed_set, &mut get_tree_changes).await;
+                                let resp_msg = if as_json {
+                                    match serde_json::to_string(&response) {
+                                        Ok(str_) => WsMessage::Text(str_.into()),
+                                        Err(e) => WsMessage::Text(format!("Error: {e}").into()),
+                                    }
+                                } else {
+                                    WsMessage::Binary(response.encode_to_vec().into())
+                                };
+                                if let Err(e) = socket.send(resp_msg).await {
+                                    error!("Error sending response to client: {e}");
+                                    break;
+                                }
+                            }
+                            WsMessage::Text(txt) => {
+                                let (command, is_json_cmd) = match serde_json::from_str::<Command>(&txt.to_string()) {
+                                    Ok(cmd) => (cmd, true),
+                                    Err(_) => (Command { command_type: None }, true),
+                                };
+                                as_json = is_json_cmd;
+                                let response = vm.exec_cmd(command, &mut subscribed_set, &mut get_tree_changes).await;
+                                let resp_msg = if as_json {
+                                    match serde_json::to_string(&response) {
+                                        Ok(str_) => WsMessage::Text(str_.into()),
+                                        Err(e) => WsMessage::Text(format!("Error: {e}").into()),
+                                    }
+                                } else {
+                                    WsMessage::Binary(response.encode_to_vec().into())
+                                };
+                                if let Err(e) = socket.send(resp_msg).await {
+                                    error!("Error sending response to client: {e}");
+                                    break;
+                                }
+                            }
+                            WsMessage::Ping(payload) => {
+                                if let Err(e) = socket.send(WsMessage::Pong(payload)).await {
+                                    error!("Error sending Pong: {e}");
+                                    break;
+                                }
+                            }
+                            WsMessage::Close(_) => {
+                                info!("Client closed connection");
+                                break;
+                            }
+                            _ => {}
+                        }
+                    }
+                    Some(Err(e)) => {
+                        error!("WebSocket error: {e}");
+                        break;
+                    }
+                    None => {
+                        info!("Client disconnected");
+                        break;
+                    }
+                }
+            }
+            data_result = events_rx.recv() => {
+                match data_result {
+                    Some(batch) => {
+                        // Pre-serialize once per batch per client.
+                        let mut encoded: Vec<(&super::rtdata::namespace::Event, Vec<u8>, String)> = Vec::with_capacity(batch.events.len());
+                        for ev in batch.events.iter() {
+                            let bin = ev.encode_to_vec();
+                            let json = serde_json::to_string(ev).unwrap_or_else(|_| "{}".to_string());
+                            encoded.push((ev, bin, json));
+                        }
+
+                        for (event, bin, json) in encoded.into_iter() {
+                            if should_send(event, &subscribed_set, get_tree_changes) {
+                                let resp_msg = if as_json {
+                                    WsMessage::Text(json.clone().into())
+                                } else {
+                                    WsMessage::Binary(bin.clone().into())
+                                };
+                                if let Err(e) = socket.send(resp_msg).await {
+                                    error!("Error sending response to client: {e}");
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    None => {
+                        warn!("Event channel closed for client");
+                        break;
+                    }
+                }
+            }
+        }
+    }
+}
+
 async fn setup_get() -> impl IntoResponse {
     const FORM: &str = r#"<!doctype html>
 <html lang="en">
@@ -715,9 +839,9 @@ async fn logout(
     (jar, Redirect::to("/auth/login")).into_response()
 }
 
-pub async fn run_http_server(host: &str, port: u16, db_file: &str, tls_config: Option<ServerTlsConfig>) {
+pub async fn run_http_server(host: &str, port: u16, rt_db_dir: &str, static_db_file: &str, tls_config: Option<ServerTlsConfig>) {
     // rwc ensures the sqlite file is created if missing
-    let db_url = format!("sqlite://{}?mode=rwc", db_file);
+    let db_url = format!("sqlite://{}?mode=rwc", static_db_file);
     let db = Database::connect(db_url)
         .await
         .expect("Failed to connect database");
@@ -725,6 +849,16 @@ pub async fn run_http_server(host: &str, port: u16, db_file: &str, tls_config: O
     run_migrations_safe(&db)
         .await
         .expect("Failed to run migrations");
+
+    let metrics = Arc::new(Metrics::new_from_env());
+    if metrics.enabled() {
+        Metrics::spawn_logger(metrics.clone());
+    }
+    let var_manager = Arc::new(VariableManager::new(rt_db_dir, metrics));
+
+    // Persist cache periodically
+    let flush_ms: u64 = std::env::var("PERSIST_FLUSH_MS").ok().and_then(|v| v.parse().ok()).unwrap_or(15_000);
+    let _flush_handle = var_manager.clone().start_flush_loop(flush_ms);
 
     let resource_manager = Arc::new(StaticResourceManager::new(db.clone()));
     let user_manager = Arc::new(UserManager::new(db.clone()));
@@ -751,12 +885,15 @@ pub async fn run_http_server(host: &str, port: u16, db_file: &str, tls_config: O
         resources: resource_manager,
         users: user_manager,
         auth: auth_config,
+        var_manager: var_manager.clone(),
     });
 
     let app = Router::new()
         // Static resource routes
         .route("/api/resources", get(get_all_resources).post(create_resource))
         .route("/api/resources/{id}", get(get_resource).put(update_resource).delete(delete_resource))
+        // WebSocket endpoint (shared port)
+        .route("/ws", get(ws_handler))
         // Docs
         .route("/api-docs/openapi.json", get(openapi_spec))
         .route("/swagger", get(swagger_ui))
@@ -782,11 +919,39 @@ pub async fn run_http_server(host: &str, port: u16, db_file: &str, tls_config: O
         .await
         .expect("Failed to bind");
 
+    // Wait for Ctrl+C / SIGTERM and flush cache before shutdown.
+    let shutdown_vm = var_manager.clone();
+    async fn shutdown_signal(vm: Arc<VariableManager>) {
+        #[cfg(unix)]
+        {
+            use tokio::signal::unix::{signal, SignalKind};
+            let mut sigterm = signal(SignalKind::terminate()).expect("install SIGTERM handler");
+            let mut sigint = signal(SignalKind::interrupt()).expect("install SIGINT handler");
+            tokio::select! {
+                _ = sigterm.recv() => {},
+                _ = sigint.recv() => {},
+            }
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = tokio::signal::ctrl_c().await;
+        }
+        info!("Shutdown signal received; flushing dirty cache");
+        vm.flush_dirty_now().await;
+        info!("Cache flush complete; exiting");
+    }
+
     if let Some(cfg) = tls_config {
         let acceptor = build_tls_acceptor(&cfg).expect("Failed to build TLS acceptor for HTTP");
         let incoming = TlsIncoming::new(listener, acceptor);
-        axum::serve(incoming, app).await.expect("HTTPS server error");
+        axum::serve(incoming, app)
+            .with_graceful_shutdown(shutdown_signal(shutdown_vm))
+            .await
+            .expect("HTTPS server error");
     } else {
-        axum::serve(listener, app).await.expect("HTTP server error");
+        axum::serve(listener, app)
+            .with_graceful_shutdown(shutdown_signal(shutdown_vm))
+            .await
+            .expect("HTTP server error");
     }
 }

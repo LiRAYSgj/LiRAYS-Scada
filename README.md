@@ -4,7 +4,7 @@ Rust WebSocket/HTTP server with an embedded Svelte frontend for browsing and con
 
 ## Components
 
-- Rust backend (WebSocket on 8245, HTTP/HTTPS on 8246).
+- Rust backend (HTTP + WebSocket on the same port, default 8245).
 - Embedded SQLite (via SeaORM) for static resources and sled for runtime data.
 - Svelte frontend bundled into the binary; optional standalone frontend dev workflow.
 
@@ -22,13 +22,12 @@ Rust WebSocket/HTTP server with an embedded Svelte frontend for browsing and con
    ```sh
    cargo run --bin lirays-scada
    ```
-   Visit `http://localhost:8246` (or `https://localhost:8246` when TLS is on).
-   API docs: `http(s)://localhost:8246/swagger` (serves Swagger UI backed by generated OpenAPI).
+   Visit `http://localhost:8245` (or `https://localhost:8245` when TLS is on).
+   API docs: `http(s)://localhost:8245/swagger` (serves Swagger UI backed by generated OpenAPI).
 
 ## Configuration (env vars)
 
-- `BIND_HOST` / `BIND_SERVER_PORT` – WebSocket bind (default `0.0.0.0:8245`).
-- `BIND_HTTP_HOST` / `BIND_HTTP_PORT` – HTTP bind (default `0.0.0.0:8246`).
+- `BIND_HOST` / `BIND_PORT` – unified bind host/port for HTTP + WebSocket (default `0.0.0.0:8245`).
 - `DATA_DIR` – data root (default `./data_dir`); contains `rt_data/` (sled) and `static.db` (SQLite).
 - TLS:
   - `WS_TLS_ENABLE` – when true (`1/true/yes/on`), both WS and HTTP serve over TLS.
@@ -52,27 +51,27 @@ Rust WebSocket/HTTP server with an embedded Svelte frontend for browsing and con
 ```sh
 docker build --target production -t lirays:latest .
 docker run --rm \
-  -p 8245:8245 -p 8246:8246 \
+  -p 8245:8245 \
   -v $(pwd)/data_dir:/data \
   --name lirays-scada lirays:latest
 ```
 
 ## API / WebSocket usage
 
-- WebSocket endpoint: `ws://<host>:8245` or `wss://<host>:8245` (matches TLS setting).
-- HTTP API examples (default ports):
+- WebSocket endpoint: `ws(s)://<host>:8245/ws` (same port as HTTP).
+- HTTP API examples (default port):
 
   ```sh
-  curl -X POST http://localhost:8246/api/resources \
+  curl -X POST http://localhost:8245/api/resources \
     -H "Content-Type: application/json" \
     -d '{"name":"Example Resource","description":"This is an example"}'
 
-  curl http://localhost:8246/api/resources
-  curl http://localhost:8246/api/resources/1
-  curl -X PUT http://localhost:8246/api/resources/1 \
+  curl http://localhost:8245/api/resources
+  curl http://localhost:8245/api/resources/1
+  curl -X PUT http://localhost:8245/api/resources/1 \
     -H "Content-Type: application/json" \
     -d '{"name":"Updated Resource","description":"Updated description"}'
-  curl -X DELETE http://localhost:8246/api/resources/1
+  curl -X DELETE http://localhost:8245/api/resources/1
   ```
 
 - WebSocket command shapes (protobuf/JSON) remain as in `proto/` and `src/rtdata/server`.

@@ -3,19 +3,17 @@
 ## Runtime Topology
 ```
 Browser (SvelteKit static SPA: Svelte 5 + TypeScript)
-    ↕  WebSocket (8245) – binary protobuf command/event stream
-    ↕  HTTPS/HTTP  (8246) – static UI assets + REST resources
+    ↕  WebSocket (same port as HTTP, default 8245) – binary protobuf command/event stream
+    ↕  HTTPS/HTTP  (default 8245) – static UI assets + REST resources
 Rust runtime
-    ├─ ws server   (tokio-tungstenite)
-    ├─ http server (axum)
+    ├─ unified axum server (HTTP + WS upgrade)
     ├─ sled        (runtime RT data)
     └─ SQLite via SeaORM (static resources + auth users)
 ```
 
 ## Processes & Ports
 - Single Rust binary (`lirays-scada`).
-- WebSocket: `BIND_HOST`/`BIND_SERVER_PORT` (default `0.0.0.0:8245`).
-- HTTP/S: `BIND_HTTP_HOST`/`BIND_HTTP_PORT` (default `0.0.0.0:8246`).
+- HTTP/S + WebSocket (same listener): `BIND_HOST`/`BIND_PORT` (default `0.0.0.0:8245`).
 - TLS: `WS_TLS_ENABLE` drives both WebSocket and HTTP listeners (shared cert/key or auto self-signed).
 - Auth (optional): `AUTH_ENABLED` gates HTTP (SPA, Swagger, API) behind a session cookie; `AUTH_SECRET` signs the cookie.
 
@@ -44,8 +42,8 @@ Rust runtime
   - realtime values are **subscription-based** (`SUB`/`UNSUB` for tracked graph tag IDs) and pushed as WS events.
   - tree synchronization across clients uses global tree-change event subscription and local reconcile/refresh in the tree store.
 - WS endpoint behavior in current UI code:
-  - page realtime provider uses `PUBLIC_DEMO_WS_ENDPOINT` (fallback `ws://127.0.0.1:8245`).
-  - tree listing infers endpoint from page scheme/host (`ws`/`wss` + `location.hostname:8245`).
+  - page realtime provider uses `PUBLIC_DEMO_WS_ENDPOINT` (fallback to same host/port with path `/ws`).
+  - tree listing infers endpoint from page scheme/host (`ws`/`wss`) and uses `/ws` on the shared port.
 - Theme/UI state:
   - light/dark mode persisted in `localStorage` (`app-theme`) and applied after mount.
   - global snackbar store centralizes command timeout/error/success feedback.
@@ -55,7 +53,7 @@ Rust runtime
 - When `WS_TLS_ENABLE` is true:
   - If `WS_TLS_AUTO=1` a self-signed pair is generated under `${DATA_DIR}/certificates/`.
   - Otherwise uses `WS_TLS_CERT_PATH`/`WS_TLS_KEY_PATH`.
-  - HTTP server serves HTTPS on `BIND_HTTP_PORT`; websocket upgrades to `wss` on `BIND_SERVER_PORT`.
+  - HTTP server serves HTTPS on `BIND_PORT`; websocket upgrades to `wss` on the same port via `/ws`.
 - When false: plain HTTP + WS.
 - When `AUTH_ENABLED` is true:
   - First access is redirected to `/auth/setup` to create the `admin` password if it does not exist.

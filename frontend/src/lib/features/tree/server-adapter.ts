@@ -9,9 +9,10 @@ function resolveWsEndpoint(): string {
   try {
     const isHttps = location.protocol === "https:";
     const scheme = isHttps ? "wss" : "ws";
-    return `${scheme}://${location.hostname}:8245`;
+    const host = location.host || location.hostname;
+    return `${scheme}://${host}/ws`;
   } catch {
-    return "ws://localhost:8245";
+    return "ws://localhost/ws";
   }
 }
 

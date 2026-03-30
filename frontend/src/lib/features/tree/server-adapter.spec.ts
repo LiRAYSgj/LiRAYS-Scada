@@ -8,6 +8,7 @@ import { VarDataType } from "$lib/proto/namespace/enums";
 if (typeof global !== "undefined" && !global.location) {
   global.location = {
     hostname: "localhost",
+    host: "localhost",
   } as any;
 }
 
@@ -86,7 +87,7 @@ describe("fetchTreeChildren", () => {
     ]);
     expect(tagStreamClient.listChildren).toHaveBeenCalledWith(
       "root-id",
-      "ws://localhost:8245",
+      "ws://localhost/ws",
     );
   });
 });

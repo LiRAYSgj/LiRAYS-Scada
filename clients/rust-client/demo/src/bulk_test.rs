@@ -8,7 +8,7 @@ pub async fn run(host: &str, port: i64, tls: bool) -> Result<()> {
 // Inline schema; expansions target ~1k vars.
     let schema = r#"
     {
-      "Plant": {
+      "PlantA": {
         "Area_[:2]": {
           "Line_[:2]": {
             "Section_[A,B,C]": {
@@ -32,5 +32,6 @@ pub async fn run(host: &str, port: i64, tls: bool) -> Result<()> {
 
     client.create_bulk_from_json(schema, Some("/".into()), 30_000).await?;
     println!("Bulk creation finished");
+    client.disconnect().await?;
     Ok(())
 }

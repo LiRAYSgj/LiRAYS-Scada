@@ -14,7 +14,6 @@ use rcgen::{generate_simple_self_signed, CertifiedKey};
 use tokio::task;
 
 use http::run_http_server;
-use rtdata::run_server;
 use tls::ServerTlsConfig;
 
 
@@ -45,10 +44,12 @@ async fn main() {
     let default_data_dir = cwd.join("data_dir").to_str().unwrap().to_string();
 
     // Get environment variables or use defaults
-    let host = env::var("BIND_HOST").unwrap_or("0.0.0.0".to_string());
-    let port = env::var("BIND_SERVER_PORT").unwrap_or("8245".to_string()).parse::<u16>().unwrap();
-    let http_host = env::var("BIND_HTTP_HOST").unwrap_or("0.0.0.0".to_string());
-    let http_port = env::var("BIND_HTTP_PORT").unwrap_or("8246".to_string()).parse::<u16>().unwrap();
+    let host = env::var("BIND_HOST")
+        .unwrap_or("0.0.0.0".to_string());
+    let port = env::var("BIND_PORT")
+        .unwrap_or("8245".to_string())
+        .parse::<u16>()
+        .unwrap();
     let d_dir_str = env::var("DATA_DIR").unwrap_or(default_data_dir);
     let data_dir = Path::new(&d_dir_str);
     let tls_enabled = env::var("WS_TLS_ENABLE")
@@ -73,17 +74,18 @@ async fn main() {
 
     let http_tls = server_tls.clone();
 
-    info!("Starting server on {ws_schema}://{host}:{port}");
-    let server_handle = task::spawn(async move {
-        run_server(&host, port, &rt_db_dir.to_str().unwrap(), server_tls).await;
-    });
-
     let http_schema = if http_tls.is_some() { "https" } else { "http" };
-    info!("Starting HTTP server on {http_schema}://{http_host}:{http_port}");
+    info!("Starting unified server on {http_schema}/{ws_schema}://{host}:{port}");
     let http_handle = task::spawn(async move {
-        run_http_server(&http_host, http_port, &static_db_file.to_str().unwrap(), http_tls).await;
+        run_http_server(
+            &host,
+            port,
+            &rt_db_dir.to_str().unwrap(),
+            &static_db_file.to_str().unwrap(),
+            http_tls,
+        )
+        .await;
     });
 
-    // Wait for both servers to finish
-    let _ = tokio::try_join!(server_handle, http_handle);
+    let _ = http_handle.await;
 }

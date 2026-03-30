@@ -27,7 +27,7 @@ This app is SSR-ready (`@sveltejs/adapter-node`) and is typically started by the
 Frontend expects backend WebSocket endpoint:
 
 ```env
-PUBLIC_DEMO_WS_ENDPOINT=ws://127.0.0.1:8245
+PUBLIC_DEMO_WS_ENDPOINT=ws://127.0.0.1:8245/ws
 ```
 
 ## Requirements
@@ -147,7 +147,7 @@ npm run demo:ws
 By default, the app expects:
 
 ```env
-PUBLIC_DEMO_WS_ENDPOINT=ws://127.0.0.1:8245
+PUBLIC_DEMO_WS_ENDPOINT=ws://127.0.0.1:8245/ws
 DEMO_WS_SINE_ENABLED=true
 ```
 
