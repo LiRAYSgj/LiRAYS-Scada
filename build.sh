@@ -35,16 +35,28 @@ run_docker_build() {
       VERSION=$VERSION make"
 }
 
+build_macos_all() {
+  echo "==> Cleaning tree"
+  VERSION="$VERSION" make clean
+
+  echo "==> Building macOS arm64"
+  VERSION="$VERSION" make mac
+
+  echo "==> Building macOS x86_64 (cross)"
+  rustup target add x86_64-apple-darwin >/dev/null 2>&1 || true
+  SDKROOT="$(xcrun --sdk macosx --show-sdk-path)" \
+    ARCH=x86_64 VERSION="$VERSION" make mac
+}
+
 main() {
   mkdir -p "$DIST_DIR"
 
-  # macOS package (clean build)
-  echo "==> Building macOS (host) with make"
-  (cd "$ROOT" && VERSION="$VERSION" make clean && VERSION="$VERSION" make)
+  # macOS arm64 + x86_64
+  build_macos_all
 
   # Debian packages via Docker (amd64 & arm64)
-  run_docker_build linux/amd64
-  run_docker_build linux/arm64
+  # run_docker_build linux/amd64
+  # run_docker_build linux/arm64
 
   echo "==> Done. Artifacts in $DIST_DIR"
   ls -lh "$DIST_DIR"

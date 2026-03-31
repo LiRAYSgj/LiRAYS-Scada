@@ -8,13 +8,17 @@ fi
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DIST_DIR="$REPO_ROOT/distributions"
-ARCH="$(uname -m)"
+ARCH="${ARCH:-$(uname -m)}"       # arm64 or x86_64
 VERSION="${VERSION:-0.1.0}"
 PKG_ID="com.lirays.scada"
 PKG_NAME="lirays-scada-${VERSION}-${ARCH}.pkg"
 DMG_NAME="lirays-scada-${VERSION}-${ARCH}.dmg"
 
-BIN_PATH="$REPO_ROOT/target/release/lirays-scada"
+if [ "$ARCH" = "x86_64" ]; then
+  BIN_PATH="$REPO_ROOT/target/x86_64-apple-darwin/release/lirays-scada"
+else
+  BIN_PATH="$REPO_ROOT/target/release/lirays-scada"
+fi
 PLIST_SRC="$REPO_ROOT/packaging/macos/com.lirays.scada.plist"
 POSTINSTALL_SRC="$REPO_ROOT/packaging/macos/postinstall"
 

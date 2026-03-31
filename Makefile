@@ -3,7 +3,7 @@ PROTO_DIR=proto
 TARGET_DIR=target
 NVM_DIR=$(HOME)/.nvm
 UNAME_S := $(shell uname -s)
-ARCH    := $(shell uname -m)
+ARCH    ?= $(shell uname -m)
 VERSION ?= 0.1.0
 DIST_DIR=distributions
 
@@ -42,7 +42,11 @@ frontend:
 .PHONY: backend-build
 backend-build: frontend
 	@echo "🦀 Building Rust backend..."
+ifeq ($(ARCH),x86_64)
+	cargo build --release --target x86_64-apple-darwin
+else
 	cargo build --release
+endif
 
 .PHONY: deb-package
 deb-package:
