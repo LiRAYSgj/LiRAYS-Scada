@@ -44,6 +44,9 @@ echo "Staging payload at $PKGROOT"
 
 /usr/bin/install -m 755 "$POSTINSTALL_SRC" "$SCRIPTS_DIR/postinstall"
 
+echo "Cleaning previous artifacts"
+rm -f "$DIST_DIR/$PKG_NAME" "$DIST_DIR/$DMG_NAME"
+
 echo "Building pkg -> $DIST_DIR/$PKG_NAME"
 /usr/bin/pkgbuild \
   --root "$PKGROOT" \

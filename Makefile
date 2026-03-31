@@ -48,10 +48,10 @@ backend-build: frontend
 deb-package:
 	@echo "📦 Creating Debian package..."
 	cp target/release/lirays-scada deb-files/usr/bin/
-	debuild -b -us -uc
-	rm -rf ../*.build ../*.buildinfo ../*.changes ../*.ddeb
+	DEB_BUILD_OPTIONS="nostrip nocheck" debuild -b -us -uc
+	rm -rf ../*.build ../*.buildinfo ../*.changes ../*.ddeb ../*dbgsym*.deb
 	mkdir -p $(DIST_DIR)
-	mv ../lirays-scada*.deb $(DIST_DIR)
+	mv ../lirays-scada_*[0-9].deb $(DIST_DIR)
 
 .PHONY: mac-dmg
 mac-dmg:
