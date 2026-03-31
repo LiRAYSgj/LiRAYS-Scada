@@ -20,14 +20,18 @@ export const sliderWidget = declareInternalCustomElementWidget({
   tagName: "lirays-widget-slider",
   styles,
   render: (data) => {
-    const command = toPercent(getBindingValue(data, "command") ?? data.liveValue);
+    const command = toPercent(
+      getBindingValue(data, "command") ?? data.liveValue,
+    );
     return {
       bodyHtml: renderTemplate(template, { command }),
       footerLines: [`Command: ${command}%`],
     };
   },
   bind: (context) => {
-    const slider = context.query<HTMLInputElement>('input[data-widget-input="slider"]');
+    const slider = context.query<HTMLInputElement>(
+      'input[data-widget-input="slider"]',
+    );
     if (!slider) return;
 
     context.listen(slider, "input", () => {

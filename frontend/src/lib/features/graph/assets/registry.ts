@@ -57,9 +57,7 @@ export function getRegisteredAssetDefinitions(): GraphAssetDefinition[] {
 export const PLANT_ASSET_DEFINITIONS: GraphAssetDefinition[] =
   orderedDefinitions;
 
-export function resolveAssetDefinition(
-  kind: string,
-): GraphAssetDefinition {
+export function resolveAssetDefinition(kind: string): GraphAssetDefinition {
   return definitionByKind.get(kind) ?? orderedDefinitions[0];
 }
 

@@ -3,14 +3,9 @@ import { fetchTreeChildren } from "./server-adapter";
 import { tagStreamClient } from "$lib/core/ws/tag-stream-client";
 import { VarDataType } from "$lib/proto/namespace/enums";
 
-// Mock the location object to avoid "location is not defined" error
-// This is needed because server-adapter.ts uses location directly
-if (typeof global !== "undefined" && !global.location) {
-  global.location = {
-    hostname: "localhost",
-    host: "localhost",
-  } as any;
-}
+vi.mock("$lib/core/ws/resolve-ws-endpoint", () => ({
+  resolveTagStreamWsEndpoint: () => "ws://test-backend/ws",
+}));
 
 vi.mock("$lib/core/ws/tag-stream-client", () => ({
   tagStreamClient: {
@@ -49,6 +44,7 @@ describe("fetchTreeChildren", () => {
           id: "var-1",
           name: "pressure",
           varDType: VarDataType.VAR_DATA_TYPE_FLOAT,
+          options: [],
         },
       ],
     });
@@ -87,7 +83,7 @@ describe("fetchTreeChildren", () => {
     ]);
     expect(tagStreamClient.listChildren).toHaveBeenCalledWith(
       "root-id",
-      "ws://localhost/ws",
+      "ws://test-backend/ws",
     );
   });
 });

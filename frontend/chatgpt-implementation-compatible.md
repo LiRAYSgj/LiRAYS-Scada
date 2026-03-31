@@ -62,16 +62,16 @@ Use this even if we initially ship only internal widgets. This avoids redesign w
 export type BindingAccess = "read" | "write" | "readwrite";
 
 export interface WidgetBindingSchema {
-  key: string;                  // level, temperature, pressure, command, etc.
+  key: string; // level, temperature, pressure, command, etc.
   label: string;
   access: BindingAccess;
   required?: boolean;
-  multiple?: boolean;           // allows arrays of tag bindings
+  multiple?: boolean; // allows arrays of tag bindings
   acceptedTypes?: Array<"Text" | "Float" | "Integer" | "Boolean">;
 }
 
 export interface WidgetEventSchema {
-  name: string;                 // click, doubleClick, rightClick, menu:openTrend
+  name: string; // click, doubleClick, rightClick, menu:openTrend
   label: string;
   payload?: Record<string, string>;
 }
@@ -86,7 +86,7 @@ export interface WidgetPropSchema {
 }
 
 export interface WidgetDefinition {
-  type: string;                 // globally unique widget type id
+  type: string; // globally unique widget type id
   displayName: string;
   category: string;
   version: string;
@@ -109,14 +109,20 @@ export interface WidgetHostApi {
   bindings: {
     get(key: string): WidgetBindingRef | WidgetBindingRef[] | undefined;
     read(key: string): TagScalarValue | TagScalarValue[] | undefined;
-    subscribe(key: string, cb: (value: TagScalarValue | TagScalarValue[] | undefined) => void): () => void;
+    subscribe(
+      key: string,
+      cb: (value: TagScalarValue | TagScalarValue[] | undefined) => void,
+    ): () => void;
     write(key: string, value: TagScalarValue): Promise<void>;
   };
 
   // host-controlled actions
   events: {
     emit(name: string, payload?: unknown): void;
-    openContextMenu(items: WidgetMenuItem[], anchor: { x: number; y: number }): void;
+    openContextMenu(
+      items: WidgetMenuItem[],
+      anchor: { x: number; y: number },
+    ): void;
   };
 
   nav: {
@@ -160,7 +166,10 @@ export interface WidgetInstance {
   dispose(): void;
 }
 
-export type WidgetFactory = (api: WidgetHostApi, initial: WidgetUpdateInput) => WidgetInstance;
+export type WidgetFactory = (
+  api: WidgetHostApi,
+  initial: WidgetUpdateInput,
+) => WidgetInstance;
 ```
 
 Adapters:
@@ -210,8 +219,8 @@ Introduce declarative event bindings per node instance:
 
 ```ts
 export interface WidgetEventBinding {
-  on: string;              // click, doubleClick, rightClick, menu:ack, etc.
-  when?: string;           // safe expression
+  on: string; // click, doubleClick, rightClick, menu:ack, etc.
+  when?: string; // safe expression
   do: WidgetAction[];
 }
 
@@ -285,8 +294,14 @@ const coreUiPlugin: ScadaPlugin = {
   apiVersion: "1",
   displayName: "Core UI Widgets",
   contributes: {
-    widgets: [tankWidget, pumpWidget, valveWidget, sliderWidget, typedInputWidget]
-  }
+    widgets: [
+      tankWidget,
+      pumpWidget,
+      valveWidget,
+      sliderWidget,
+      typedInputWidget,
+    ],
+  },
 };
 ```
 
@@ -299,8 +314,8 @@ const mqttIngressPlugin: ScadaPlugin = {
   apiVersion: "1",
   displayName: "MQTT Ingress",
   contributes: {
-    ingress: [mqttConnector]
-  }
+    ingress: [mqttConnector],
+  },
 };
 ```
 

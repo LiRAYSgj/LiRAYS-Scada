@@ -1,6 +1,6 @@
 <script lang="ts">
   import { browser } from "$app/environment";
-  import { env } from "$env/dynamic/public";
+  import { resolveTagStreamWsEndpoint } from "$lib/core/ws/resolve-ws-endpoint";
   import { onDestroy, onMount } from "svelte";
   import { get } from "svelte/store";
   import {
@@ -53,7 +53,7 @@
     getLoadedDescendantIds,
     getMinimalAncestorSet,
   } from "$lib/features/tree/tree-selection";
-import { Layers, Plus, Trash2, Pencil } from "lucide-svelte";
+  import { Layers, Plus, Trash2, Pencil } from "lucide-svelte";
 
   interface ActiveMenuState {
     x: number;
@@ -69,21 +69,14 @@ import { Layers, Plus, Trash2, Pencil } from "lucide-svelte";
 
   type CanvasMode = "edit" | "play";
 
-  const DEFAULT_WS_ENDPOINT =
-    browser
-      ? `${location.protocol === "https:" ? "wss" : "ws"}://${
-          location.host || location.hostname
-        }/ws`
-      : "ws://127.0.0.1:8245/ws";
-
-  const DEMO_WS_ENDPOINT = env.PUBLIC_DEMO_WS_ENDPOINT || DEFAULT_WS_ENDPOINT;
+  const WS_ENDPOINT = resolveTagStreamWsEndpoint();
   const PIPE_EDGE_TYPE = "step";
   const PIPE_EDGE_STYLE = "stroke:#5b708a;stroke-width:8;";
   const theme = themeStore;
   const username = "Admin";
 
   const logout = () => {
-    if (typeof window !== "undefined") {
+    if (browser) {
       window.location.href = "/auth/logout";
     }
   };
@@ -97,7 +90,7 @@ import { Layers, Plus, Trash2, Pencil } from "lucide-svelte";
     document.documentElement.classList.add(themeClass);
   });
 
-  const realtimeProvider = createPageTagRealtimeProvider(DEMO_WS_ENDPOINT);
+  const realtimeProvider = createPageTagRealtimeProvider(WS_ENDPOINT);
   const nodeTypes = {
     plantAsset: PlantAssetNode,
   };
@@ -149,43 +142,6 @@ import { Layers, Plus, Trash2, Pencil } from "lucide-svelte";
 
   const nodeMenuResolvers: MenuResolverByKind = {
     folder: (context) => [
-      /* {
-				id: 'folder-open',
-				label: `Open ${context.node.name}`,
-				onSelect: () => {
-					console.info('Open folder', context.node.path);
-				}
-			}, */
-      /* {
-				id: 'folder-tools',
-				label: 'Folder Tools',
-				getChildren: async () => {
-					await new Promise((resolve) => setTimeout(resolve, 120));
-					return [
-						{
-							id: 'folder-refresh',
-							label: 'Refresh Branch',
-							onSelect: () => console.info('Refresh', context.node.path)
-						},
-						{
-							id: 'folder-export',
-							label: 'Export',
-							children: [
-								{
-									id: 'folder-export-json',
-									label: 'As JSON',
-									onSelect: () => console.info('Export JSON', context.node.path)
-								},
-								{
-									id: 'folder-export-csv',
-									label: 'As CSV',
-									onSelect: () => console.info('Export CSV', context.node.path)
-								}
-							]
-						}
-					];
-				}
-			}, */
       {
         id: "folder-add",
         label: "Add",
@@ -599,7 +555,9 @@ import { Layers, Plus, Trash2, Pencil } from "lucide-svelte";
     tagNode: TreeNode,
   ): void {
     if (tagNode.kind !== "tag") {
-      snackbarStore.warning("Only variable tags can be bound to widget fields.");
+      snackbarStore.warning(
+        "Only variable tags can be bound to widget fields.",
+      );
       return;
     }
 
@@ -647,7 +605,8 @@ import { Layers, Plus, Trash2, Pencil } from "lucide-svelte";
       const primaryKey = current.primaryBindingKey ?? bindingKey;
       const primaryTag = currentBindings[primaryKey]?.[0];
       const sourceNode =
-        primaryTag ?? createUnboundSourceNode(current.symbolId ?? current.title);
+        primaryTag ??
+        createUnboundSourceNode(current.symbolId ?? current.title);
       return {
         ...current,
         bindings: currentBindings,
@@ -660,7 +619,10 @@ import { Layers, Plus, Trash2, Pencil } from "lucide-svelte";
     const id =
       event.dataTransfer?.getData("text/plain") || draggingNode?.id || null;
     if (!id) return null;
-    return treeNodes[id] ?? (draggingNode && draggingNode.id === id ? draggingNode : null);
+    return (
+      treeNodes[id] ??
+      (draggingNode && draggingNode.id === id ? draggingNode : null)
+    );
   }
 
   function handleBindingDrop(
@@ -689,7 +651,8 @@ import { Layers, Plus, Trash2, Pencil } from "lucide-svelte";
   ): Record<string, BoundWidgetTag[]> {
     if (droppedNode.kind !== "tag") return {};
     const definition = resolveAssetDefinition(assetKind);
-    const primaryKey = definition.primaryBindingKey ?? definition.bindings[0]?.key;
+    const primaryKey =
+      definition.primaryBindingKey ?? definition.bindings[0]?.key;
     if (!primaryKey) return {};
     return {
       [primaryKey]: [toBoundWidgetTag(droppedNode)],
@@ -741,7 +704,10 @@ import { Layers, Plus, Trash2, Pencil } from "lucide-svelte";
     };
 
     graphNodes = [
-      ...graphNodes.map((existingNode) => ({ ...existingNode, selected: false })),
+      ...graphNodes.map((existingNode) => ({
+        ...existingNode,
+        selected: false,
+      })),
       { ...newNode, selected: true },
     ];
     inspectorDockVisible = true;
@@ -849,7 +815,11 @@ import { Layers, Plus, Trash2, Pencil } from "lucide-svelte";
         namespaceBuilderParentId && namespaceBuilderParentId.trim() !== ""
           ? namespaceBuilderParentId
           : "/";
-      await tagStreamClient.addBulkNamespace(parentForBulk, json, DEMO_WS_ENDPOINT);
+      await tagStreamClient.addBulkNamespace(
+        parentForBulk,
+        json,
+        WS_ENDPOINT,
+      );
       if (browser) {
         (
           window as unknown as { __lastNamespaceJson?: unknown }
@@ -1109,8 +1079,12 @@ import { Layers, Plus, Trash2, Pencil } from "lucide-svelte";
                   />
                 </div>
 
-                <div class="rounded border border-black/10 p-2 dark:border-white/10">
-                  <p class="text-[10px] uppercase text-(--text-muted)">Widget</p>
+                <div
+                  class="rounded border border-black/10 p-2 dark:border-white/10"
+                >
+                  <p class="text-[10px] uppercase text-(--text-muted)">
+                    Widget
+                  </p>
                   <p class="text-xs font-medium text-(--text-primary)">
                     {selectedGraphWidgetDefinition.label}
                   </p>
@@ -1118,8 +1092,11 @@ import { Layers, Plus, Trash2, Pencil } from "lucide-svelte";
 
                 <div class="space-y-2">
                   {#each selectedGraphWidgetDefinition.bindings as binding}
-                    {@const bindingTags = selectedGraphNodeData.bindings?.[binding.key] ?? []}
-                    <div class="rounded border border-black/10 p-2 dark:border-white/10">
+                    {@const bindingTags =
+                      selectedGraphNodeData.bindings?.[binding.key] ?? []}
+                    <div
+                      class="rounded border border-black/10 p-2 dark:border-white/10"
+                    >
                       <div class="mb-1 flex items-center justify-between">
                         <span class="font-medium text-(--text-primary)"
                           >{binding.label}</span

@@ -23,8 +23,11 @@ export const typedInputWidget = declareInternalCustomElementWidget({
     const sourceType = String(source?.dataType ?? "Text").toLowerCase();
     const inputType =
       sourceType === "integer" || sourceType === "float" ? "number" : "text";
-    const inputStep = sourceType === "integer" ? "1" : sourceType === "float" ? "0.01" : "any";
-    const value = String(getBindingValue(data, "command") ?? data.liveValue ?? "");
+    const inputStep =
+      sourceType === "integer" ? "1" : sourceType === "float" ? "0.01" : "any";
+    const value = String(
+      getBindingValue(data, "command") ?? data.liveValue ?? "",
+    );
 
     return {
       bodyHtml: renderTemplate(template, {
@@ -37,18 +40,24 @@ export const typedInputWidget = declareInternalCustomElementWidget({
     };
   },
   bind: (context) => {
-    const input = context.query<HTMLInputElement>('input[data-widget-input="typed"]');
+    const input = context.query<HTMLInputElement>(
+      'input[data-widget-input="typed"]',
+    );
     if (!input) return;
 
     const commit = () => {
-      const source = context.data.bindings?.command?.[0] ?? context.data.sourceNode;
+      const source =
+        context.data.bindings?.command?.[0] ?? context.data.sourceNode;
       const sourceType = String(source?.dataType ?? "Text").toLowerCase();
       const raw = input.value;
 
       if (sourceType === "integer" || sourceType === "float") {
         const num = Number(raw);
         if (!Number.isFinite(num)) return;
-        context.writeBinding("command", sourceType === "integer" ? Math.round(num) : num);
+        context.writeBinding(
+          "command",
+          sourceType === "integer" ? Math.round(num) : num,
+        );
         return;
       }
 

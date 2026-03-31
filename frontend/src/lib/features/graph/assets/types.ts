@@ -24,8 +24,10 @@ export interface WidgetBindingSchema {
   multiple?: boolean;
 }
 
-export interface BoundWidgetTag
-  extends Pick<TreeNode, "id" | "name" | "path" | "kind" | "dataType"> {}
+export interface BoundWidgetTag extends Pick<
+  TreeNode,
+  "id" | "name" | "path" | "kind" | "dataType"
+> {}
 
 export interface PlantAssetNodeData extends Record<string, unknown> {
   symbolId?: string;

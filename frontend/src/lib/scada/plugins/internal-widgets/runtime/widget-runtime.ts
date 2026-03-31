@@ -110,13 +110,21 @@ function defineWidgetElement(spec: InternalCustomElementWidgetSpec): void {
         data: this.data,
         query: <T extends Element>(selector: string): T | null =>
           this.root.querySelector<T>(selector),
-        listen: (target: EventTarget, eventName: string, handler: EventListener): void => {
+        listen: (
+          target: EventTarget,
+          eventName: string,
+          handler: EventListener,
+        ): void => {
           target.addEventListener(eventName, handler);
           this.cleanupCallbacks.push(() => {
             target.removeEventListener(eventName, handler);
           });
         },
-        debounce: (key: string, delayMs: number, callback: () => void): void => {
+        debounce: (
+          key: string,
+          delayMs: number,
+          callback: () => void,
+        ): void => {
           const existing = this.timers.get(key);
           if (existing) clearTimeout(existing);
           const timer = setTimeout(() => {
@@ -164,11 +172,7 @@ function renderWidgetShell({
   const kind = escapeHtml(String(data.assetKind ?? "widget"));
   const sourceName = escapeHtml(primary?.name ?? "Unbound");
   const sourcePath = escapeHtml(primary?.path ?? "-");
-  const lines = [
-    `Source: ${sourceName}`,
-    sourcePath,
-    ...(footerLines ?? []),
-  ]
+  const lines = [`Source: ${sourceName}`, sourcePath, ...(footerLines ?? [])]
     .map((line) => `<div>${escapeHtml(line)}</div>`)
     .join("");
 
@@ -234,14 +238,19 @@ export function renderTemplate(
   template: string,
   values: Record<string, string | number | boolean | null | undefined>,
 ): string {
-  return template.replaceAll(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_, key: string) => {
-    const value = values[key];
-    if (value === null || value === undefined) return "";
-    return escapeHtml(String(value));
-  });
+  return template.replaceAll(
+    /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g,
+    (_, key: string) => {
+      const value = values[key];
+      if (value === null || value === undefined) return "";
+      return escapeHtml(String(value));
+    },
+  );
 }
 
-export function getPrimaryTag(data: PlantAssetNodeData): BoundWidgetTag | undefined {
+export function getPrimaryTag(
+  data: PlantAssetNodeData,
+): BoundWidgetTag | undefined {
   if (data.bindings && data.primaryBindingKey) {
     return data.bindings[data.primaryBindingKey]?.[0];
   }

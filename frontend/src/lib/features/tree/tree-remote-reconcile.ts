@@ -180,10 +180,7 @@ function applyIncrementalVirtualRoot(
   state: TreeState,
   fc: FolderChanged,
 ): void {
-  const toRemove = collectIdsToRemove(
-    state,
-    fc.removedItems,
-  );
+  const toRemove = collectIdsToRemove(state, fc.removedItems);
   if (toRemove.size > 0) {
     purgeNodes(state, toRemove);
   }
@@ -264,10 +261,7 @@ export function applyFolderChangedToState(
   const isExpanded = state.expanded.has(parentKey);
 
   if (loaded) {
-    const toRemove = collectIdsToRemove(
-      state,
-      fc.removedItems,
-    );
+    const toRemove = collectIdsToRemove(state, fc.removedItems);
     if (toRemove.size > 0) {
       purgeNodes(state, toRemove);
     }

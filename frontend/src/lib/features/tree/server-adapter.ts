@@ -1,20 +1,8 @@
 import type { TreeNode } from "./types";
 import { tagStreamClient } from "$lib/core/ws/tag-stream-client";
+import { resolveTagStreamWsEndpoint } from "$lib/core/ws/resolve-ws-endpoint";
 import type { ListResponse } from "$lib/proto/namespace/commands";
 import { varDataTypeToJSON } from "$lib/proto/namespace/enums";
-
-function resolveWsEndpoint(): string {
-  // Browser has no access to server env; infer TLS need from page scheme.
-  // If the UI is served over https, use wss to avoid mixed-content errors.
-  try {
-    const isHttps = location.protocol === "https:";
-    const scheme = isHttps ? "wss" : "ws";
-    const host = location.host || location.hostname;
-    return `${scheme}://${host}/ws`;
-  } catch {
-    return "ws://localhost/ws";
-  }
-}
 
 function toTreeNodes(
   parent: TreeNode | null,
@@ -57,7 +45,7 @@ export async function fetchTreeChildren(
 ): Promise<TreeNode[]> {
   const list = await tagStreamClient.listChildren(
     parent?.id,
-    resolveWsEndpoint(),
+    resolveTagStreamWsEndpoint(),
   );
   return toTreeNodes(parent, list);
 }

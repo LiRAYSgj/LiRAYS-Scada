@@ -607,7 +607,7 @@
 		// Use setProperty(..., 'important') so we win over any cloned inline styles.
 		const w = dragGhostEl.offsetWidth || 320;
 		const left = clientX + 12;
-		const maxLeft = typeof window !== 'undefined' ? window.innerWidth - w - 8 : left;
+		const maxLeft = browser ? window.innerWidth - w - 8 : left;
 		const top = clientY + 12;
 		dragGhostEl.style.setProperty('left', `${Math.min(left, maxLeft)}px`, 'important');
 		dragGhostEl.style.setProperty('top', `${top}px`, 'important');

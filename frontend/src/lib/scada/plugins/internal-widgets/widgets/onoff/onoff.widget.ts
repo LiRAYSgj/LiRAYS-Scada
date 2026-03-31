@@ -30,7 +30,9 @@ export const onoffWidget = declareInternalCustomElementWidget({
     };
   },
   bind: (context) => {
-    const button = context.query<HTMLButtonElement>('button[data-widget-input="toggle"]');
+    const button = context.query<HTMLButtonElement>(
+      'button[data-widget-input="toggle"]',
+    );
     if (!button) return;
 
     context.listen(button, "click", () => {

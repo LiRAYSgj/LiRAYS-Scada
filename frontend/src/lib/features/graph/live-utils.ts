@@ -113,7 +113,10 @@ export function applyLiveValuesToGraphNodes(
 
     if (data.bindings && Object.keys(data.bindings).length > 0) {
       const nextBindingValues = getBindingValuesForNode(data, values);
-      const nextPrimaryLiveValue = pickPrimaryLiveValue(data, nextBindingValues);
+      const nextPrimaryLiveValue = pickPrimaryLiveValue(
+        data,
+        nextBindingValues,
+      );
       const primaryValueChanged = nextPrimaryLiveValue !== data.liveValue;
       const bindingsChanged = !isSameBindingValues(
         data.liveValues,
