@@ -5,8 +5,9 @@ NVM_DIR=$(HOME)/.nvm
 UNAME_S := $(shell uname -s)
 ARCH    := $(shell uname -m)
 VERSION ?= 0.1.0
+DIST_DIR=distributions
 
-# Target por defecto según SO: mac -> tarball brew; linux -> .deb
+# Target por defecto según SO: mac -> dmg macOS; linux -> .deb
 ifeq ($(UNAME_S),Darwin)
 DEFAULT_TARGET := mac
 else
@@ -17,10 +18,10 @@ endif
 all: $(DEFAULT_TARGET)
 
 .PHONY: mac
-mac: frontend mac-tarball
+mac: backend-build mac-dmg
 
 .PHONY: deb
-deb: frontend deb-package
+deb: backend-build deb-package
 
 .PHONY: frontend
 frontend:
@@ -29,7 +30,7 @@ frontend:
 	export NVM_DIR="$(NVM_DIR)"; \
 	if [ -s "$$NVM_DIR/nvm.sh" ]; then . "$$NVM_DIR/nvm.sh"; nvm install 24 >/dev/null; nvm use 24; else echo "⚠️ nvm no encontrado, usando node del sistema ($$(node -v 2>/dev/null || echo missing))"; fi; \
 	cd $(FRONTEND_DIR); \
-	rm -rf node_modules \
+	rm -rf node_modules; \
 	echo "📦 Installing npm dependencies..."; \
 	npm install; \
 	echo "⚙️ Generating proto..."; \
@@ -44,18 +45,18 @@ backend-build: frontend
 	cargo build --release
 
 .PHONY: deb-package
-deb-package: backend-build
+deb-package:
 	@echo "📦 Creating Debian package..."
 	cp target/release/lirays-scada deb-files/usr/bin/
 	debuild -b -us -uc
 	rm -rf ../*.build ../*.buildinfo ../*.changes ../*.ddeb
-	mkdir -p distributions
-	mv ../lirays-scada*.deb distributions
+	mkdir -p $(DIST_DIR)
+	mv ../lirays-scada*.deb $(DIST_DIR)
 
-.PHONY: mac-tarball
-mac-tarball: backend-build
-	@echo "📦 Building macOS tarball for Homebrew..."
-	VERSION=$(VERSION) packaging/homebrew/build_tarball.sh
+.PHONY: mac-dmg
+mac-dmg:
+	@echo "📦 Building macOS pkg + dmg..."
+	VERSION=$(VERSION) packaging/macos/build_dmg.sh
 
 .PHONY: clean
 clean:
