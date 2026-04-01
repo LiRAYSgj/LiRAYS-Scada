@@ -200,6 +200,7 @@
   let addSubmitting = $state(false);
   let addParentId = $state<string | null | undefined>(undefined);
   let addTouched = $state<Partial<Record<AddFieldKey, boolean>>>({});
+  let addCancelling = $state(false);
   let editVarId = $state<string | null>(null);
   let editUnit = $state("");
   let editMin = $state<number | undefined>(undefined);
@@ -211,6 +212,7 @@
   let editError = $state("");
   let editSubmitting = $state(false);
   let editTouched = $state<Partial<Record<EditFieldKey, boolean>>>({});
+  let editCancelling = $state(false);
   const isConnected = $derived(
     websocketStatus === WebSocketConnectionStatus.CONNECTED,
   );
@@ -282,10 +284,12 @@
   const editFormValid = $derived(Object.keys(editFieldErrors).length === 0);
 
   function touchAddField(key: AddFieldKey): void {
+    if (addCancelling) return;
     addTouched = { ...addTouched, [key]: true };
   }
 
   function touchEditField(key: EditFieldKey): void {
+    if (editCancelling) return;
     editTouched = { ...editTouched, [key]: true };
   }
 
@@ -644,6 +648,9 @@
   }
 
   function closeAddDialog(): void {
+    addCancelling = false;
+    addTouched = {};
+    addError = "";
     addParentId = undefined;
     if (addDialog?.open) {
       addDialog.close();
@@ -651,6 +658,9 @@
   }
 
   function closeEditDialog(): void {
+    editCancelling = false;
+    editTouched = {};
+    editError = "";
     if (editDialog?.open) {
       editDialog.close();
     }
@@ -1183,9 +1193,13 @@
       class="mt-auto flex justify-end gap-2 border-t border-black/10 pt-4 dark:border-white/10"
     >
       <Button
+        type="button"
         variant="outline-muted"
         label="Cancel"
         title="Cancel"
+        onpointerdown={() => {
+          addCancelling = true;
+        }}
         onclick={closeAddDialog}
       />
       <Button
@@ -1314,6 +1328,9 @@
         variant="outline-muted"
         label="Cancel"
         title="Cancel"
+        onpointerdown={() => {
+          editCancelling = true;
+        }}
         onclick={closeEditDialog}
         type="button"
       />
