@@ -1,0 +1,17 @@
+#!/bin/bash
+set -e
+
+# Ensure data and log directories exist
+/usr/bin/install -d -o root -g wheel -m 755 /usr/local/var/lirays-scada/data_dir
+/usr/bin/install -d -o root -g wheel -m 755 /usr/local/var/log
+
+# Ensure plist permissions
+/bin/chmod 644 /Library/LaunchDaemons/com.lirays.scada.plist
+
+# Reload service
+/bin/launchctl bootout system/com.lirays.scada 2>/dev/null || true
+/bin/launchctl bootstrap system /Library/LaunchDaemons/com.lirays.scada.plist
+/bin/launchctl enable system/com.lirays.scada
+/bin/launchctl start system/com.lirays.scada || true
+
+exit 0
