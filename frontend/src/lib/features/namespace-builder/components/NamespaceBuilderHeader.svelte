@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Button } from "$lib/components/Button";
+	import { Input } from "$lib/components/ui/input";
 	import type { EditorMode } from "../types.js";
 
 	let {
@@ -74,10 +75,10 @@
 			/>
 		{/if}
 	</div>
-	<input
+	<Input
 		id="namespace-builder-import-yaml"
 		name="import-yaml"
-		bind:this={importInput}
+		bind:ref={importInput}
 		type="file"
 		accept=".yml,.yaml,text/yaml,text/plain"
 		class="hidden"

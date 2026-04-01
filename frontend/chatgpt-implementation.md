@@ -27,8 +27,7 @@ Build a SCADA web application with two major modes:
 Core product principle:
 A widget never owns transport, routing, or privilege. It only renders UI and asks the host to do things.
 
-================================================================================ 2. TECHNICAL FOUNDATIONS
-================================================================================
+# ================================================================================ 2. TECHNICAL FOUNDATIONS
 
 Use:
 
@@ -55,8 +54,7 @@ Important implementation constraints:
 - Do not couple plugin APIs to Svelte internals.
 - Keep the plugin API stable and versioned.
 
-================================================================================ 3. ARCHITECTURAL OVERVIEW
-================================================================================
+# ================================================================================ 3. ARCHITECTURAL OVERVIEW
 
 Implement the application in 5 layers:
 
@@ -96,8 +94,7 @@ E. EDITOR + PAGE COMPOSITION LAYER
 - Exposes a properties inspector, binding editor, event editor, and context menu editor.
 - Stores pages as JSON documents.
 
-================================================================================ 4. INVERSION OF CONTROL STRATEGY
-================================================================================
+# ================================================================================ 4. INVERSION OF CONTROL STRATEGY
 
 This project must use strong inversion of control.
 
@@ -132,8 +129,7 @@ Never allow widgets to:
 - assume edit/runtime mode on their own
 - directly fetch protected backend endpoints without host approval
 
-================================================================================ 5. CORE DATA MODELS
-================================================================================
+# ================================================================================ 5. CORE DATA MODELS
 
 Define the following core models.
 
@@ -259,8 +255,7 @@ type: ActionType;
 params: Record<string, unknown>;
 }
 
-================================================================================ 6. HOST API INJECTED INTO WIDGETS
-================================================================================
+# ================================================================================ 6. HOST API INJECTED INTO WIDGETS
 
 Define a stable widget host API.
 
@@ -323,8 +318,7 @@ Important rules:
 - The host may freeze parts of this object to avoid mutation.
 - Future host API additions must be backward compatible.
 
-================================================================================ 7. PLUGIN FORMAT
-================================================================================
+# ================================================================================ 7. PLUGIN FORMAT
 
 Support plugins as registered widget providers.
 
@@ -357,8 +351,7 @@ Rules:
 - update() refreshes props/layout/bindings/mode.
 - dispose() must clean up subscriptions, timers, observers, and listeners.
 
-================================================================================ 8. PREFERRED THIRD-PARTY AUTHORING MODEL
-================================================================================
+# ================================================================================ 8. PREFERRED THIRD-PARTY AUTHORING MODEL
 
 Preferred third-party format: vanilla custom element.
 
@@ -381,8 +374,7 @@ Recommended packaging target:
 - Optional CSS bundled with the plugin
 - Optional shadow DOM isolation
 
-================================================================================ 9. CUSTOM ELEMENT BRIDGE DESIGN
-================================================================================
+# ================================================================================ 9. CUSTOM ELEMENT BRIDGE DESIGN
 
 Implement a bridge so the host can mount either:
 
@@ -438,8 +430,7 @@ this.el = undefined;
 }
 }
 
-================================================================================ 10. WIDGET REGISTRY
-================================================================================
+# ================================================================================ 10. WIDGET REGISTRY
 
 Implement a widget registry service.
 
@@ -470,8 +461,7 @@ Validation requirements:
 - event names must be unique
 - no invalid capability combinations
 
-================================================================================ 11. TAG BROKER DESIGN
-================================================================================
+# ================================================================================ 11. TAG BROKER DESIGN
 
 Implement a subscription broker with fine-grained subscriptions.
 
@@ -504,8 +494,7 @@ Performance requirements:
 - deliver only to widgets that subscribed
 - support throttling/coalescing for high-frequency tags like trends or rapidly changing analog values
 
-================================================================================ 12. WEBSOCKET CLIENT DESIGN
-================================================================================
+# ================================================================================ 12. WEBSOCKET CLIENT DESIGN
 
 Implement a transport service separate from widgets.
 
@@ -535,8 +524,7 @@ Important:
 - TagBroker and ProcessTransport collaborate.
 - Widgets never touch ProcessTransport directly.
 
-================================================================================ 13. ACTION ENGINE
-================================================================================
+# ================================================================================ 13. ACTION ENGINE
 
 Implement a declarative action engine.
 
@@ -583,8 +571,7 @@ Example event binding:
 ]
 }
 
-================================================================================ 14. CONDITION / EXPRESSION SYSTEM
-================================================================================
+# ================================================================================ 14. CONDITION / EXPRESSION SYSTEM
 
 Implement a safe, constrained expression evaluator.
 
@@ -625,8 +612,7 @@ Rules:
 - expressions must not access global objects
 - failures return false or undefined safely and log diagnostics
 
-================================================================================ 15. CONTEXT MENU SYSTEM
-================================================================================
+# ================================================================================ 15. CONTEXT MENU SYSTEM
 
 Implement dynamic context menus as a host-owned feature.
 
@@ -663,8 +649,7 @@ Typical SCADA examples:
 Security rule:
 Widgets may suggest menu items, but the host decides which ones actually appear and what they do.
 
-================================================================================ 16. EDITOR/RUNTIME MODE SPLIT
-================================================================================
+# ================================================================================ 16. EDITOR/RUNTIME MODE SPLIT
 
 Every widget must run correctly in two modes:
 
@@ -686,8 +671,7 @@ RUNTIME MODE
 
 Implement a mode flag in WidgetContext and pass it consistently.
 
-================================================================================ 17. SVELTE FLOW INTEGRATION
-================================================================================
+# ================================================================================ 17. SVELTE FLOW INTEGRATION
 
 Use Svelte Flow only as the layout/editor host, not as the widget logic owner.
 
@@ -709,8 +693,7 @@ Important implementation note:
 Treat widget body rendering as imperative mounting into a container.
 Do not force all third-party widget internals into Svelte reactive templating.
 
-================================================================================ 18. ERROR ISOLATION AND DIAGNOSTICS
-================================================================================
+# ================================================================================ 18. ERROR ISOLATION AND DIAGNOSTICS
 
 This system must be resilient.
 
@@ -729,8 +712,7 @@ Broken widget placeholder should show:
 - error message in dev mode
 - actionable warning like "Plugin API mismatch" or "Missing widget library"
 
-================================================================================ 19. PERMISSIONS MODEL
-================================================================================
+# ================================================================================ 19. PERMISSIONS MODEL
 
 Implement host-level permission checks.
 
@@ -763,8 +745,7 @@ canExecuteAction(action: ActionConfig): boolean;
 
 Never trust widget intent alone.
 
-================================================================================ 20. SERIALIZATION FORMAT FOR PAGES
-================================================================================
+# ================================================================================ 20. SERIALIZATION FORMAT FOR PAGES
 
 Persist HMI pages as JSON.
 
@@ -795,8 +776,7 @@ Rules:
 - keep bindings serializable
 - avoid storing live runtime state in persisted documents
 
-================================================================================ 21. INITIAL FOLDER STRUCTURE
-================================================================================
+# ================================================================================ 21. INITIAL FOLDER STRUCTURE
 
 Generate the following initial folder structure:
 
@@ -860,8 +840,7 @@ examples/
 vanilla-button/
 vanilla-tank/
 
-================================================================================ 22. BUILT-IN WIDGETS TO IMPLEMENT FIRST
-================================================================================
+# ================================================================================ 22. BUILT-IN WIDGETS TO IMPLEMENT FIRST
 
 Implement these built-in widgets first to prove the architecture:
 
@@ -892,8 +871,7 @@ Implement these built-in widgets first to prove the architecture:
 - events: click, rightClick
 - writes boolean or enum values
 
-================================================================================ 23. VANILLA WIDGET AUTHOR EXPERIENCE
-================================================================================
+# ================================================================================ 23. VANILLA WIDGET AUTHOR EXPERIENCE
 
 Third-party developers should be able to write a widget with:
 
@@ -915,8 +893,7 @@ Recommended conventions for custom elements:
 - host updates properties rather than string attributes
 - widget cleans up its own subscriptions on disconnectedCallback
 
-================================================================================ 24. EXAMPLE MINIMAL VANILLA WIDGET CONTRACT
-================================================================================
+# ================================================================================ 24. EXAMPLE MINIMAL VANILLA WIDGET CONTRACT
 
 Codex should implement an example vanilla widget library.
 
@@ -934,8 +911,7 @@ Concept:
 Important:
 Keep this example very small and heavily commented so it becomes the canonical template for plugin authors.
 
-================================================================================ 25. REACTIVITY STRATEGY
-================================================================================
+# ================================================================================ 25. REACTIVITY STRATEGY
 
 This is critical.
 
@@ -957,8 +933,7 @@ Examples:
 - hidden widgets can suspend non-critical subscriptions if desired
 - editor mode can use lower-frequency refresh than runtime mode if needed
 
-================================================================================ 26. PAGE NAVIGATION + POPUP MODEL
-================================================================================
+# ================================================================================ 26. PAGE NAVIGATION + POPUP MODEL
 
 Implement a runtime page manager.
 
@@ -983,8 +958,7 @@ Example SCADA use cases:
 - click a motor to open a faceplate popup
 - right-click a pump to open trend popup
 
-================================================================================ 27. THEMING MODEL
-================================================================================
+# ================================================================================ 27. THEMING MODEL
 
 Implement theme propagation through the host.
 
@@ -1009,8 +983,7 @@ Suggested token groups:
 - quality-uncertain
 - quality-stale
 
-================================================================================ 28. VALIDATION IN THE EDITOR
-================================================================================
+# ================================================================================ 28. VALIDATION IN THE EDITOR
 
 The editor must validate widget instances before runtime.
 
@@ -1028,8 +1001,7 @@ Validate:
 
 Show warnings/errors in the inspector and optionally as badges on the node shell.
 
-================================================================================ 29. DEV EXPERIENCE AND TOOLING
-================================================================================
+# ================================================================================ 29. DEV EXPERIENCE AND TOOLING
 
 Add the following:
 
@@ -1045,8 +1017,7 @@ Add the following:
 - integration test for writing a tag through action engine
 - integration test for context menu contribution merging
 
-================================================================================ 30. SECURITY AND STABILITY RULES
-================================================================================
+# ================================================================================ 30. SECURITY AND STABILITY RULES
 
 Mandatory rules:
 
@@ -1067,8 +1038,7 @@ Optional future hardening:
 - stronger sandbox mode for untrusted vendors
 - iframe mode only for truly untrusted plugins, not as the default
 
-================================================================================ 31. PHASED IMPLEMENTATION PLAN
-================================================================================
+# ================================================================================ 31. PHASED IMPLEMENTATION PLAN
 
 Phase 1: Foundations
 
@@ -1110,8 +1080,7 @@ Phase 5: Hardening
 - add permission enforcement throughout writes/navigation/actions
 - add plugin loading strategy and version pinning
 
-================================================================================ 32. CONCRETE CODING PRIORITIES
-================================================================================
+# ================================================================================ 32. CONCRETE CODING PRIORITIES
 
 Codex should implement in this order:
 
@@ -1132,8 +1101,7 @@ Codex should implement in this order:
 15. runtime route and page manager
 16. diagnostics + tests
 
-================================================================================ 33. EXPECTED CODE STYLE
-================================================================================
+# ================================================================================ 33. EXPECTED CODE STYLE
 
 Code style requirements:
 
@@ -1147,8 +1115,7 @@ Code style requirements:
 - keep all plugin API types in one stable public package/folder
 - make extension points obvious and well documented
 
-================================================================================ 34. ACCEPTANCE CRITERIA
-================================================================================
+# ================================================================================ 34. ACCEPTANCE CRITERIA
 
 The implementation is considered successful when all of the following are true:
 
@@ -1165,8 +1132,7 @@ The implementation is considered successful when all of the following are true:
 - Edit mode and runtime mode behavior are clearly separated.
 - Permissions are enforced for writes and navigation.
 
-================================================================================ 35. FINAL IMPLEMENTATION DIRECTIVE FOR CODEX
-================================================================================
+# ================================================================================ 35. FINAL IMPLEMENTATION DIRECTIVE FOR CODEX
 
 Build the system as a reusable platform, not as a one-off page renderer.
 

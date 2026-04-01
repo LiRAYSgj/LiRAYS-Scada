@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { Button } from '$lib/components/Button';
 	import { ChevronRight, LoaderCircle } from 'lucide-svelte';
+	import OverlaySurface from './OverlaySurface.svelte';
 	import {
 		resolveMenuOptions,
 		type MenuContext,
@@ -148,10 +149,13 @@
 </style>
 
 {#each menuLayers as layer, layerIndex}
-	<div
-		data-context-menu
-		class="fixed z-50 w-[220px] rounded-md border border-black/15 bg-(--bg-panel) p-1 shadow-lg dark:border-white/10"
-		style={`background-color: var(--bg-panel); left:${layer.x}px;top:${layer.y}px;`}
+	<OverlaySurface
+		x={layer.x}
+		y={layer.y}
+		width={LAYER_WIDTH}
+		dataContextMenu={true}
+		className="z-50 w-[220px] rounded-md border border-black/15 bg-(--bg-panel) p-1 shadow-lg dark:border-white/10"
+		style="background-color: var(--bg-panel);"
 	>
 		{#if layer.loading}
 			<div class="flex items-center gap-2 px-2 py-1.5 text-xs text-slate-500 dark:text-slate-300">
@@ -194,5 +198,5 @@
 				{/if}
 			{/each}
 		{/if}
-	</div>
+	</OverlaySurface>
 {/each}

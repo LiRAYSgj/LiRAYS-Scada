@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Button } from "$lib/components/Button";
+	import { Input } from "$lib/components/ui/input";
 	import type { FlatRow } from "../types.js";
 
 	let {
@@ -157,11 +158,11 @@
 			</div>
 		{/if}
 		{#if editingNodeId === row.id}
-			<input
+			<Input
 				id={`ns-name-${row.id}`}
 				name={`ns-name-${row.id}`}
-				bind:this={editingInputEl}
-				class="min-w-[180px] max-w-[320px] rounded-md border border-blue-600 bg-(--bg-muted) px-1.5 py-0.5 text-[13px] text-(--text-primary) disabled:cursor-not-allowed disabled:opacity-50"
+				bind:ref={editingInputEl}
+				class="min-w-[180px] max-w-[320px] h-7 text-[13px] border-blue-600"
 				bind:value={editingName}
 				disabled={actionsDisabled}
 				onkeydown={(event) => {
@@ -182,33 +183,30 @@
 			/>
 		{/if}
 		<div class="flex flex-wrap items-center gap-1.5">
-			<input
+			<Input
 				id={`ns-${row.id}-rangeStart`}
 				name={`ns-${row.id}-rangeStart`}
-				class="w-[62px] rounded-md border bg-(--bg-muted) px-1 py-0.5 text-[11px] text-(--text-primary) disabled:cursor-not-allowed disabled:opacity-50"
-				style="border-color: color-mix(in srgb, var(--text-muted) 28%, transparent)"
+				class="w-[62px] h-7 text-[11px]"
 				placeholder="start"
 				value={row.node.rangeStart}
 				disabled={actionsDisabled}
 				oninput={(event) =>
 					onUpdateRange(row.id, "rangeStart", (event.currentTarget as HTMLInputElement).value)}
 			/>
-			<input
+			<Input
 				id={`ns-${row.id}-rangeEnd`}
 				name={`ns-${row.id}-rangeEnd`}
-				class="w-[62px] rounded-md border bg-(--bg-muted) px-1 py-0.5 text-[11px] text-(--text-primary) disabled:cursor-not-allowed disabled:opacity-50"
-				style="border-color: color-mix(in srgb, var(--text-muted) 28%, transparent)"
+				class="w-[62px] h-7 text-[11px]"
 				placeholder="end"
 				value={row.node.rangeEnd}
 				disabled={actionsDisabled}
 				oninput={(event) =>
 					onUpdateRange(row.id, "rangeEnd", (event.currentTarget as HTMLInputElement).value)}
 			/>
-			<input
+			<Input
 				id={`ns-${row.id}-rangeStep`}
 				name={`ns-${row.id}-rangeStep`}
-				class="w-[62px] rounded-md border bg-(--bg-muted) px-1 py-0.5 text-[11px] text-(--text-primary) disabled:cursor-not-allowed disabled:opacity-50"
-				style="border-color: color-mix(in srgb, var(--text-muted) 28%, transparent)"
+				class="w-[62px] h-7 text-[11px]"
 				placeholder="step"
 				value={row.node.rangeStep}
 				disabled={actionsDisabled}

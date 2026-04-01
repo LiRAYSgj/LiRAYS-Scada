@@ -2,8 +2,15 @@
   import { get } from "svelte/store";
   import { onMount, untrack } from "svelte";
   import { Button } from "$lib/components/Button";
+  import { Input } from "$lib/components/ui/input";
+  import { NumberField } from "$lib/components/ui/number-field";
+  import { TagsInput } from "$lib/components/ui/tags-input";
+  import * as Select from "$lib/components/ui/select";
+  import { defaults, superForm } from "sveltekit-superforms/client";
+  import { zod4, zod4Client } from "sveltekit-superforms/adapters";
   import { Circle, LoaderCircle } from "lucide-svelte";
   import TreeRow from "./TreeRow.svelte";
+  import TagMetadataTooltip from "./TagMetadataTooltip.svelte";
   import { fetchTreeChildren } from "../server-adapter";
   import { createTreeStore } from "../tree-store";
   import {
@@ -17,6 +24,12 @@
   } from "$lib/core/ws/types";
   import { tagStreamClient } from "$lib/core/ws/tag-stream-client";
   import { ItemType, VarDataType } from "$lib/proto/namespace/enums";
+  import {
+    addTreeItemSchema,
+    editTreeMetaSchema,
+    toCreateItemPayload,
+    toEditMetaPayload,
+  } from "$lib/forms/tree-schemas";
 
   export interface SelectionChangePayload {
     add: string[];
@@ -89,6 +102,45 @@
   const tree = createTreeStore({
     fetchChildren: fetchTreeChildren,
   });
+  const addDialogForm = superForm(
+    defaults(
+      {
+        name: "",
+        kind: ItemType.ITEM_TYPE_VARIABLE,
+        dataType: VarDataType.VAR_DATA_TYPE_TEXT,
+        unit: "",
+        min: undefined,
+        max: undefined,
+        options: "",
+        maxLen: undefined,
+      },
+      zod4(addTreeItemSchema),
+    ),
+    {
+      SPA: true,
+      validators: zod4Client(addTreeItemSchema),
+      validationMethod: "submit-only",
+    },
+  );
+  const editDialogForm = superForm(
+    defaults(
+      {
+        varId: "",
+        dataType: "",
+        unit: "",
+        min: undefined,
+        max: undefined,
+        options: "",
+        maxLen: undefined,
+      },
+      zod4(editTreeMetaSchema),
+    ),
+    {
+      SPA: true,
+      validators: zod4Client(editTreeMetaSchema),
+      validationMethod: "submit-only",
+    },
+  );
 
   const treeState = tree.state;
   const visibleRows = tree.visibleRows;
@@ -98,35 +150,185 @@
   );
   const ROW_HEIGHT = 32;
   const OVERSCAN = 10;
+  const TAG_TOOLTIP_WIDTH = 240;
+  const TAG_TOOLTIP_OFFSET_X = 12;
+  const TAG_TOOLTIP_MARGIN = 8;
+  const TAG_TOOLTIP_MAX_HEIGHT = 220;
+
+  interface TagTooltipState {
+    node: TreeNode;
+    x: number;
+    y: number;
+  }
+
+  type AddFieldKey =
+    | "name"
+    | "kind"
+    | "dataType"
+    | "unit"
+    | "min"
+    | "max"
+    | "options"
+    | "maxLen";
+  type EditFieldKey =
+    | "varId"
+    | "dataType"
+    | "unit"
+    | "min"
+    | "max"
+    | "options"
+    | "maxLen";
 
   let treeViewportEl: HTMLDivElement | null = null;
   let addDialog: HTMLDialogElement | null = null;
   let editDialog: HTMLDialogElement | null = null;
+  let tagTooltip = $state<TagTooltipState | null>(null);
   let scrollTop = $state(0);
   let viewportHeight = $state(0);
   let addName = $state("");
   let addKind = $state<ItemType>(ItemType.ITEM_TYPE_VARIABLE);
   let addDataType = $state<VarDataType>(VarDataType.VAR_DATA_TYPE_TEXT);
+  let addKindValue = $state<string>(String(ItemType.ITEM_TYPE_VARIABLE));
+  let addDataTypeValue = $state<string>(String(VarDataType.VAR_DATA_TYPE_TEXT));
   let addUnit = $state("");
-  let addMin = $state("");
-  let addMax = $state("");
+  let addMin = $state<number | undefined>(undefined);
+  let addMax = $state<number | undefined>(undefined);
   let addOptions = $state("");
-  let addMaxLen = $state("");
+  let addOptionTags = $state<string[]>([]);
+  let addMaxLen = $state<number | undefined>(undefined);
   let addError = $state("");
   let addSubmitting = $state(false);
   let addParentId = $state<string | null | undefined>(undefined);
+  let addTouched = $state<Partial<Record<AddFieldKey, boolean>>>({});
   let editVarId = $state<string | null>(null);
   let editUnit = $state("");
-  let editMin = $state("");
-  let editMax = $state("");
+  let editMin = $state<number | undefined>(undefined);
+  let editMax = $state<number | undefined>(undefined);
   let editOptions = $state("");
-  let editMaxLen = $state("");
+  let editOptionTags = $state<string[]>([]);
+  let editMaxLen = $state<number | undefined>(undefined);
   let editDataType = $state<string>("");
   let editError = $state("");
   let editSubmitting = $state(false);
+  let editTouched = $state<Partial<Record<EditFieldKey, boolean>>>({});
   const isConnected = $derived(
     websocketStatus === WebSocketConnectionStatus.CONNECTED,
   );
+
+  $effect(() => {
+    addKind = Number(addKindValue) as ItemType;
+  });
+
+  $effect(() => {
+    addDataType = Number(addDataTypeValue) as VarDataType;
+  });
+
+  function serializeOptionTags(tags: string[]): string {
+    return tags.join(",");
+  }
+
+  function addSnapshot() {
+    return {
+      name: addName,
+      kind: addKind,
+      dataType: addDataType,
+      unit: addUnit,
+      min: addMin,
+      max: addMax,
+      options: serializeOptionTags(addOptionTags),
+      maxLen: addMaxLen,
+    };
+  }
+
+  function editSnapshot() {
+    return {
+      varId: editVarId ?? "",
+      dataType: editDataType,
+      unit: editUnit,
+      min: editMin,
+      max: editMax,
+      options: serializeOptionTags(editOptionTags),
+      maxLen: editMaxLen,
+    };
+  }
+
+  function collectFieldErrors<K extends string>(
+    issues: { path: PropertyKey[]; message: string }[],
+  ): Partial<Record<K, string>> {
+    const fieldErrors: Partial<Record<K, string>> = {};
+    for (const issue of issues) {
+      const key = issue.path[0];
+      if (typeof key !== "string") continue;
+      if (!fieldErrors[key as K]) {
+        fieldErrors[key as K] = issue.message;
+      }
+    }
+    return fieldErrors;
+  }
+
+  const addFieldErrors = $derived.by(() => {
+    const parsed = addTreeItemSchema.safeParse(addSnapshot());
+    if (parsed.success) return {} as Partial<Record<AddFieldKey, string>>;
+    return collectFieldErrors<AddFieldKey>(parsed.error.issues);
+  });
+
+  const editFieldErrors = $derived.by(() => {
+    const parsed = editTreeMetaSchema.safeParse(editSnapshot());
+    if (parsed.success) return {} as Partial<Record<EditFieldKey, string>>;
+    return collectFieldErrors<EditFieldKey>(parsed.error.issues);
+  });
+
+  const addFormValid = $derived(Object.keys(addFieldErrors).length === 0);
+  const editFormValid = $derived(Object.keys(editFieldErrors).length === 0);
+
+  function touchAddField(key: AddFieldKey): void {
+    addTouched = { ...addTouched, [key]: true };
+  }
+
+  function touchEditField(key: EditFieldKey): void {
+    editTouched = { ...editTouched, [key]: true };
+  }
+
+  function touchAllAddFields(): void {
+    addTouched = {
+      name: true,
+      kind: true,
+      dataType: true,
+      unit: true,
+      min: true,
+      max: true,
+      options: true,
+      maxLen: true,
+    };
+  }
+
+  function touchAllEditFields(): void {
+    editTouched = {
+      varId: true,
+      dataType: true,
+      unit: true,
+      min: true,
+      max: true,
+      options: true,
+      maxLen: true,
+    };
+  }
+
+  function addFieldMessage(key: AddFieldKey): string {
+    return addTouched[key] ? (addFieldErrors[key] ?? "") : "";
+  }
+
+  function editFieldMessage(key: EditFieldKey): string {
+    return editTouched[key] ? (editFieldErrors[key] ?? "") : "";
+  }
+
+  $effect(() => {
+    addOptions = serializeOptionTags(addOptionTags);
+  });
+
+  $effect(() => {
+    editOptions = serializeOptionTags(editOptionTags);
+  });
 
   $effect(() => {
     if (!onRootId) return;
@@ -392,12 +594,26 @@
     addName = "";
     addKind = ItemType.ITEM_TYPE_VARIABLE;
     addDataType = VarDataType.VAR_DATA_TYPE_TEXT;
+    addKindValue = String(ItemType.ITEM_TYPE_VARIABLE);
+    addDataTypeValue = String(VarDataType.VAR_DATA_TYPE_TEXT);
     addUnit = "";
-    addMin = "";
-    addMax = "";
+    addMin = undefined;
+    addMax = undefined;
     addOptions = "";
-    addMaxLen = "";
+    addOptionTags = [];
+    addMaxLen = undefined;
+    addTouched = {};
     addError = "";
+    addDialogForm.form.set({
+      name: "",
+      kind: ItemType.ITEM_TYPE_VARIABLE,
+      dataType: VarDataType.VAR_DATA_TYPE_TEXT,
+      unit: "",
+      min: undefined,
+      max: undefined,
+      options: "",
+      maxLen: undefined,
+    });
     addDialog.showModal();
   }
 
@@ -407,13 +623,23 @@
     }
     editVarId = node.id;
     editUnit = node.unit ?? "";
-    editMin = node.min !== undefined ? String(node.min) : "";
-    editMax = node.max !== undefined ? String(node.max) : "";
-    editOptions = node.options ? node.options.join(", ") : "";
-    editMaxLen =
-      node.maxLen && node.maxLen.length > 0 ? String(node.maxLen[0]) : "";
+    editMin = node.min;
+    editMax = node.max;
+    editOptionTags = node.options ? [...node.options] : [];
+    editOptions = serializeOptionTags(editOptionTags);
+    editMaxLen = node.maxLen && node.maxLen.length > 0 ? node.maxLen[0] : undefined;
     editDataType = node.dataType ?? "";
+    editTouched = {};
     editError = "";
+    editDialogForm.form.set({
+      varId: node.id,
+      dataType: node.dataType ?? "",
+      unit: node.unit ?? "",
+      min: node.min,
+      max: node.max,
+      options: serializeOptionTags(editOptionTags),
+      maxLen: node.maxLen && node.maxLen.length > 0 ? node.maxLen[0] : undefined,
+    });
     editDialog.showModal();
   }
 
@@ -449,13 +675,21 @@
     return snapshot.rootIds[0] ?? null;
   }
 
+  function firstValidationError(
+    errors: Record<string, unknown> | undefined,
+  ): string | null {
+    if (!errors) return null;
+    for (const value of Object.values(errors)) {
+      if (Array.isArray(value) && value.length > 0 && typeof value[0] === "string") {
+        return value[0];
+      }
+    }
+    return null;
+  }
+
   async function submitAddDialog(event: SubmitEvent): Promise<void> {
     event.preventDefault();
     addError = "";
-    if (!addName.trim()) {
-      addError = "Name is required";
-      return;
-    }
 
     const parentId = resolveParentIdForCreate();
     if (parentId === null && addParentId !== null) {
@@ -465,64 +699,58 @@
 
     addSubmitting = true;
     try {
-      const itemType: ItemType = addKind;
-      const varType: VarDataType | undefined =
-        itemType === ItemType.ITEM_TYPE_VARIABLE ? addDataType : undefined;
-      const unit = addUnit.trim() || undefined;
-      const minStr =
-        itemType === ItemType.ITEM_TYPE_VARIABLE && typeof addMin === "string"
-          ? addMin.trim()
-          : "";
-      const maxStr =
-        itemType === ItemType.ITEM_TYPE_VARIABLE && typeof addMax === "string"
-          ? addMax.trim()
-          : "";
-      const maxLenStr =
-        addDataType === VarDataType.VAR_DATA_TYPE_TEXT &&
-        typeof addMaxLen === "string"
-          ? addMaxLen.trim()
-          : "";
-
-      const min =
-        minStr.length > 0 ? Number(minStr) : undefined;
-      const max =
-        maxStr.length > 0 ? Number(maxStr) : undefined;
-      if (min !== undefined && Number.isNaN(min)) {
-        addError = "Min must be a number";
+      if (!addFormValid) {
+        touchAllAddFields();
+        addError = firstValidationError(addFieldErrors) ?? "Invalid form input";
         addSubmitting = false;
         return;
       }
-      if (max !== undefined && Number.isNaN(max)) {
-        addError = "Max must be a number";
+      const addOptionsValue = serializeOptionTags(addOptionTags);
+      addDialogForm.form.set({
+        name: addName,
+        kind: addKind,
+        dataType: addDataType,
+        unit: addUnit,
+        min: addMin,
+        max: addMax,
+        options: addOptionsValue,
+        maxLen: addMaxLen,
+      });
+      const sfValidation = await addDialogForm.validateForm({
+        update: false,
+        schema: zod4(addTreeItemSchema),
+      });
+      if (!sfValidation.valid) {
+        addError = firstValidationError(sfValidation.errors) ?? "Invalid form input";
         addSubmitting = false;
         return;
       }
-      const options =
-        addDataType === VarDataType.VAR_DATA_TYPE_TEXT &&
-        typeof addOptions === "string" &&
-        addOptions.trim()
-          ? addOptions
-              .split(",")
-              .map((opt) => opt.trim())
-              .filter(Boolean)
-          : undefined;
-      const maxLen =
-        maxLenStr.length > 0 ? Number(maxLenStr) : undefined;
-      if (maxLen !== undefined && Number.isNaN(maxLen)) {
-        addError = "Max length must be a number";
+      const parsed = addTreeItemSchema.safeParse({
+        name: addName,
+        kind: addKind,
+        dataType: addDataType,
+        unit: addUnit,
+        min: addMin,
+        max: addMax,
+        options: addOptionsValue,
+        maxLen: addMaxLen,
+      });
+      if (!parsed.success) {
+        addError = parsed.error.issues[0]?.message ?? "Invalid form input";
         addSubmitting = false;
         return;
       }
+      const payload = toCreateItemPayload(parsed.data);
       await onCreateItem({
         parentId: parentId ?? null,
-        name: addName.trim(),
-        itemType,
-        varType,
-        unit,
-        min,
-        max,
-        options,
-        maxLen,
+        name: payload.name,
+        itemType: payload.itemType,
+        varType: payload.varType,
+        unit: payload.unit,
+        min: payload.min,
+        max: payload.max,
+        options: payload.options,
+        maxLen: payload.maxLen,
       });
       closeAddDialog();
     } catch (error) {
@@ -539,47 +767,48 @@
     editError = "";
     editSubmitting = true;
 
-    const minStr = typeof editMin === "string" ? editMin.trim() : "";
-    const maxStr = typeof editMax === "string" ? editMax.trim() : "";
-    const maxLenStr = typeof editMaxLen === "string" ? editMaxLen.trim() : "";
-
-    const min = minStr.length > 0 ? Number(minStr) : undefined;
-    const max = maxStr.length > 0 ? Number(maxStr) : undefined;
-    const maxLen = maxLenStr.length > 0 ? Number(maxLenStr) : undefined;
-
-    if (min !== undefined && Number.isNaN(min)) {
-      editError = "Min must be a number";
-      editSubmitting = false;
-      return;
-    }
-    if (max !== undefined && Number.isNaN(max)) {
-      editError = "Max must be a number";
-      editSubmitting = false;
-      return;
-    }
-    if (maxLen !== undefined && Number.isNaN(maxLen)) {
-      editError = "Max length must be a number";
-      editSubmitting = false;
-      return;
-    }
-
-    const options =
-      editDataType === "VAR_DATA_TYPE_TEXT" && typeof editOptions === "string"
-        ? editOptions
-            .split(",")
-            .map((opt) => opt.trim())
-            .filter(Boolean)
-        : undefined;
-
     try {
-      await onEditMeta({
+      if (!editFormValid) {
+        touchAllEditFields();
+        editError = firstValidationError(editFieldErrors) ?? "Invalid form input";
+        editSubmitting = false;
+        return;
+      }
+      const editOptionsValue = serializeOptionTags(editOptionTags);
+      editDialogForm.form.set({
         varId: editVarId,
-        unit: editUnit.trim() || undefined,
-        min,
-        max,
-        options,
-        maxLen,
+        dataType: editDataType,
+        unit: editUnit,
+        min: editMin,
+        max: editMax,
+        options: editOptionsValue,
+        maxLen: editMaxLen,
       });
+      const sfValidation = await editDialogForm.validateForm({
+        update: false,
+        schema: zod4(editTreeMetaSchema),
+      });
+      if (!sfValidation.valid) {
+        editError = firstValidationError(sfValidation.errors) ?? "Invalid form input";
+        editSubmitting = false;
+        return;
+      }
+      const parsed = editTreeMetaSchema.safeParse({
+        varId: editVarId,
+        dataType: editDataType,
+        unit: editUnit,
+        min: editMin,
+        max: editMax,
+        options: editOptionsValue,
+        maxLen: editMaxLen,
+      });
+      if (!parsed.success) {
+        editError = parsed.error.issues[0]?.message ?? "Invalid form input";
+        editSubmitting = false;
+        return;
+      }
+      const payload = toEditMetaPayload(parsed.data);
+      await onEditMeta(payload);
       const node = get(treeState).nodes[editVarId];
       await tree.refreshNode(node?.parentId ?? null);
       closeEditDialog();
@@ -589,6 +818,41 @@
     } finally {
       editSubmitting = false;
     }
+  }
+
+  function clamp(value: number, min: number, max: number): number {
+    return Math.min(Math.max(value, min), max);
+  }
+
+  function hideTagTooltip(): void {
+    tagTooltip = null;
+  }
+
+  function handleTagTooltipChange(
+    payload: { node: TreeNode; anchorRect: DOMRect } | null,
+  ): void {
+    if (!payload) {
+      hideTagTooltip();
+      return;
+    }
+
+    const maxX = Math.max(
+      TAG_TOOLTIP_MARGIN,
+      window.innerWidth - TAG_TOOLTIP_WIDTH - TAG_TOOLTIP_MARGIN,
+    );
+    const maxY = Math.max(
+      TAG_TOOLTIP_MARGIN,
+      window.innerHeight - TAG_TOOLTIP_MAX_HEIGHT - TAG_TOOLTIP_MARGIN,
+    );
+    tagTooltip = {
+      node: payload.node,
+      x: clamp(
+        payload.anchorRect.right + TAG_TOOLTIP_OFFSET_X,
+        TAG_TOOLTIP_MARGIN,
+        maxX,
+      ),
+      y: clamp(payload.anchorRect.top, TAG_TOOLTIP_MARGIN, maxY),
+    };
   }
 </script>
 
@@ -612,6 +876,7 @@
       if (!treeViewportEl) {
         return;
       }
+      hideTagTooltip();
       scrollTop = treeViewportEl.scrollTop;
     }}
   >
@@ -656,6 +921,7 @@
             onCheckClick={
               multiSelectMode ? () => handleSelectionCheckClick(row.id) : undefined
             }
+            onTagTooltipChange={handleTagTooltipChange}
           />
         {/each}
         <div style={`height: ${bottomPadding}px`} aria-hidden="true"></div>
@@ -687,11 +953,20 @@
   </footer>
 </section>
 
+{#if tagTooltip}
+  <TagMetadataTooltip
+    x={tagTooltip.x}
+    y={tagTooltip.y}
+    node={tagTooltip.node}
+    width={TAG_TOOLTIP_WIDTH}
+  />
+{/if}
+
 <dialog
   bind:this={addDialog}
   class="fixed inset-0 m-auto w-[420px] max-w-[90vw] rounded-md border border-black/10 bg-(--bg-panel) p-0 text-(--text-primary) shadow-xl backdrop:bg-black/50 dark:border-white/10"
 >
-  <form class="flex h-full flex-col p-4" onsubmit={submitAddDialog}>
+  <form class="flex h-full flex-col p-4" onsubmit={submitAddDialog} novalidate>
     <div class="flex items-center justify-between pb-4">
       <h2 class="text-sm font-semibold">Add Variable/Folder</h2>
     </div>
@@ -699,28 +974,51 @@
     <div class="space-y-4 overflow-y-auto pr-1">
       <div class="space-y-1">
         <label class="text-xs text-(--text-muted)" for="add-name">Name</label>
-        <input
+        <Input
           id="add-name"
           type="text"
-          class="w-full rounded border border-black/15 bg-(--bg-muted) px-2 py-1.5 text-sm outline-none ring-0 focus:border-blue-500 dark:border-white/10"
+          class="w-full"
           bind:value={addName}
+          onblur={() => touchAddField("name")}
           placeholder="Enter node name"
-          required
         />
+        {#if addFieldMessage("name")}
+          <p class="text-xs text-red-500">{addFieldMessage("name")}</p>
+        {/if}
       </div>
 
       <div class="space-y-1">
         <label class="text-xs text-(--text-muted)" for="add-kind"
           >Node Type</label
         >
-        <select
-          id="add-kind"
-          class="w-full rounded border border-black/15 bg-(--bg-muted) px-2 py-1.5 text-sm outline-none ring-0 focus:border-blue-500 dark:border-white/10"
-          bind:value={addKind}
+        <Select.Root
+          type="single"
+          bind:value={addKindValue}
+          onValueChange={() => touchAddField("kind")}
         >
-          <option value={ItemType.ITEM_TYPE_FOLDER}>Folder</option>
-          <option value={ItemType.ITEM_TYPE_VARIABLE}>Variable</option>
-        </select>
+          <Select.Trigger class="w-full">
+            {addKindValue === String(ItemType.ITEM_TYPE_FOLDER) ? "Folder" : "Variable"}
+          </Select.Trigger>
+          <Select.Content
+            portalProps={{ disabled: true }}
+            class="z-[80] border border-black/15 bg-(--bg-panel) shadow-lg dark:border-white/10"
+            style="background-color: var(--bg-panel);"
+          >
+            <Select.Group>
+              <Select.Item
+                value={String(ItemType.ITEM_TYPE_FOLDER)}
+                label="Folder"
+              />
+              <Select.Item
+                value={String(ItemType.ITEM_TYPE_VARIABLE)}
+                label="Variable"
+              />
+            </Select.Group>
+          </Select.Content>
+        </Select.Root>
+        {#if addFieldMessage("kind")}
+          <p class="text-xs text-red-500">{addFieldMessage("kind")}</p>
+        {/if}
       </div>
 
       <div
@@ -729,85 +1027,140 @@
         <label class="text-xs text-(--text-muted)" for="add-dataType"
           >Data Type</label
         >
-        <select
-          id="add-dataType"
-          class="w-full rounded border border-black/15 bg-(--bg-muted) px-2 py-1.5 text-sm outline-none ring-0 focus:border-blue-500 dark:border-white/10"
-          bind:value={addDataType}
+        <Select.Root
+          type="single"
+          bind:value={addDataTypeValue}
+          onValueChange={() => touchAddField("dataType")}
           disabled={addKind !== ItemType.ITEM_TYPE_VARIABLE}
         >
-          <option value={VarDataType.VAR_DATA_TYPE_INTEGER}>Integer</option>
-          <option value={VarDataType.VAR_DATA_TYPE_FLOAT}>Float</option>
-          <option value={VarDataType.VAR_DATA_TYPE_TEXT}>Text</option>
-          <option value={VarDataType.VAR_DATA_TYPE_BOOLEAN}>Boolean</option>
-        </select>
+          <Select.Trigger class="w-full">
+            {#if addDataTypeValue === String(VarDataType.VAR_DATA_TYPE_INTEGER)}
+              Integer
+            {:else if addDataTypeValue === String(VarDataType.VAR_DATA_TYPE_FLOAT)}
+              Float
+            {:else if addDataTypeValue === String(VarDataType.VAR_DATA_TYPE_TEXT)}
+              Text
+            {:else}
+              Boolean
+            {/if}
+          </Select.Trigger>
+          <Select.Content
+            portalProps={{ disabled: true }}
+            class="z-[80] border border-black/15 bg-(--bg-panel) shadow-lg dark:border-white/10"
+            style="background-color: var(--bg-panel);"
+          >
+            <Select.Group>
+              <Select.Item
+                value={String(VarDataType.VAR_DATA_TYPE_INTEGER)}
+                label="Integer"
+              />
+              <Select.Item
+                value={String(VarDataType.VAR_DATA_TYPE_FLOAT)}
+                label="Float"
+              />
+              <Select.Item
+                value={String(VarDataType.VAR_DATA_TYPE_TEXT)}
+                label="Text"
+              />
+              <Select.Item
+                value={String(VarDataType.VAR_DATA_TYPE_BOOLEAN)}
+                label="Boolean"
+              />
+            </Select.Group>
+          </Select.Content>
+        </Select.Root>
+        {#if addFieldMessage("dataType")}
+          <p class="text-xs text-red-500">{addFieldMessage("dataType")}</p>
+        {/if}
       </div>
 
       {#if addKind === ItemType.ITEM_TYPE_VARIABLE}
         <div class="space-y-3">
           <div class="space-y-1">
             <label class="text-xs text-(--text-muted)" for="add-unit"
-              >Unit (optional)</label
+              >Unit</label
             >
-            <input
+            <Input
               id="add-unit"
               type="text"
-              class="w-full rounded border border-black/15 bg-(--bg-muted) px-2 py-1.5 text-sm outline-none ring-0 focus:border-blue-500 dark:border-white/10"
+              class="w-full"
               bind:value={addUnit}
+              onblur={() => touchAddField("unit")}
               placeholder="e.g. °C, kPa"
             />
+            {#if addFieldMessage("unit")}
+              <p class="text-xs text-red-500">{addFieldMessage("unit")}</p>
+            {/if}
           </div>
 
           {#if addDataType === VarDataType.VAR_DATA_TYPE_INTEGER || addDataType === VarDataType.VAR_DATA_TYPE_FLOAT}
             <div class="grid grid-cols-2 gap-2">
               <div class="space-y-1">
                 <label class="text-xs text-(--text-muted)" for="add-min"
-                  >Min (optional)</label
+                  >Min</label
                 >
-                <input
+                <NumberField
                   id="add-min"
-                  type="text"
-                  class="w-full rounded border border-black/15 bg-(--bg-muted) px-2 py-1.5 text-sm outline-none ring-0 focus:border-blue-500 dark:border-white/10"
+                  step="any"
+                  class="w-full"
                   bind:value={addMin}
+                  onblur={() => touchAddField("min")}
                   placeholder="e.g. 0"
                 />
+                {#if addFieldMessage("min")}
+                  <p class="text-xs text-red-500">{addFieldMessage("min")}</p>
+                {/if}
               </div>
               <div class="space-y-1">
                 <label class="text-xs text-(--text-muted)" for="add-max"
-                  >Max (optional)</label
+                  >Max</label
                 >
-                <input
+                <NumberField
                   id="add-max"
-                  type="text"
-                  class="w-full rounded border border-black/15 bg-(--bg-muted) px-2 py-1.5 text-sm outline-none ring-0 focus:border-blue-500 dark:border-white/10"
+                  step="any"
+                  class="w-full"
                   bind:value={addMax}
+                  onblur={() => touchAddField("max")}
                   placeholder="e.g. 100"
                 />
+                {#if addFieldMessage("max")}
+                  <p class="text-xs text-red-500">{addFieldMessage("max")}</p>
+                {/if}
               </div>
             </div>
           {:else if addDataType === VarDataType.VAR_DATA_TYPE_TEXT}
             <div class="space-y-1">
               <label class="text-xs text-(--text-muted)" for="add-options"
-                >Allowed options (comma separated)</label
+                >Allowed options</label
               >
-              <input
+              <TagsInput
                 id="add-options"
-                type="text"
-                class="w-full rounded border border-black/15 bg-(--bg-muted) px-2 py-1.5 text-sm outline-none ring-0 focus:border-blue-500 dark:border-white/10"
-                bind:value={addOptions}
-                placeholder="e.g. ON,OFF,IDLE"
+                class="w-full rounded border border-black/15 bg-(--bg-muted) text-sm dark:border-white/10"
+                bind:value={addOptionTags}
+                commitSeparators={[","]}
+                onValueChange={() => touchAddField("options")}
+                placeholder="Type an option and press comma or Enter"
               />
+              {#if addFieldMessage("options")}
+                <p class="text-xs text-red-500">{addFieldMessage("options")}</p>
+              {/if}
             </div>
             <div class="space-y-1">
               <label class="text-xs text-(--text-muted)" for="add-maxlen"
-                >Max length (optional)</label
+                >Max length</label
               >
-              <input
+              <NumberField
                 id="add-maxlen"
-                type="text"
-                class="w-full rounded border border-black/15 bg-(--bg-muted) px-2 py-1.5 text-sm outline-none ring-0 focus:border-blue-500 dark:border-white/10"
+                step={1}
+                min={0}
+                class="w-full"
                 bind:value={addMaxLen}
+                onblur={() => touchAddField("maxLen")}
                 placeholder="e.g. 32"
               />
+              {#if addFieldMessage("maxLen")}
+                <p class="text-xs text-red-500">{addFieldMessage("maxLen")}</p>
+              {/if}
             </div>
           {/if}
         </div>
@@ -834,7 +1187,7 @@
         title="Save"
         loading={addSubmitting}
         loadingLabel="Saving…"
-        disabled={addSubmitting || !isConnected}
+        disabled={addSubmitting || !isConnected || !addFormValid}
       />
     </div>
   </form>
@@ -844,77 +1197,100 @@
   bind:this={editDialog}
   class="fixed inset-0 m-auto w-[420px] max-w-[90vw] rounded-md border border-black/10 bg-(--bg-panel) p-0 text-(--text-primary) shadow-xl backdrop:bg-black/50 dark:border-white/10"
 >
-  <form class="flex h-full flex-col p-4" onsubmit={submitEditDialog}>
+  <form class="flex h-full flex-col p-4" onsubmit={submitEditDialog} novalidate>
     <div class="flex items-center justify-between pb-4">
       <h2 class="text-sm font-semibold">Edit Variable Metadata</h2>
     </div>
 
     <div class="space-y-3 overflow-y-auto pr-1">
       <div class="space-y-1">
-        <label class="text-xs text-(--text-muted)">Variable ID</label>
-        <div class="rounded border border-black/15 bg-(--bg-muted) px-2 py-1.5 text-[11px] text-(--text-secondary) dark:border-white/10">
+        <span class="text-xs text-(--text-muted)">Variable ID</span>
+        <div
+          class="rounded border border-black/15 bg-(--bg-muted) px-2 py-1.5 text-[11px] text-(--text-secondary) dark:border-white/10"
+        >
           {editVarId}
         </div>
       </div>
 
       <div class="space-y-1">
         <label class="text-xs text-(--text-muted)" for="edit-unit">Unit</label>
-        <input
+        <Input
           id="edit-unit"
           type="text"
-          class="w-full rounded border border-black/15 bg-(--bg-muted) px-2 py-1.5 text-sm outline-none ring-0 focus:border-blue-500 dark:border-white/10"
+          class="w-full"
           bind:value={editUnit}
+          onblur={() => touchEditField("unit")}
           placeholder="e.g. °C, kPa"
         />
+        {#if editFieldMessage("unit")}
+          <p class="text-xs text-red-500">{editFieldMessage("unit")}</p>
+        {/if}
       </div>
 
       {#if editDataType === "VAR_DATA_TYPE_INTEGER" || editDataType === "VAR_DATA_TYPE_FLOAT"}
         <div class="grid grid-cols-2 gap-2">
           <div class="space-y-1">
             <label class="text-xs text-(--text-muted)" for="edit-min">Min</label>
-            <input
+            <NumberField
               id="edit-min"
-              type="text"
-              class="w-full rounded border border-black/15 bg-(--bg-muted) px-2 py-1.5 text-sm outline-none ring-0 focus:border-blue-500 dark:border-white/10"
+              step="any"
+              class="w-full"
               bind:value={editMin}
+              onblur={() => touchEditField("min")}
               placeholder="e.g. 0"
             />
+            {#if editFieldMessage("min")}
+              <p class="text-xs text-red-500">{editFieldMessage("min")}</p>
+            {/if}
           </div>
           <div class="space-y-1">
             <label class="text-xs text-(--text-muted)" for="edit-max">Max</label>
-            <input
+            <NumberField
               id="edit-max"
-              type="text"
-              class="w-full rounded border border-black/15 bg-(--bg-muted) px-2 py-1.5 text-sm outline-none ring-0 focus:border-blue-500 dark:border-white/10"
+              step="any"
+              class="w-full"
               bind:value={editMax}
+              onblur={() => touchEditField("max")}
               placeholder="e.g. 100"
             />
+            {#if editFieldMessage("max")}
+              <p class="text-xs text-red-500">{editFieldMessage("max")}</p>
+            {/if}
           </div>
         </div>
       {:else if editDataType === "VAR_DATA_TYPE_TEXT"}
         <div class="space-y-1">
           <label class="text-xs text-(--text-muted)" for="edit-options"
-            >Options (comma separated)</label
+            >Options</label
           >
-          <input
+          <TagsInput
             id="edit-options"
-            type="text"
-            class="w-full rounded border border-black/15 bg-(--bg-muted) px-2 py-1.5 text-sm outline-none ring-0 focus:border-blue-500 dark:border-white/10"
-            bind:value={editOptions}
-            placeholder="e.g. ON,OFF"
+            class="w-full rounded border border-black/15 bg-(--bg-muted) text-sm dark:border-white/10"
+            bind:value={editOptionTags}
+            commitSeparators={[","]}
+            onValueChange={() => touchEditField("options")}
+            placeholder="Type an option and press comma or Enter"
           />
+          {#if editFieldMessage("options")}
+            <p class="text-xs text-red-500">{editFieldMessage("options")}</p>
+          {/if}
         </div>
         <div class="space-y-1">
           <label class="text-xs text-(--text-muted)" for="edit-maxlen"
             >Max length</label
           >
-          <input
+          <NumberField
             id="edit-maxlen"
-            type="text"
-            class="w-full rounded border border-black/15 bg-(--bg-muted) px-2 py-1.5 text-sm outline-none ring-0 focus:border-blue-500 dark:border-white/10"
+            step={1}
+            min={0}
+            class="w-full"
             bind:value={editMaxLen}
+            onblur={() => touchEditField("maxLen")}
             placeholder="e.g. 32"
           />
+          {#if editFieldMessage("maxLen")}
+            <p class="text-xs text-red-500">{editFieldMessage("maxLen")}</p>
+          {/if}
         </div>
       {/if}
     </div>
@@ -940,7 +1316,7 @@
         title="Save"
         loading={editSubmitting}
         loadingLabel="Saving…"
-        disabled={editSubmitting || !isConnected}
+        disabled={editSubmitting || !isConnected || !editFormValid}
       />
     </div>
   </form>

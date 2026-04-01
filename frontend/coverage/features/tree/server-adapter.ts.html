@@ -15,41 +15,41 @@
         }
     </style>
 </head>
-
+    
 <body>
 <div class='wrapper'>
     <div class='pad1'>
         <h1><a href="../../index.html">All files</a> / <a href="index.html">features/tree</a> server-adapter.ts</h1>
         <div class='clearfix'>
-
+            
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>10/10</span>
+                <span class='fraction'>7/7</span>
             </div>
-
-
+        
+            
             <div class='fl pad1y space-right2'>
-                <span class="strong">75% </span>
+                <span class="strong">81.25% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>6/8</span>
+                <span class='fraction'>13/16</span>
             </div>
-
-
+        
+            
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>5/5</span>
+                <span class='fraction'>4/4</span>
             </div>
-
-
+        
+            
             <div class='fl pad1y space-right2'>
                 <span class="strong">100% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>8/8</span>
+                <span class='fraction'>5/5</span>
             </div>
-
-
+        
+            
         </div>
         <p class="quiet">
             Press <em>n</em> or <em>j</em> to go to the next uncovered block, <em>b</em>, <em>p</em> or <em>k</em> for the previous block.
@@ -114,21 +114,10 @@
 <a name='L49'></a><a href='#L49'>49</a>
 <a name='L50'></a><a href='#L50'>50</a>
 <a name='L51'></a><a href='#L51'>51</a>
-<a name='L52'></a><a href='#L52'>52</a>
-<a name='L53'></a><a href='#L53'>53</a>
-<a name='L54'></a><a href='#L54'>54</a>
-<a name='L55'></a><a href='#L55'>55</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L52'></a><a href='#L52'>52</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">2x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -146,6 +135,11 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -173,17 +167,9 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import type { TreeNode } from "./types";
 import { tagStreamClient } from "$lib/core/ws/tag-stream-client";
+import { resolveTagStreamWsEndpoint } from "$lib/core/ws/resolve-ws-endpoint";
 import type { ListResponse } from "$lib/proto/namespace/commands";
 import { varDataTypeToJSON } from "$lib/proto/namespace/enums";
-&nbsp;
-const DEFAULT_WS_ENDPOINT = "ws://127.0.0.1:8245";
-&nbsp;
-function resolveWsEndpoint(): string {
-  const configured = import.meta.env.PUBLIC_DEMO_WS_ENDPOINT as
-    | string
-    | undefined;
-  return configured || DEFAULT_WS_ENDPOINT;
-}
 &nbsp;
 function toTreeNodes(
   parent: TreeNode | null,
@@ -211,6 +197,11 @@ function toTreeNodes(
       variable.varDType !== undefined
         ? varDataTypeToJSON(variable.varDType)
         : <span class="branch-1 cbranch-no" title="branch not covered" >undefined,</span>
+    unit: variable.unit ?? undefined,
+    min: variable.min ?? undefined,
+    max: variable.max ?? undefined,
+    options: variable.options ?? <span class="branch-1 cbranch-no" title="branch not covered" >[],</span>
+    maxLen: variable.maxLen ?? [],
   }));
 &nbsp;
   return [...folders, ...vars];
@@ -221,7 +212,7 @@ export async function fetchTreeChildren(
 ): Promise&lt;TreeNode[]&gt; {
   const list = await tagStreamClient.listChildren(
     parent?.id,
-    resolveWsEndpoint(),
+    resolveTagStreamWsEndpoint(),
   );
   return toTreeNodes(parent, list);
 }
@@ -232,7 +223,7 @@ export async function fetchTreeChildren(
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-03-21T03:09:14.778Z
+                at 2026-04-01T04:03:58.743Z
             </div>
         <script src="../../prettify.js"></script>
         <script>
@@ -244,3 +235,4 @@ export async function fetchTreeChildren(
         <script src="../../block-navigation.js"></script>
     </body>
 </html>
+    

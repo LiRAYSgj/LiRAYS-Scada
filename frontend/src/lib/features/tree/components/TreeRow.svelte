@@ -30,6 +30,10 @@
     isIndeterminate?: boolean;
     /** Called when the selection checkbox is clicked (only when multiSelectMode). */
     onCheckClick?: (event: MouseEvent) => void;
+    /** Emits hover metadata anchor for tag rows. */
+    onTagTooltipChange?: (
+      payload: { node: TreeNode; anchorRect: DOMRect } | null,
+    ) => void;
   }
 
   let {
@@ -45,14 +49,31 @@
     isChecked = false,
     isIndeterminate = false,
     onCheckClick,
+    onTagTooltipChange,
   }: Props = $props();
 
+  let rowEl: HTMLDivElement | null = null;
   const displayValue = $derived(
     liveValue !== undefined ? String(liveValue) : (row.node.value ?? "-"),
   );
+
+  function showTagTooltip(): void {
+    if (row.node.kind !== "tag" || !rowEl || !onTagTooltipChange) {
+      return;
+    }
+    onTagTooltipChange({
+      node: row.node,
+      anchorRect: rowEl.getBoundingClientRect(),
+    });
+  }
+
+  function hideTagTooltip(): void {
+    onTagTooltipChange?.(null);
+  }
 </script>
 
 <div
+  bind:this={rowEl}
   class={`group relative grid h-8 grid-cols-[1fr_90px_90px_80px] items-center border-b border-black/10 px-2 text-xs dark:border-white/10 ${
     multiSelectMode ? "cursor-default" : "cursor-pointer"
   } ${!multiSelectMode && isSelected ? "bg-(--bg-selected)" : "hover:bg-(--bg-hover)"}`}
@@ -67,6 +88,8 @@
     event.preventDefault();
     if (!multiSelectMode) onContextMenu(event, row.node);
   }}
+  onmouseenter={showTagTooltip}
+  onmouseleave={hideTagTooltip}
   ondragstart={multiSelectMode ? undefined : (event) => onDragStart(event, row.node)}
   ondragend={multiSelectMode ? undefined : onDragEnd}
   onkeydown={(event) => {
@@ -128,41 +151,4 @@
   >
   <span class="truncate text-(--text-secondary)">{displayValue}</span>
   <span class="truncate text-(--text-secondary)">{row.node.unit ?? "-"}</span>
-
-  {#if row.node.kind === "tag"}
-    <div
-      class="pointer-events-none absolute left-2 top-full z-10 mt-1 hidden min-w-[220px] rounded-md border border-black/10 bg-(--bg-panel) px-3 py-2 text-[11px] shadow-lg transition-opacity duration-150 group-hover:block dark:border-white/10"
-    >
-      <div class="space-y-1 text-(--text-secondary)">
-        <div class="flex justify-between gap-2">
-          <span class="text-(--text-muted)">Unit</span>
-          <span>{row.node.unit ?? "-"}</span>
-        </div>
-        {#if row.node.dataType === "VAR_DATA_TYPE_INTEGER" || row.node.dataType === "VAR_DATA_TYPE_FLOAT"}
-          <div class="flex justify-between gap-2">
-            <span class="text-(--text-muted)">Min</span>
-            <span>{row.node.min ?? "-"}</span>
-          </div>
-          <div class="flex justify-between gap-2">
-            <span class="text-(--text-muted)">Max</span>
-            <span>{row.node.max ?? "-"}</span>
-          </div>
-        {/if}
-        {#if row.node.dataType === "VAR_DATA_TYPE_TEXT"}
-          <div class="flex justify-between gap-2">
-            <span class="text-(--text-muted)">Max len</span>
-            <span>{row.node.maxLen && row.node.maxLen.length > 0 ? row.node.maxLen[0] : "-"}</span>
-          </div>
-          <div>
-            <div class="text-(--text-muted)">Options</div>
-            <div class="truncate text-(--text-secondary)">
-              {row.node.options && row.node.options.length
-                ? row.node.options.join(", ")
-                : "-"}
-            </div>
-          </div>
-        {/if}
-      </div>
-    </div>
-  {/if}
 </div>

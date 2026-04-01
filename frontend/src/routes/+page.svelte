@@ -17,6 +17,7 @@
   } from "@xyflow/svelte";
   import "@xyflow/svelte/dist/style.css";
   import { Button } from "$lib/components/Button";
+  import { Input } from "$lib/components/ui/input";
   import VariableTree from "$lib/features/tree/components/VariableTree.svelte";
   import ContextMenu from "$lib/features/tree/components/ContextMenu.svelte";
   import PageToolbar from "$lib/features/workspace/components/PageToolbar.svelte";
@@ -54,6 +55,7 @@
     getMinimalAncestorSet,
   } from "$lib/features/tree/tree-selection";
   import { Layers, Plus, Trash2, Pencil } from "lucide-svelte";
+  import { sanitizeIdentifierLike, sanitizeText } from "$lib/forms/sanitize";
 
   interface ActiveMenuState {
     x: number;
@@ -232,14 +234,14 @@
   }): Promise<void> {
     await realtimeProvider.addItem(
       input.parentId,
-      input.name,
+      sanitizeIdentifierLike(input.name, 128),
       input.itemType,
       input.varType,
       {
-        unit: input.unit,
+        unit: input.unit ? sanitizeIdentifierLike(input.unit, 32) : undefined,
         min: input.min,
         max: input.max,
-        options: input.options,
+        options: input.options?.map((opt) => sanitizeIdentifierLike(opt, 64)),
         maxLen: input.maxLen,
       },
     );
@@ -254,10 +256,10 @@
     maxLen?: number;
   }): Promise<void> {
     await realtimeProvider.updateMeta(input.varId, {
-      unit: input.unit,
+      unit: input.unit ? sanitizeIdentifierLike(input.unit, 32) : undefined,
       min: input.min,
       max: input.max,
-      options: input.options,
+      options: input.options?.map((opt) => sanitizeIdentifierLike(opt, 64)),
       maxLen: input.maxLen,
     });
   }
@@ -1065,15 +1067,15 @@
                     class="mb-1 block text-[10px] uppercase text-(--text-muted)"
                     >Title</label
                   >
-                  <input
+                  <Input
                     id="node-title-input"
-                    class="w-full rounded border border-black/20 bg-(--bg-muted) px-2 py-1.5 text-xs text-(--text-primary) outline-none focus:border-sky-500 dark:border-white/20"
+                    class="w-full text-xs"
                     value={selectedGraphNodeData.title}
                     oninput={(event) => {
                       const target = event.currentTarget as HTMLInputElement;
                       updateNodeData(selectedGraphNodeId, (current) => ({
                         ...current,
-                        title: target.value,
+                        title: sanitizeText(target.value, 80),
                       }));
                     }}
                   />
@@ -1154,8 +1156,8 @@
                           {/if}
                         </div>
                       {:else}
-                        <input
-                          class="w-full rounded border border-dashed border-black/20 bg-(--bg-muted) px-2 py-1 text-[10px] text-(--text-primary) outline-none dark:border-white/20"
+                        <Input
+                          class="w-full text-[10px]"
                           readonly
                           value={bindingTags[0]?.path ?? ""}
                           placeholder="Drop tag here"

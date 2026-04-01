@@ -10,6 +10,7 @@
 	import type { EditorMode, NamespaceNode } from '../types.js';
 	import * as nsYaml from '../namespace-yaml.js';
 	import { Button } from '$lib/components/Button';
+	import { sanitizeIdentifierLike, sanitizeText } from '$lib/forms/sanitize';
 	import NamespaceBuilderHeader from './NamespaceBuilderHeader.svelte';
 	import NamespaceBuilderTreeRow from './NamespaceBuilderTreeRow.svelte';
 	import NamespaceBuilderYamlPanel from './NamespaceBuilderYamlPanel.svelte';
@@ -538,7 +539,7 @@
 		if (editingNodeId !== nodeId) return;
 		const row = findRowById(ast, nodeId);
 		if (!row) return;
-		row.node.name = editingName.trim() || '<New Node>';
+		row.node.name = sanitizeIdentifierLike(editingName, 128) || '<New Node>';
 		editingNodeId = null;
 		editingName = '';
 		ast = [...ast];
@@ -548,7 +549,7 @@
 	function updateNodeRange(nodeId: string, key: 'rangeStart' | 'rangeEnd' | 'rangeStep', value: string): void {
 		const row = findRowById(ast, nodeId);
 		if (!row) return;
-		row.node[key] = value;
+		row.node[key] = sanitizeText(value, 24);
 		ast = [...ast];
 		updateYamlFromAst();
 	}
@@ -557,7 +558,7 @@
 		const row = findRowById(ast, nodeId);
 		if (!row || row.node.children.length > 0) return;
 		row.node.kind = 'variable';
-		row.node.dataType = value;
+		row.node.dataType = sanitizeIdentifierLike(value, 32);
 		ast = [...ast];
 		updateYamlFromAst();
 	}
