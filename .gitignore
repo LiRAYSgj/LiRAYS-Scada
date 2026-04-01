@@ -231,3 +231,4 @@ lirays-scada*.pkg
 lirays-scada*.dmg
 macos-pkg/**/lirays-scada
 distributions
+*.exe

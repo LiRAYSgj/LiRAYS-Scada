@@ -42,8 +42,12 @@ frontend:
 .PHONY: backend-build
 backend-build: frontend
 	@echo "🦀 Building Rust backend..."
-ifeq ($(ARCH),x86_64)
+ifeq ($(UNAME_S),Darwin)
+  ifeq ($(ARCH),x86_64)
 	cargo build --release --target x86_64-apple-darwin
+  else
+	cargo build --release
+  endif
 else
 	cargo build --release
 endif
