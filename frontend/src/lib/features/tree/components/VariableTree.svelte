@@ -979,6 +979,14 @@
           type="text"
           class="w-full"
           bind:value={addName}
+          oninput={(event) => {
+            const target = event.currentTarget as HTMLInputElement;
+            if (target.value.includes("/")) {
+              const cleaned = target.value.replaceAll("/", "");
+              target.value = cleaned;
+              addName = cleaned;
+            }
+          }}
           onblur={() => touchAddField("name")}
           placeholder="Enter node name"
         />

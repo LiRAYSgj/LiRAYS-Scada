@@ -21,7 +21,8 @@ export const addTreeItemSchema = z
     name: z
       .string()
       .transform((v) => sanitizeIdentifierLike(v, 128))
-      .refine((v) => v.length > 0, "Name is required"),
+      .refine((v) => v.length > 0, "Name is required")
+      .refine((v) => !v.includes("/"), 'Name cannot contain "/"'),
     kind: z.coerce.number().int(),
     dataType: z.coerce.number().int(),
     unit: z
