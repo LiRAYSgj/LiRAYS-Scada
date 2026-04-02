@@ -12,6 +12,7 @@ import {
   serializeYamlLike,
   validateNamespaceAst,
   normalizeLeafFoldersToVariables,
+  normalizeVariableBlockNodes,
   normalizeFolderState,
   astToNamespaceJson,
   mergeTrailingBlankLinesAfterAutoFill,
@@ -56,6 +57,9 @@ describe("namespace-yaml", () => {
     it("returns plain name when no brackets", () => {
       expect(splitNameAndRange("Motor_")).toEqual({
         name: "Motor_",
+        nameSuffix: "",
+        seriesMode: "none",
+        seriesValues: "",
         rangeStart: "",
         rangeEnd: "",
         rangeStep: "",
@@ -64,6 +68,9 @@ describe("namespace-yaml", () => {
     it("parses range [0:20]", () => {
       expect(splitNameAndRange("Area_[0:20]")).toEqual({
         name: "Area_",
+        nameSuffix: "",
+        seriesMode: "numeric",
+        seriesValues: "",
         rangeStart: "0",
         rangeEnd: "20",
         rangeStep: "",
@@ -72,6 +79,9 @@ describe("namespace-yaml", () => {
     it("parses range [:4] (empty start)", () => {
       expect(splitNameAndRange("Line_[:4]")).toEqual({
         name: "Line_",
+        nameSuffix: "",
+        seriesMode: "numeric",
+        seriesValues: "",
         rangeStart: "",
         rangeEnd: "4",
         rangeStep: "",
@@ -80,9 +90,23 @@ describe("namespace-yaml", () => {
     it("parses range with step [0:100:2]", () => {
       expect(splitNameAndRange("Var_[0:100:2]")).toEqual({
         name: "Var_",
+        nameSuffix: "",
+        seriesMode: "numeric",
+        seriesValues: "",
         rangeStart: "0",
         rangeEnd: "100",
         rangeStep: "2",
+      });
+    });
+    it("parses enum series with suffix", () => {
+      expect(splitNameAndRange("Region_[America, Europe]_Node")).toEqual({
+        name: "Region_",
+        nameSuffix: "_Node",
+        seriesMode: "enum",
+        seriesValues: "America, Europe",
+        rangeStart: "",
+        rangeEnd: "",
+        rangeStep: "",
       });
     });
   });
@@ -92,6 +116,9 @@ describe("namespace-yaml", () => {
       expect(
         composeNodeName({
           name: "Power",
+          nameSuffix: "",
+          seriesMode: "none",
+          seriesValues: "",
           rangeEnd: "",
           rangeStart: "",
           rangeStep: "",
@@ -102,6 +129,9 @@ describe("namespace-yaml", () => {
       expect(
         composeNodeName({
           name: "Area_",
+          nameSuffix: "",
+          seriesMode: "numeric",
+          seriesValues: "",
           rangeStart: "0",
           rangeEnd: "20",
           rangeStep: "",
@@ -112,11 +142,27 @@ describe("namespace-yaml", () => {
       expect(
         composeNodeName({
           name: "Var_",
+          nameSuffix: "",
+          seriesMode: "numeric",
+          seriesValues: "",
           rangeStart: "0",
           rangeEnd: "100",
           rangeStep: "2",
         } as NamespaceNode),
       ).toBe("Var_[0:100:2]");
+    });
+    it("renders enum series with suffix", () => {
+      expect(
+        composeNodeName({
+          name: "Region_",
+          nameSuffix: "_Node",
+          seriesMode: "enum",
+          seriesValues: "America, Europe",
+          rangeStart: "",
+          rangeEnd: "",
+          rangeStep: "",
+        } as NamespaceNode),
+      ).toBe("Region_[America, Europe]_Node");
     });
   });
 
@@ -127,18 +173,34 @@ describe("namespace-yaml", () => {
         name: "F",
         kind: "variable",
         dataType: "Float",
+        unit: "",
+        min: "",
+        max: "",
+        maxLength: "",
+        options: [],
         rangeStart: "",
         rangeEnd: "",
         rangeStep: "",
+        nameSuffix: "",
+        seriesMode: "none",
+        seriesValues: "",
         children: [
           {
             id: "2",
             name: "C",
             kind: "variable",
             dataType: "Float",
+            unit: "",
+            min: "",
+            max: "",
+            maxLength: "",
+            options: [],
             rangeStart: "",
             rangeEnd: "",
             rangeStep: "",
+            nameSuffix: "",
+            seriesMode: "none",
+            seriesValues: "",
             children: [],
           },
         ],
@@ -262,6 +324,51 @@ describe("namespace-yaml", () => {
       const roots2 = parseYamlLike("\n  \n", {}, ALLOWED_TYPES, nextId);
       expect(roots2).toHaveLength(0);
     });
+
+    it("parses long variable block without treating properties as children", () => {
+      const yaml = [
+        "Temperature:",
+        "  type: Float",
+        "  unit: kW",
+        "  min: 0",
+        "  max: 100",
+      ].join("\n");
+      const roots = parseYamlLike(yaml, {}, ALLOWED_TYPES, nextId);
+      expect(roots).toHaveLength(1);
+      expect(roots[0].name).toBe("Temperature");
+      expect(roots[0].kind).toBe("variable");
+      expect(roots[0].dataType).toBe("Float");
+      expect(roots[0].children).toHaveLength(0);
+    });
+
+    it("parses options list under text variable block", () => {
+      const yaml = [
+        "Label:",
+        "  type: Text",
+        "  options:",
+        "    - RUNNING",
+        "    - STOPPED",
+      ].join("\n");
+      const roots = parseYamlLike(yaml, {}, ALLOWED_TYPES, nextId);
+      expect(roots).toHaveLength(1);
+      expect(roots[0].name).toBe("Label");
+      expect(roots[0].kind).toBe("variable");
+      expect(roots[0].dataType).toBe("Text");
+      expect(roots[0].children).toHaveLength(0);
+    });
+
+    it("throws when numeric metadata contains trailing comma", () => {
+      const yaml = [
+        "Temperature:",
+        "  type: Float",
+        "  unit: kW",
+        "  min: 0,",
+        "  max: 100",
+      ].join("\n");
+      expect(() => parseYamlLike(yaml, {}, ALLOWED_TYPES, nextId)).toThrow(
+        /Min must be numeric/,
+      );
+    });
   });
 
   describe("serializeYamlLike", () => {
@@ -272,9 +379,17 @@ describe("namespace-yaml", () => {
           name: "Power",
           kind: "variable",
           dataType: "Float",
+          unit: "",
+          min: "",
+          max: "",
+          maxLength: "",
+          options: [],
           rangeStart: "",
           rangeEnd: "",
           rangeStep: "",
+          nameSuffix: "",
+          seriesMode: "none",
+          seriesValues: "",
           children: [],
         },
       ];
@@ -288,27 +403,51 @@ describe("namespace-yaml", () => {
           name: "Area_",
           kind: "folder",
           dataType: null,
+          unit: "",
+          min: "",
+          max: "",
+          maxLength: "",
+          options: [],
           rangeStart: "0",
           rangeEnd: "20",
           rangeStep: "",
+          nameSuffix: "",
+          seriesMode: "none",
+          seriesValues: "",
           children: [
             {
               id: "2",
               name: "Line_",
               kind: "folder",
               dataType: null,
+              unit: "",
+              min: "",
+              max: "",
+              maxLength: "",
+              options: [],
               rangeStart: "",
               rangeEnd: "4",
               rangeStep: "",
+              nameSuffix: "",
+              seriesMode: "none",
+              seriesValues: "",
               children: [
                 {
                   id: "3",
                   name: "Power",
                   kind: "variable",
                   dataType: "Float",
+                  unit: "",
+                  min: "",
+                  max: "",
+                  maxLength: "",
+                  options: [],
                   rangeStart: "",
                   rangeEnd: "",
                   rangeStep: "",
+                  nameSuffix: "",
+                  seriesMode: "none",
+                  seriesValues: "",
                   children: [],
                 },
               ],
@@ -344,18 +483,34 @@ describe("namespace-yaml", () => {
           name: "F",
           kind: "folder",
           dataType: null,
+          unit: "",
+          min: "",
+          max: "",
+          maxLength: "",
+          options: [],
           rangeStart: "",
           rangeEnd: "",
           rangeStep: "",
+          nameSuffix: "",
+          seriesMode: "none",
+          seriesValues: "",
           children: [
             {
               id: "2",
               name: "X",
               kind: "variable",
               dataType: "Float",
+              unit: "",
+              min: "",
+              max: "",
+              maxLength: "",
+              options: [],
               rangeStart: "",
               rangeEnd: "",
               rangeStep: "",
+              nameSuffix: "",
+              seriesMode: "none",
+              seriesValues: "",
               children: [],
             },
           ],
@@ -371,9 +526,17 @@ describe("namespace-yaml", () => {
           name: "X",
           kind: "folder",
           dataType: null,
+          unit: "",
+          min: "",
+          max: "",
+          maxLength: "",
+          options: [],
           rangeStart: "",
           rangeEnd: "",
           rangeStep: "",
+          nameSuffix: "",
+          seriesMode: "none",
+          seriesValues: "",
           children: [],
         },
       ];
@@ -391,9 +554,17 @@ describe("namespace-yaml", () => {
           name: "X",
           kind: "folder",
           dataType: null,
+          unit: "",
+          min: "",
+          max: "",
+          maxLength: "",
+          options: [],
           rangeStart: "",
           rangeEnd: "",
           rangeStep: "",
+          nameSuffix: "",
+          seriesMode: "none",
+          seriesValues: "",
           children: [],
         },
       ];
@@ -409,18 +580,34 @@ describe("namespace-yaml", () => {
           name: "F",
           kind: "folder",
           dataType: null,
+          unit: "",
+          min: "",
+          max: "",
+          maxLength: "",
+          options: [],
           rangeStart: "",
           rangeEnd: "",
           rangeStep: "",
+          nameSuffix: "",
+          seriesMode: "none",
+          seriesValues: "",
           children: [
             {
               id: "2",
               name: "X",
               kind: "variable",
               dataType: "Integer",
+              unit: "",
+              min: "",
+              max: "",
+              maxLength: "",
+              options: [],
               rangeStart: "",
               rangeEnd: "",
               rangeStep: "",
+              nameSuffix: "",
+              seriesMode: "none",
+              seriesValues: "",
               children: [],
             },
           ],
@@ -439,18 +626,34 @@ describe("namespace-yaml", () => {
         name: "F",
         kind: "variable",
         dataType: "Float",
+        unit: "",
+        min: "",
+        max: "",
+        maxLength: "",
+        options: [],
         rangeStart: "",
         rangeEnd: "",
         rangeStep: "",
+        nameSuffix: "",
+        seriesMode: "none",
+        seriesValues: "",
         children: [
           {
             id: "2",
             name: "C",
             kind: "variable",
             dataType: "Float",
+            unit: "",
+            min: "",
+            max: "",
+            maxLength: "",
+            options: [],
             rangeStart: "",
             rangeEnd: "",
             rangeStep: "",
+            nameSuffix: "",
+            seriesMode: "none",
+            seriesValues: "",
             children: [],
           },
         ],
@@ -458,6 +661,53 @@ describe("namespace-yaml", () => {
       normalizeFolderState([node]);
       expect(node.kind).toBe("folder");
       expect(node.dataType).toBeNull();
+    });
+  });
+
+  describe("normalizeVariableBlockNodes", () => {
+    it("throws if variable block misses type", () => {
+      const nodes: NamespaceNode[] = [
+        {
+          id: "1",
+          name: "BadVar",
+          kind: "folder",
+          dataType: null,
+          unit: "",
+          min: "",
+          max: "",
+          maxLength: "",
+          options: [],
+          rangeStart: "",
+          rangeEnd: "",
+          rangeStep: "",
+          nameSuffix: "",
+          seriesMode: "none",
+          seriesValues: "",
+          children: [
+            {
+              id: "2",
+              name: "unit",
+              kind: "variable",
+              dataType: "kW",
+              unit: "",
+              min: "",
+              max: "",
+              maxLength: "",
+              options: [],
+              rangeStart: "",
+              rangeEnd: "",
+              rangeStep: "",
+              nameSuffix: "",
+              seriesMode: "none",
+              seriesValues: "",
+              children: [],
+            },
+          ],
+        },
+      ];
+      expect(() => normalizeVariableBlockNodes(nodes, ALLOWED_TYPES)).toThrow(
+        /missing required "type"/,
+      );
     });
   });
 
@@ -469,27 +719,51 @@ describe("namespace-yaml", () => {
           name: "Area_",
           kind: "folder",
           dataType: null,
+          unit: "",
+          min: "",
+          max: "",
+          maxLength: "",
+          options: [],
           rangeStart: "0",
           rangeEnd: "20",
           rangeStep: "",
+          nameSuffix: "",
+          seriesMode: "none",
+          seriesValues: "",
           children: [
             {
               id: "2",
               name: "Line_",
               kind: "folder",
               dataType: null,
+              unit: "",
+              min: "",
+              max: "",
+              maxLength: "",
+              options: [],
               rangeStart: "",
               rangeEnd: "4",
               rangeStep: "",
+              nameSuffix: "",
+              seriesMode: "none",
+              seriesValues: "",
               children: [
                 {
                   id: "3",
                   name: "Power",
                   kind: "variable",
                   dataType: "Float",
+                  unit: "",
+                  min: "",
+                  max: "",
+                  maxLength: "",
+                  options: [],
                   rangeStart: "",
                   rangeEnd: "",
                   rangeStep: "",
+                  nameSuffix: "",
+                  seriesMode: "none",
+                  seriesValues: "",
                   children: [],
                 },
               ],

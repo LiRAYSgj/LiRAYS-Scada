@@ -33,6 +33,44 @@ function buildNamespaceVariable(t: string) {
   };
 }
 
+type NamespaceVariableSpec = {
+  type: string;
+  unit?: unknown;
+  min?: unknown;
+  max?: unknown;
+  maxLength?: unknown;
+  options?: unknown;
+};
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function isNamespaceVariableSpec(value: unknown): value is NamespaceVariableSpec {
+  if (!isPlainObject(value)) return false;
+  return typeof value.type === "string";
+}
+
+function toOptionalNumber(value: unknown, field: string): number | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  throw new Error(`Invalid namespace variable "${field}" (expected number).`);
+}
+
+function toOptionalString(value: unknown, field: string): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value === "string") return value;
+  throw new Error(`Invalid namespace variable "${field}" (expected string).`);
+}
+
+function toStringArray(value: unknown, field: string): string[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) {
+    throw new Error(`Invalid namespace variable "${field}" (expected string[]).`);
+  }
+  return value;
+}
+
 export function toBackendValue(value: TagScalarValue): Value {
   if (typeof value === "string") {
     return { textValue: value };
@@ -210,9 +248,21 @@ function nodeFromJson(val: unknown): NamespaceNode {
   if (typeof val === "string") {
     return { variable: buildNamespaceVariable(val) };
   }
-  if (val !== null && typeof val === "object" && !Array.isArray(val)) {
+  if (isNamespaceVariableSpec(val)) {
+    return {
+      variable: {
+        varDType: stringToVarType(val.type),
+        unit: toOptionalString(val.unit, "unit"),
+        min: toOptionalNumber(val.min, "min"),
+        max: toOptionalNumber(val.max, "max"),
+        options: toStringArray(val.options, "options"),
+        maxLen: toOptionalNumber(val.maxLength, "maxLength"),
+      },
+    };
+  }
+  if (isPlainObject(val)) {
     const children: { [key: string]: NamespaceNode } = {};
-    for (const [key, child] of Object.entries(val as Record<string, unknown>)) {
+    for (const [key, child] of Object.entries(val)) {
       children[key] = nodeFromJson(child);
     }
     return { folder: { children } as NamespaceFolder };

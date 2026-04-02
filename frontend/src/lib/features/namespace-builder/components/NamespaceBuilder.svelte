@@ -1,8 +1,8 @@
 <script lang="ts">
 	/**
 	 * Namespace builder: two modes — visual tree (CRUD + DnD) and code YAML (Monaco).
-	 * YAML format: "name: Type" (variable) or "name:" (folder). Leaf type auto-fill runs when
-	 * strict parse fails; cursor-aware skips avoid rewriting the line the user is on.
+	 * YAML format: "name: Type" (variable) or "name:" (folder).
+	 * Validation runs on a debounce; editor content is never auto-mutated while typing.
 	 */
 	import { browser } from '$app/environment';
 	import { onDestroy, onMount, tick } from 'svelte';
@@ -10,7 +10,7 @@
 	import type { EditorMode, NamespaceNode } from '../types.js';
 	import * as nsYaml from '../namespace-yaml.js';
 	import { Button } from '$lib/components/Button';
-	import { sanitizeIdentifierLike, sanitizeText } from '$lib/forms/sanitize';
+	import { sanitizeText } from '$lib/forms/sanitize';
 	import NamespaceBuilderHeader from './NamespaceBuilderHeader.svelte';
 	import NamespaceBuilderTreeRow from './NamespaceBuilderTreeRow.svelte';
 	import NamespaceBuilderYamlPanel from './NamespaceBuilderYamlPanel.svelte';
@@ -136,8 +136,16 @@
 		return {
 			id: nextId(),
 			name: '<New Node>',
+			nameSuffix: '',
+			seriesMode: 'none',
+			seriesValues: '',
 			kind: 'variable',
 			dataType: allowedDataTypes[0] ?? 'Float',
+			unit: '',
+			min: '',
+			max: '',
+			maxLength: '',
+			options: [],
 			rangeStart: '',
 			rangeEnd: '',
 			rangeStep: '',
@@ -192,257 +200,8 @@
 		onChange?.({ ast, yamlText });
 	}
 
-	// ---------- Leaf type auto-fill (code editor) ----------
-	// When strict parse fails (e.g. leaf has "Power:" without type), we try permissive parse
-	// + normalize leaf folders to variables + serialize. We only replace folder-only lines
-	// with "name: Type"; all other lines (including the line the user is typing) stay from before.
-	// Line helpers and skip logic live below.
-
-	/**
-	 * Apply afterYaml by replacing only changed lines via executeEdits so the cursor
-	 * and selection stay on the line the user moved to. Falls back to setValue if
-	 * line counts differ or model is out of sync.
-	 */
-	function applyYamlPreservingCursor(beforeYaml: string, afterYaml: string): boolean {
-		if (!editor || !model || !monaco || model.getValue() !== beforeYaml) return false;
-		const beforeLines = beforeYaml.split('\n');
-		let afterLines = afterYaml.split('\n');
-		// Must match line count for line-by-line replace; pad with blank lines if before had blank tail only
-		if (afterLines.length < beforeLines.length) {
-			const padded = afterLines.slice();
-			for (let i = afterLines.length; i < beforeLines.length; i += 1) {
-				if (beforeLines[i].trim() !== '') return false;
-				padded.push('');
-			}
-			afterLines = padded;
-			afterYaml = afterLines.join('\n');
-		}
-		if (beforeLines.length !== afterLines.length) return false;
-		const changed: number[] = [];
-		for (let i = 0; i < beforeLines.length; i += 1) {
-			if (beforeLines[i] !== afterLines[i]) changed.push(i);
-		}
-		if (changed.length === 0) return true;
-		// Save cursor by line/column — selection objects can be invalid after edits
-		const pos = editor.getPosition();
-		const lineNumber = pos?.lineNumber ?? 1;
-		const column = pos?.column ?? 1;
-		const cursorLineIndex = lineNumber - 1;
-		suppressEditorSync = true;
-		try {
-			// Replace only the *content* of each changed line (no trailing \n) so blank lines
-			// the user added below (Enter) are not swallowed by the edit.
-			// Never overwrite the line the user is typing on when it's an incomplete name (no colon).
-			for (let k = changed.length - 1; k >= 0; k -= 1) {
-				const i = changed[k];
-				const text =
-					i === cursorLineIndex && nsYaml.isPlainNameLine(beforeLines[i])
-						? beforeLines[i]
-						: afterLines[i];
-				const line = i + 1;
-				const maxCol = model.getLineMaxColumn(line);
-				const range = new monaco.Range(line, 1, line, maxCol);
-				editor.executeEdits('leaf-autofill', [{ range, text }]);
-			}
-		} finally {
-			suppressEditorSync = false;
-		}
-		// Restore after Monaco applies edits (sync setPosition often gets overwritten)
-		const restore = () => {
-			try {
-				const maxLine = model.getLineCount();
-				const safeLine = Math.min(lineNumber, maxLine);
-				const maxCol = model.getLineMaxColumn(safeLine);
-				const safeCol = Math.min(column, maxCol);
-				editor.setPosition({ lineNumber: safeLine, column: safeCol });
-				editor.revealPositionInCenterIfOutsideViewport({
-					lineNumber: safeLine,
-					column: safeCol
-				});
-			} catch {
-				/* ignore */
-			}
-		};
-		restore();
-		requestAnimationFrame(() => {
-			restore();
-			requestAnimationFrame(restore);
-		});
-		let value = model.getValue();
-		if (value !== afterYaml) {
-			// Edits didn’t match — full replace but always restore caret (setValue resets to 1,1)
-			suppressEditorSync = true;
-			model.setValue(afterYaml);
-			suppressEditorSync = false;
-			const restoreAfterSetValue = () => {
-				try {
-					const maxLine = model.getLineCount();
-					const safeLine = Math.min(lineNumber, maxLine);
-					const maxCol = Math.max(1, model.getLineMaxColumn(safeLine));
-					const safeCol = Math.min(Math.max(1, column), maxCol);
-					editor.setPosition({ lineNumber: safeLine, column: safeCol });
-					editor.revealPositionInCenterIfOutsideViewport({
-						lineNumber: safeLine,
-						column: safeCol
-					});
-					editor.focus();
-				} catch {
-					/* ignore */
-				}
-			};
-			restoreAfterSetValue();
-			setTimeout(restoreAfterSetValue, 0);
-			requestAnimationFrame(() => {
-				restoreAfterSetValue();
-				requestAnimationFrame(restoreAfterSetValue);
-			});
-		}
-		value = model.getValue();
-		return value === afterYaml || value.replace(/\r\n/g, '\n') === afterYaml.replace(/\r\n/g, '\n');
-	}
-
-	/**
-	 * Permissive parse + inject default type on folder-only leaves + re-serialize; then apply to editor.
-	 * Used when strict parse fails due to missing type. With skipWhenCursorOnModifiedLine:
-	 * - Skip 1: cursor on folder-only line -> wait until user moves (click/arrows).
-	 * - Skip 2: cursor on blank line under folder-only (after Enter) -> wait for next key (space/tab = no fill, other = fill via onKeyDown).
-	 * - Skip 3: cursor on a folder-only line whose content would change -> avoid overwriting; other lines (e.g. typing "d") still allow filling previous.
-	 */
-	function tryParseAndAutoFillLeafTypes(options?: {
-		skipWhenCursorOnModifiedLine?: boolean;
-	}): boolean {
-		try {
-			// Use current editor content so we never overwrite what the user just typed (e.g. "assa")
-			// with a merge built from stale yamlText (e.g. "ass" -> "ass: Float").
-			const contentToUse =
-				editor && model ? model.getValue() : yamlText;
-			const roots = nsYaml.parseYamlLike(contentToUse, { skipLeafTypeValidation: true }, allowedDataTypes, nextId);
-			nsYaml.normalizeLeafFoldersToVariables(roots, allowedDataTypes);
-			nsYaml.normalizeFolderState(roots);
-			let afterYaml = nsYaml.serializeYamlLike(roots, 0, allowedDataTypes);
-			// Don't convert folder-only lines that are followed by a blank line (user pressed Enter
-			// and is about to type a child) — keep them as folders so we never add ": Float".
-			const beforeLines = contentToUse.split('\n');
-			const afterLines = afterYaml.split('\n');
-			if (beforeLines.length === afterLines.length) {
-				for (let i = 0; i < beforeLines.length - 1; i += 1) {
-					if (
-						nsYaml.isFolderOnlyLine(beforeLines[i]) &&
-						beforeLines[i + 1].trim() === ''
-					) {
-						afterLines[i] = beforeLines[i];
-					}
-				}
-				afterYaml = afterLines.join('\n');
-			}
-			let cursorLineForMerge = 0;
-			if (options?.skipWhenCursorOnModifiedLine && editor && model) {
-				try {
-					if (model.getValue() !== contentToUse) return false;
-					const pos = editor.getPosition();
-					if (pos) {
-						cursorLineForMerge = pos.lineNumber;
-						const beforeLinesForSkip = contentToUse.split('\n');
-						const cursorIndex = pos.lineNumber - 1;
-						if (
-							cursorIndex >= 0 &&
-							cursorIndex < beforeLinesForSkip.length &&
-							nsYaml.isFolderOnlyLine(beforeLinesForSkip[cursorIndex])
-						) {
-							return false;
-						}
-						if (
-							cursorIndex > 0 &&
-							cursorIndex < beforeLinesForSkip.length &&
-							beforeLinesForSkip[cursorIndex].trim() === '' &&
-							nsYaml.isFolderOnlyLine(beforeLinesForSkip[cursorIndex - 1])
-						) {
-							return false;
-						}
-						const afterLines = afterYaml.split('\n');
-						if (
-							beforeLinesForSkip.length === afterLines.length &&
-							cursorIndex >= 0 &&
-							cursorIndex < beforeLinesForSkip.length &&
-							nsYaml.isFolderOnlyLine(beforeLinesForSkip[cursorIndex]) &&
-							beforeLinesForSkip[cursorIndex] !== afterLines[cursorIndex]
-						) {
-							return false;
-						}
-					}
-				} catch {
-					/* ignore position read errors */
-				}
-			}
-			// Preserve Enter-created blank line(s) so cursor line is not lost
-			if (model?.getValue() === contentToUse) {
-				const lineToUse =
-					cursorLineForMerge > 0
-						? cursorLineForMerge
-						: contentToUse.split('\n').length;
-				afterYaml = nsYaml.mergeTrailingBlankLinesAfterAutoFill(contentToUse, afterYaml, lineToUse);
-			}
-			ast = roots;
-			const merged = nsYaml.buildAutoFillMergedYaml(contentToUse, afterYaml);
-			if (model && model.getValue() !== merged) {
-				const before = contentToUse;
-				const posBefore = editor?.getPosition();
-				const lineNum = posBefore?.lineNumber ?? 1;
-				const colNum = posBefore?.column ?? 1;
-				if (!applyYamlPreservingCursor(before, merged)) {
-					suppressEditorSync = true;
-					model.setValue(merged);
-					suppressEditorSync = false;
-					yamlText = merged;
-					// applyYamlPreservingCursor failed early — still restore caret after setValue
-					const fixCaret = () => {
-						try {
-							if (!editor || !model) return;
-							const maxLine = model.getLineCount();
-							const safeLine = Math.min(lineNum, maxLine);
-							const maxCol = Math.max(1, model.getLineMaxColumn(safeLine));
-							const safeCol = Math.min(Math.max(1, colNum), maxCol);
-							editor.setPosition({ lineNumber: safeLine, column: safeCol });
-							editor.revealPositionInCenterIfOutsideViewport({
-								lineNumber: safeLine,
-								column: safeCol
-							});
-							editor.focus();
-						} catch {
-							/* ignore */
-						}
-					};
-					fixCaret();
-					setTimeout(fixCaret, 0);
-					requestAnimationFrame(() => {
-						fixCaret();
-						requestAnimationFrame(fixCaret);
-					});
-				} else {
-					yamlText = model.getValue();
-				}
-			} else {
-				yamlText = merged;
-			}
-			// Re-validate merged content so validation message shows regardless of cursor (e.g. "bbbb" invalid)
-			const contentToValidate = model ? model.getValue() : merged;
-			try {
-				nsYaml.parseYamlLike(contentToValidate, {}, allowedDataTypes, nextId);
-				parseError = '';
-			} catch (err) {
-				parseError = err instanceof Error ? err.message : 'Invalid YAML';
-			}
-			onChange?.({ ast, yamlText });
-			return true;
-		} catch {
-			return false;
-		}
-	}
-
 	// ---------- Parse schedule ----------
-	// Content change and cursor position both schedule debounced parse. When strict parse
-	// fails (e.g. leaf without type), we try auto-fill (tryParseAndAutoFillLeafTypes) with
-	// cursor-aware skips before showing an error.
+	// Validate YAML only after debounce; no auto-fill mutations while typing.
 
 	function parseAndApplyYaml(): void {
 		try {
@@ -451,9 +210,6 @@
 			parseError = '';
 			onChange?.({ ast, yamlText });
 		} catch (error) {
-			if (tryParseAndAutoFillLeafTypes({ skipWhenCursorOnModifiedLine: true })) {
-				return;
-			}
 			parseError = error instanceof Error ? error.message : 'Invalid YAML';
 		}
 	}
@@ -463,16 +219,6 @@
 		parseTimer = setTimeout(() => {
 			parseAndApplyYaml();
 		}, 250);
-	}
-
-	/** Run parse (and auto-fill) immediately; used when user types non-space on blank-under-folder line. */
-	function runParseYamlNow(): void {
-		if (parseTimer) {
-			clearTimeout(parseTimer);
-			parseTimer = null;
-		}
-		if (editor) yamlText = editor.getValue();
-		parseAndApplyYaml();
 	}
 
 	function addRootNode(): void {
@@ -527,11 +273,31 @@
 		const row = findRowById(ast, nodeId);
 		if (!row) return;
 		editingNodeId = nodeId;
-		editingName = row.node.name;
+		editingName = row.node.name === '<New Node>' ? '' : row.node.name;
 		setTimeout(() => {
 			editingInputEl?.focus();
 			editingInputEl?.select();
 		}, 0);
+	}
+
+	function nodeHasGeneratedSeries(node: NamespaceNode): boolean {
+		if (node.seriesMode === 'numeric') {
+			return node.rangeEnd.trim() !== '';
+		}
+		if (node.seriesMode === 'enum') {
+			return node.seriesValues
+				.split(',')
+				.map((value) => value.trim())
+				.filter((value) => value.length > 0).length > 0;
+		}
+		return false;
+	}
+
+	function enforceNodeNameFallback(node: NamespaceNode): void {
+		if (node.name.trim() !== '') return;
+		if (!nodeHasGeneratedSeries(node)) {
+			node.name = '<New Node>';
+		}
 	}
 
 	function commitEditName(nodeId: string): void {
@@ -539,17 +305,53 @@
 		if (editingNodeId !== nodeId) return;
 		const row = findRowById(ast, nodeId);
 		if (!row) return;
-		row.node.name = sanitizeIdentifierLike(editingName, 128) || '<New Node>';
+		const cleanedName = sanitizeText(editingName, 128).trim();
+		if (cleanedName === '') {
+			row.node.name = '';
+			enforceNodeNameFallback(row.node);
+		} else {
+			row.node.name = cleanedName;
+		}
 		editingNodeId = null;
 		editingName = '';
 		ast = [...ast];
 		updateYamlFromAst();
 	}
 
-	function updateNodeRange(nodeId: string, key: 'rangeStart' | 'rangeEnd' | 'rangeStep', value: string): void {
+	function updateNodeRange(
+		nodeId: string,
+		key: 'rangeStart' | 'rangeEnd' | 'rangeStep' | 'nameSuffix' | 'seriesValues',
+		value: string
+	): void {
 		const row = findRowById(ast, nodeId);
 		if (!row) return;
-		row.node[key] = sanitizeText(value, 24);
+		row.node[key] = sanitizeText(value, key === 'nameSuffix' ? 64 : 256);
+		if (key === 'rangeEnd' || key === 'seriesValues') {
+			enforceNodeNameFallback(row.node);
+		}
+		ast = [...ast];
+		updateYamlFromAst();
+	}
+
+	function updateNodeSeriesMode(nodeId: string, value: string): void {
+		const row = findRowById(ast, nodeId);
+		if (!row) return;
+		const mode =
+			value === 'range'
+				? 'numeric'
+				: value === 'set'
+					? 'enum'
+					: 'none';
+		row.node.seriesMode = mode;
+		if (mode !== 'numeric') {
+			row.node.rangeStart = '';
+			row.node.rangeEnd = '';
+			row.node.rangeStep = '';
+		}
+		if (mode !== 'enum') {
+			row.node.seriesValues = '';
+		}
+		enforceNodeNameFallback(row.node);
 		ast = [...ast];
 		updateYamlFromAst();
 	}
@@ -557,8 +359,49 @@
 	function updateNodeType(nodeId: string, value: string): void {
 		const row = findRowById(ast, nodeId);
 		if (!row || row.node.children.length > 0) return;
+		const nextType = sanitizeText(value, 32);
 		row.node.kind = 'variable';
-		row.node.dataType = sanitizeIdentifierLike(value, 32);
+		row.node.dataType = nextType;
+		const lowered = nextType.toLowerCase();
+		if (lowered === 'text') {
+			row.node.min = '';
+			row.node.max = '';
+		} else if (lowered === 'boolean' || lowered === 'bool') {
+			row.node.unit = '';
+			row.node.min = '';
+			row.node.max = '';
+			row.node.maxLength = '';
+			row.node.options = [];
+		} else {
+			row.node.maxLength = '';
+			row.node.options = [];
+		}
+		ast = [...ast];
+		updateYamlFromAst();
+	}
+
+	function updateNodeVariableMeta(
+		nodeId: string,
+		key: 'unit' | 'min' | 'max' | 'maxLength' | 'options',
+		value: string | string[]
+	): void {
+		const row = findRowById(ast, nodeId);
+		if (!row || row.node.children.length > 0) return;
+		if (key === 'options') {
+			const list = Array.isArray(value)
+				? value
+						.map((item) => sanitizeText(item, 128).trim())
+						.filter((item) => item.length > 0)
+				: [];
+			if (row.node.options.length === list.length && row.node.options.every((item, i) => item === list[i])) {
+				return;
+			}
+			row.node.options = list;
+		} else {
+			const text = sanitizeText(String(value), 64);
+			if (row.node[key] === text) return;
+			row.node[key] = text;
+		}
 		ast = [...ast];
 		updateYamlFromAst();
 	}
@@ -736,10 +579,7 @@
 			parseError = '';
 			updateYamlFromAst();
 		} catch (e1) {
-			// Format always applies (cursor position less important)
-			if (!tryParseAndAutoFillLeafTypes({ skipWhenCursorOnModifiedLine: false })) {
-				parseError = e1 instanceof Error ? e1.message : 'Invalid YAML';
-			}
+			parseError = e1 instanceof Error ? e1.message : 'Invalid YAML';
 		}
 	}
 
@@ -881,30 +721,11 @@
 			host.addEventListener('contextmenu', () => {
 				[60, 120, 200, 350].forEach((ms) => setTimeout(pruneContextMenu, ms));
 			});
-			// Parse triggers: content change and cursor position both schedule debounced parse,
-			// so auto-fill can run after the user leaves a folder-only line (click/arrows).
+			// Parse trigger: content changes only; debounced validation.
 			editor.onDidChangeModelContent(() => {
 				if (suppressEditorSync) return;
 				yamlText = editor.getValue();
 				scheduleParseYaml();
-			});
-			editor.onDidChangeCursorPosition(() => {
-				if (suppressEditorSync) return;
-				yamlText = editor.getValue();
-				scheduleParseYaml();
-			});
-			// After Enter, cursor is on blank line under folder-only. Next key: space/tab -> no fill (folder+child); any other -> run parse to fill previous line.
-			editor.onKeyDown((e: { browserEvent: KeyboardEvent }) => {
-				const key = e.browserEvent?.key;
-				if (key === ' ' || key === 'Tab') return;
-				const pos = editor.getPosition();
-				if (!pos || !model) return;
-				const lineContent = model.getLineContent(pos.lineNumber);
-				const prevLine =
-					pos.lineNumber > 1 ? model.getLineContent(pos.lineNumber - 1) : '';
-				if (lineContent.trim() === '' && nsYaml.isFolderOnlyLine(prevLine)) {
-					setTimeout(runParseYamlNow, 0);
-				}
 			});
 			// Monaco injects textarea(s) without name/id — DevTools Issues flags them; satisfy audit once DOM is ready
 			const patchMonacoFormFields = (container: HTMLElement) => {
@@ -1087,34 +908,38 @@
 						onscroll={onTreeViewportScroll}
 						use:viewportObserver
 					>
-						<div class="pointer-events-none shrink-0" style="height: {topPadding}px" aria-hidden="true"></div>
-						{#each windowRows as row (row.id)}
-							<NamespaceBuilderTreeRow
-								{row}
-								{allowedDataTypes}
-								rowHeight={ROW_HEIGHT}
-								actionsDisabled={createLoading}
-								{draggedNodeId}
-								{dropTarget}
-								{editingNodeId}
-								bind:editingName
-								bind:editingInputEl
-								onPointerDownDrag={startPointerDrag}
-								onRemove={removeNode}
-								onAddChild={addChildNode}
-								onIndent={indentNode}
-								onOutdent={outdentNode}
-								onStartEditName={startEditName}
-								onCommitEditName={commitEditName}
-								onUpdateRange={updateNodeRange}
-								onUpdateType={updateNodeType}
-							/>
-						{/each}
-						<div
-							class="pointer-events-none shrink-0"
-							style="height: {bottomPadding}px"
-							aria-hidden="true"
-						></div>
+						<div class="min-w-full w-max">
+							<div class="pointer-events-none shrink-0" style="height: {topPadding}px" aria-hidden="true"></div>
+							{#each windowRows as row (row.id)}
+								<NamespaceBuilderTreeRow
+									{row}
+									{allowedDataTypes}
+									rowHeight={ROW_HEIGHT}
+									actionsDisabled={createLoading}
+									{draggedNodeId}
+									{dropTarget}
+									{editingNodeId}
+									bind:editingName
+									bind:editingInputEl
+									onPointerDownDrag={startPointerDrag}
+									onRemove={removeNode}
+									onAddChild={addChildNode}
+									onIndent={indentNode}
+									onOutdent={outdentNode}
+									onStartEditName={startEditName}
+									onCommitEditName={commitEditName}
+									onUpdateRange={updateNodeRange}
+									onUpdateSeriesMode={updateNodeSeriesMode}
+									onUpdateType={updateNodeType}
+									onUpdateVariableMeta={updateNodeVariableMeta}
+								/>
+							{/each}
+							<div
+								class="pointer-events-none shrink-0"
+								style="height: {bottomPadding}px"
+								aria-hidden="true"
+							></div>
+						</div>
 					</div>
 				{/if}
 			</div>

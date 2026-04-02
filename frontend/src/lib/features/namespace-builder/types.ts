@@ -9,8 +9,16 @@ export type NodeKind = "folder" | "variable";
 export type NamespaceNode = {
   id: string;
   name: string;
+  nameSuffix: string;
+  seriesMode: "none" | "numeric" | "enum";
+  seriesValues: string;
   kind: NodeKind;
   dataType: string | null;
+  unit: string;
+  min: string;
+  max: string;
+  maxLength: string;
+  options: string[];
   rangeStart: string;
   rangeEnd: string;
   rangeStep: string;

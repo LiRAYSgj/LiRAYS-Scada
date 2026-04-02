@@ -11,6 +11,7 @@
 		min?: number;
 		max?: number;
 		class?: string;
+		onValueChange?: (value: number | undefined) => void;
 	};
 
 	let {
@@ -20,6 +21,7 @@
 		max = undefined,
 		class: className,
 		disabled = false,
+		onValueChange,
 		...restProps
 	}: Props = $props();
 
@@ -33,11 +35,16 @@
 		if (disabled) return;
 		const base = value ?? min ?? 0;
 		value = clamp(base + delta);
+		onValueChange?.(value);
 	}
 
 	const numericStep = $derived(
 		typeof step === "number" && Number.isFinite(step) ? step : 1,
 	);
+
+	function handleInput(): void {
+		onValueChange?.(value);
+	}
 </script>
 
 <div class="relative w-full">
@@ -50,6 +57,7 @@
 		{disabled}
 		data-number-field-input="true"
 		class={cn("w-full pr-18", className)}
+		oninput={handleInput}
 		{...restProps}
 	/>
 	<div class="pointer-events-none absolute inset-y-0 right-1 flex items-center">

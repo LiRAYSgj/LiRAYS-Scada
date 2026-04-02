@@ -817,6 +817,13 @@
         namespaceBuilderParentId && namespaceBuilderParentId.trim() !== ""
           ? namespaceBuilderParentId
           : "/";
+      if (browser) {
+        // Debug payload produced by Namespace Builder right before backend save.
+        /* console.log(
+          "[NamespaceBuilder] JSON before addBulkNamespace:",
+          JSON.stringify(json, null, 2),
+        ); */
+      }
       await tagStreamClient.addBulkNamespace(
         parentForBulk,
         json,

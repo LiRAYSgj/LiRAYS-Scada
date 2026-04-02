@@ -1,9 +1,23 @@
 /**
  * YAML-like parse/serialize and namespace AST helpers for the namespace builder.
- * Format: "name: Type" (variable) or "name:" (folder). Names can include range notation [start?:end:step?].
+ * Format: "name: Type" (variable) or "name:" (folder).
+ * Names support one series expression: numeric [start?:end:step?] or enum [A, B, C],
+ * with optional prefix/suffix around the bracket expression.
  */
 
 import type { NamespaceNode } from "./types.js";
+
+const VARIABLE_BLOCK_KEYS = new Set([
+  "type",
+  "unit",
+  "min",
+  "max",
+  "maxlength",
+  "options",
+  "default",
+  "writable",
+  "description",
+]);
 
 export function lineIndent(source: string): number {
   const indentStr = source.match(/^[ \t]*/)?.[0] ?? "";
@@ -24,35 +38,105 @@ export function setKindFromChildren(node: NamespaceNode): void {
   if (node.children.length > 0) {
     node.kind = "folder";
     node.dataType = null;
+    node.unit = "";
+    node.min = "";
+    node.max = "";
+    node.maxLength = "";
+    node.options = [];
   }
 }
 
 export function composeNodeName(node: NamespaceNode): string {
   const base = node.name.trim();
-  if (!node.rangeEnd.trim()) return base;
-  const start = node.rangeStart.trim();
-  const end = node.rangeEnd.trim();
-  const step = node.rangeStep.trim();
-  const stepPart = step ? `:${step}` : "";
-  return `${base}[${start}:${end}${stepPart}]`;
+  const suffix = (node.nameSuffix ?? "").trim();
+  if (node.seriesMode === "enum") {
+    const values = (node.seriesValues ?? "").trim();
+    return values ? `${base}[${values}]${suffix}` : `${base}${suffix}`;
+  }
+  if (node.seriesMode === "numeric") {
+    const end = node.rangeEnd.trim();
+    if (!end) return `${base}${suffix}`;
+    const start = node.rangeStart.trim();
+    const step = node.rangeStep.trim();
+    const stepPart = step ? `:${step}` : "";
+    return `${base}[${start}:${end}${stepPart}]${suffix}`;
+  }
+  return `${base}${suffix}`;
 }
 
 export function splitNameAndRange(raw: string): {
   name: string;
+  nameSuffix: string;
+  seriesMode: "none" | "numeric" | "enum";
+  seriesValues: string;
   rangeStart: string;
   rangeEnd: string;
   rangeStep: string;
 } {
-  const match = raw.trim().match(/^(.*)\[(-?\d*):(-?\d+)(?::(-?\d+))?\]$/);
-  if (!match) {
-    return { name: raw.trim(), rangeStart: "", rangeEnd: "", rangeStep: "" };
+  const value = raw.trim();
+  const firstOpen = value.indexOf("[");
+  const firstClose = value.indexOf("]");
+  const secondOpen = firstOpen >= 0 ? value.indexOf("[", firstOpen + 1) : -1;
+  const secondClose = firstClose >= 0 ? value.indexOf("]", firstClose + 1) : -1;
+
+  if (
+    firstOpen < 0 ||
+    firstClose < firstOpen ||
+    secondOpen >= 0 ||
+    secondClose >= 0
+  ) {
+    return {
+      name: value,
+      nameSuffix: "",
+      seriesMode: "none",
+      seriesValues: "",
+      rangeStart: "",
+      rangeEnd: "",
+      rangeStep: "",
+    };
   }
+
+  const prefix = value.slice(0, firstOpen).trim();
+  const body = value.slice(firstOpen + 1, firstClose).trim();
+  const suffix = value.slice(firstClose + 1).trim();
+  const numeric = body.match(/^(-?\d*):(-?\d+)(?::(-?\d+))?$/);
+  if (numeric) {
+    return {
+      name: prefix,
+      nameSuffix: suffix,
+      seriesMode: "numeric",
+      seriesValues: "",
+      rangeStart: numeric[1] ?? "",
+      rangeEnd: numeric[2] ?? "",
+      rangeStep: numeric[3] ?? "",
+    };
+  }
+
   return {
-    name: (match[1] ?? "").trim(),
-    rangeStart: match[2] ?? "",
-    rangeEnd: match[3] ?? "",
-    rangeStep: match[4] ?? "",
+    name: prefix,
+    nameSuffix: suffix,
+    seriesMode: "enum",
+    seriesValues: body,
+    rangeStart: "",
+    rangeEnd: "",
+    rangeStep: "",
   };
+}
+
+function splitKeyAndValue(line: string): { key: string; value: string | null } | null {
+  let depth = 0;
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i];
+    if (ch === "[") depth += 1;
+    else if (ch === "]") depth = Math.max(0, depth - 1);
+    else if (ch === ":" && depth === 0) {
+      const key = line.slice(0, i).trim();
+      const value = line.slice(i + 1).trim();
+      if (!key) return null;
+      return { key, value: value.length > 0 ? value : null };
+    }
+  }
+  return null;
 }
 
 export function parseYamlLike(
@@ -72,70 +156,106 @@ export function parseYamlLike(
     const indent = lineIndent(source);
     const line = source.trim();
 
-    const variableMatchLegacy = line.match(/^(.+?):\s*\[([^\]]+)\]\s*$/);
-    const variableMatchNewRaw = line.match(/^(.+):\s*(\S+)\s*$/);
-    const variableMatchNew =
-      variableMatchNewRaw &&
-      (allowedDataTypes.length === 0 ||
-        allowedDataTypes.includes((variableMatchNewRaw[2] ?? "").trim()))
-        ? variableMatchNewRaw
-        : null;
-    const variableMatch = variableMatchLegacy || variableMatchNew;
-    let folderMatch = line.match(/^(.+?):\s*$/);
-    if (
-      !variableMatch &&
-      !folderMatch &&
-      options.skipLeafTypeValidation &&
-      line.length > 0 &&
-      !line.includes(":")
-    ) {
-      folderMatch = (line + ":").match(/^(.+?):\s*$/);
+    while (stack.length > 0 && stack[stack.length - 1].indent >= indent) {
+      stack.pop();
     }
-    if (!variableMatch && !folderMatch) {
-      throw new Error(`Invalid YAML-like line ${lineIndex + 1}: ${line}`);
+    const parent = stack[stack.length - 1]?.node ?? null;
+
+    const listItem = line.match(/^-+\s+(.+)$/);
+    if (listItem) {
+      if (!parent || parent.name.trim().toLowerCase() !== "options") {
+        throw new Error(
+          `Invalid YAML-like line ${lineIndex + 1}: list entries are only allowed under "options:"`,
+        );
+      }
+      const optionValue = (listItem[1] ?? "").trim();
+      if (!optionValue) {
+        throw new Error(
+          `Invalid YAML-like line ${lineIndex + 1}: option entry cannot be empty`,
+        );
+      }
+      parent.children.push({
+        id: nextId(),
+        name: optionValue,
+        nameSuffix: "",
+        seriesMode: "none",
+        seriesValues: "",
+        kind: "variable",
+        dataType: "Text",
+        unit: "",
+        min: "",
+        max: "",
+        maxLength: "",
+        options: [],
+        rangeStart: "",
+        rangeEnd: "",
+        rangeStep: "",
+        children: [],
+      });
+      continue;
     }
 
-    if (variableMatch) {
-      const typeRaw = (variableMatch[2] ?? "").trim();
+    let parsedLine = splitKeyAndValue(line);
+    if (!parsedLine && options.skipLeafTypeValidation && !line.includes(":")) {
+      parsedLine = { key: line.trim(), value: null };
+    }
+    if (!parsedLine) {
+      throw new Error(`Invalid YAML-like line ${lineIndex + 1}: ${line}`);
+    }
+    const key = parsedLine.key;
+    const value = parsedLine.value;
+    const isVariableDeclaration = value !== null;
+    const isVariableBlockKey = VARIABLE_BLOCK_KEYS.has(key.trim().toLowerCase());
+
+    if (isVariableDeclaration) {
+      const typeRaw = value?.trim() ?? "";
       if (
+        !isVariableBlockKey &&
         typeRaw &&
         allowedDataTypes.length > 0 &&
         !allowedDataTypes.includes(typeRaw)
       ) {
-        const rawName = (variableMatch[1] ?? "").trim();
+        const rawName = key;
         throw new Error(
           `Invalid YAML line ${lineIndex + 1}: "${rawName}" has unknown type ${typeRaw}. Allowed: ${allowedDataTypes.join(", ")}.`,
         );
       }
       const nextIndent = nextNonEmptyIndent(lines, lineIndex);
-      if (nextIndent !== null && nextIndent > indent) {
-        const rawName = (variableMatch[1] ?? "").trim();
+      if (!isVariableBlockKey && nextIndent !== null && nextIndent > indent) {
+        const rawName = key;
         throw new Error(
-          `Invalid YAML line ${lineIndex + 1}: "${rawName}" declares a data type (${variableMatch[2].trim()}) but has indented content below. Nodes with children must be folders: use "${rawName}:" only (no type on that line).`,
+          `Invalid YAML line ${lineIndex + 1}: "${rawName}" declares a data type (${typeRaw}) but has indented content below. Nodes with children must be folders: use "${rawName}:" only (no type on that line).`,
         );
       }
     }
 
-    while (stack.length > 0 && stack[stack.length - 1].indent >= indent) {
-      stack.pop();
-    }
-
-    const rawName = (variableMatch?.[1] ?? folderMatch?.[1] ?? "").trim();
+    const rawName = key;
     const parsed = splitNameAndRange(rawName);
+    const parsedName =
+      parsed.name.trim() === "" && parsed.seriesMode === "none"
+        ? "<New Node>"
+        : parsed.name;
     const node: NamespaceNode = {
       id: nextId(),
-      name: parsed.name || "<New Node>",
-      kind: variableMatch ? "variable" : "folder",
-      dataType: variableMatch
-        ? variableMatch[2].trim() || allowedDataTypes[0] || "Float"
+      name: parsedName,
+      nameSuffix: parsed.nameSuffix,
+      seriesMode: parsed.seriesMode,
+      seriesValues: parsed.seriesValues,
+      kind: isVariableDeclaration ? "variable" : "folder",
+      dataType: isVariableDeclaration
+        ? value?.trim() || allowedDataTypes[0] || "Float"
         : null,
+      unit: "",
+      min: "",
+      max: "",
+      maxLength: "",
+      options: [],
       rangeStart: parsed.rangeStart,
       rangeEnd: parsed.rangeEnd,
       rangeStep: parsed.rangeStep,
       children: [],
     };
 
-    const parent = stack[stack.length - 1]?.node ?? null;
     if (parent) {
       if (parent.kind === "variable" || parent.dataType !== null) {
         throw new Error(
@@ -147,16 +267,90 @@ export function parseYamlLike(
     } else {
       roots.push(node);
     }
-    if (!variableMatch) {
+    if (!isVariableDeclaration) {
       stack.push({ indent, node });
     }
   }
 
+  normalizeVariableBlockNodes(roots, allowedDataTypes);
   if (!options.skipLeafTypeValidation) {
     validateNamespaceAst(roots, allowedDataTypes);
   }
   normalizeFolderState(roots);
   return roots;
+}
+
+export function normalizeVariableBlockNodes(
+  nodes: NamespaceNode[],
+  allowedDataTypes: string[],
+): void {
+  function parseOptionValues(optionNode: NamespaceNode): string[] {
+    if (optionNode.children.length > 0) {
+      return optionNode.children
+        .map((child) => child.name.trim())
+        .filter((value) => value.length > 0);
+    }
+    return (optionNode.dataType ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0);
+  }
+
+  for (const node of nodes) {
+    if (node.children.length === 0) continue;
+
+    const childKeySet = new Set(
+      node.children.map((child) => child.name.trim().toLowerCase()),
+    );
+    const isVariableBlock =
+      childKeySet.size > 0 &&
+      Array.from(childKeySet).every((key) => VARIABLE_BLOCK_KEYS.has(key));
+
+    if (!isVariableBlock) {
+      normalizeVariableBlockNodes(node.children, allowedDataTypes);
+      continue;
+    }
+
+    const typeNode = node.children.find(
+      (child) => child.name.trim().toLowerCase() === "type",
+    );
+    const rawType = (typeNode?.dataType ?? "").trim();
+    if (!rawType) {
+      throw new Error(
+        `Invalid variable block "${node.name}": missing required "type" property.`,
+      );
+    }
+    if (allowedDataTypes.length > 0 && !allowedDataTypes.includes(rawType)) {
+      throw new Error(
+        `Invalid variable block "${node.name}": unknown type ${rawType}. Allowed: ${allowedDataTypes.join(", ")}.`,
+      );
+    }
+
+    node.kind = "variable";
+    node.dataType = rawType;
+    const unitNode = node.children.find(
+      (child) => child.name.trim().toLowerCase() === "unit",
+    );
+    const minNode = node.children.find(
+      (child) => child.name.trim().toLowerCase() === "min",
+    );
+    const maxNode = node.children.find(
+      (child) => child.name.trim().toLowerCase() === "max",
+    );
+    const maxLengthNode = node.children.find(
+      (child) => child.name.trim().toLowerCase() === "maxlength",
+    );
+    const optionsNode = node.children.find(
+      (child) => child.name.trim().toLowerCase() === "options",
+    );
+
+    node.unit = (unitNode?.dataType ?? "").trim();
+    node.min = (minNode?.dataType ?? "").trim();
+    node.max = (maxNode?.dataType ?? "").trim();
+    node.maxLength = (maxLengthNode?.dataType ?? "").trim();
+    node.options = optionsNode ? parseOptionValues(optionsNode) : [];
+    node.children = [];
+  }
 }
 
 export function normalizeFolderState(nodes: NamespaceNode[]): void {
@@ -173,6 +367,10 @@ export function validateNamespaceAst(
   allowedDataTypes: string[],
   path = "",
 ): void {
+  const isNumericLiteral = (raw: string): boolean =>
+    /^[-+]?(?:\d+\.?\d*|\.\d+)$/.test(raw.trim());
+  const isIntegerLiteral = (raw: string): boolean =>
+    /^[-+]?\d+$/.test(raw.trim());
   const defaultType = allowedDataTypes[0] ?? "Float";
   for (const node of nodes) {
     const label = path ? `${path} / ${node.name}` : node.name;
@@ -189,6 +387,95 @@ export function validateNamespaceAst(
         throw new Error(
           `Invalid namespace (leaf without type): "${label}" must declare a data type, e.g. \`${yamlLabel}: ${defaultType}\`.`,
         );
+      }
+      const dataType = node.dataType.toLowerCase();
+      const min = node.min.trim();
+      const max = node.max.trim();
+      const maxLength = node.maxLength.trim();
+      const hasOptions = node.options.length > 0;
+      const hasUnit = node.unit.trim() !== "";
+      const isText = dataType === "text" || dataType === "string";
+      const isBoolean = dataType === "boolean" || dataType === "bool";
+      const isInteger = dataType === "integer" || dataType === "int";
+      const isFloat = dataType === "float";
+      const isNumericType = isInteger || isFloat;
+
+      if (isText) {
+        if (min) {
+          throw new Error(
+            `Invalid namespace: "${label}" is Text and cannot define Min.`,
+          );
+        }
+        if (max) {
+          throw new Error(
+            `Invalid namespace: "${label}" is Text and cannot define Max.`,
+          );
+        }
+        if (maxLength && !isIntegerLiteral(maxLength)) {
+          throw new Error(
+            `Invalid namespace: "${label}" Max Length must be an integer.`,
+          );
+        }
+        if (hasUnit) {
+          throw new Error(
+            `Invalid namespace: "${label}" is Text and cannot define Unit.`,
+          );
+        }
+      } else if (isNumericType) {
+        if (min && !isNumericLiteral(min)) {
+          throw new Error(
+            `Invalid namespace: "${label}" Min must be numeric.`,
+          );
+        }
+        if (max && !isNumericLiteral(max)) {
+          throw new Error(
+            `Invalid namespace: "${label}" Max must be numeric.`,
+          );
+        }
+        if (maxLength) {
+          throw new Error(
+            `Invalid namespace: "${label}" ${node.dataType} cannot define Max Length.`,
+          );
+        }
+        if (hasOptions) {
+          throw new Error(
+            `Invalid namespace: "${label}" ${node.dataType} cannot define Options.`,
+          );
+        }
+        if (isInteger) {
+          if (min && !isIntegerLiteral(min)) {
+            throw new Error(
+              `Invalid namespace: "${label}" Integer Min must be an integer.`,
+            );
+          }
+          if (max && !isIntegerLiteral(max)) {
+            throw new Error(
+              `Invalid namespace: "${label}" Integer Max must be an integer.`,
+            );
+          }
+        }
+      } else if (isBoolean) {
+        if (min || max || maxLength || hasOptions || hasUnit) {
+          throw new Error(
+            `Invalid namespace: "${label}" Boolean cannot define Unit/Min/Max/Max Length/Options.`,
+          );
+        }
+      } else {
+        if (min && !isNumericLiteral(min)) {
+          throw new Error(
+            `Invalid namespace: "${label}" Min must be numeric.`,
+          );
+        }
+        if (max && !isNumericLiteral(max)) {
+          throw new Error(
+            `Invalid namespace: "${label}" Max must be numeric.`,
+          );
+        }
+        if (maxLength && !isIntegerLiteral(maxLength)) {
+          throw new Error(
+            `Invalid namespace: "${label}" Max Length must be an integer.`,
+          );
+        }
       }
     }
   }
@@ -213,6 +500,11 @@ export function astToNamespaceJson(
   nodes: NamespaceNode[],
   allowedDataTypes: string[],
 ): Record<string, unknown> {
+  const parseFiniteNumber = (raw: string): number | string => {
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? parsed : raw;
+  };
+
   const out: Record<string, unknown> = {};
   for (const node of nodes) {
     const key = composeNodeName(node);
@@ -221,7 +513,26 @@ export function astToNamespaceJson(
     } else if (node.kind === "folder") {
       out[key] = {};
     } else {
-      out[key] = node.dataType ?? allowedDataTypes[0] ?? "Float";
+      const dataType = node.dataType ?? allowedDataTypes[0] ?? "Float";
+      const hasMetadata =
+        node.unit.trim() !== "" ||
+        node.min.trim() !== "" ||
+        node.max.trim() !== "" ||
+        node.maxLength.trim() !== "" ||
+        node.options.length > 0;
+      if (!hasMetadata) {
+        out[key] = dataType;
+        continue;
+      }
+      const variable: Record<string, unknown> = { type: dataType };
+      if (node.unit.trim() !== "") variable.unit = node.unit.trim();
+      if (node.min.trim() !== "") variable.min = parseFiniteNumber(node.min);
+      if (node.max.trim() !== "") variable.max = parseFiniteNumber(node.max);
+      if (node.maxLength.trim() !== "") {
+        variable.maxLength = parseFiniteNumber(node.maxLength);
+      }
+      if (node.options.length > 0) variable.options = [...node.options];
+      out[key] = variable;
     }
   }
   return out;
@@ -245,7 +556,29 @@ export function serializeYamlLike(
         return children ? `${pad}${label}:\n${children}` : `${pad}${label}:`;
       }
       const dataType = node.dataType ?? allowedDataTypes[0] ?? "Float";
-      return `${pad}${label}: ${dataType}`;
+      const hasMetadata =
+        node.unit.trim() !== "" ||
+        node.min.trim() !== "" ||
+        node.max.trim() !== "" ||
+        node.maxLength.trim() !== "" ||
+        node.options.length > 0;
+      if (!hasMetadata) {
+        return `${pad}${label}: ${dataType}`;
+      }
+      const lines: string[] = [`${pad}${label}:`, `${pad}  type: ${dataType}`];
+      if (node.unit.trim() !== "") lines.push(`${pad}  unit: ${node.unit.trim()}`);
+      if (node.min.trim() !== "") lines.push(`${pad}  min: ${node.min.trim()}`);
+      if (node.max.trim() !== "") lines.push(`${pad}  max: ${node.max.trim()}`);
+      if (node.maxLength.trim() !== "") {
+        lines.push(`${pad}  maxLength: ${node.maxLength.trim()}`);
+      }
+      if (node.options.length > 0) {
+        lines.push(`${pad}  options:`);
+        for (const option of node.options) {
+          lines.push(`${pad}    - ${option}`);
+        }
+      }
+      return lines.join("\n");
     })
     .join("\n");
 }

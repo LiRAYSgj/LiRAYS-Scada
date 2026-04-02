@@ -149,6 +149,48 @@ describe("command-ws-client", () => {
         },
       });
     });
+    it("converts variable metadata object to NamespaceVariable", () => {
+      const schema = namespaceJsonToSchema({
+        Temperature: {
+          type: "Float",
+          unit: "kW",
+          min: 0,
+          max: 100,
+        },
+        Label: {
+          type: "Text",
+          maxLength: 255,
+          options: ["RUNNING", "STOPPED"],
+        },
+      });
+      expect(schema.roots.Temperature).toEqual({
+        variable: {
+          varDType: VarDataType.VAR_DATA_TYPE_FLOAT,
+          unit: "kW",
+          min: 0,
+          max: 100,
+          options: [],
+          maxLen: undefined,
+        },
+      });
+      expect(schema.roots.Label).toEqual({
+        variable: {
+          varDType: VarDataType.VAR_DATA_TYPE_TEXT,
+          unit: undefined,
+          min: undefined,
+          max: undefined,
+          options: ["RUNNING", "STOPPED"],
+          maxLen: 255,
+        },
+      });
+    });
+    it("throws on invalid metadata field types", () => {
+      expect(() =>
+        namespaceJsonToSchema({
+          Temperature: { type: "Float", min: "0" as unknown as number },
+        }),
+      ).toThrow(/expected number/);
+    });
     it("throws on invalid node type", () => {
       expect(() => namespaceJsonToSchema({ x: 123 } as any)).toThrow(
         /Invalid namespace node/,
