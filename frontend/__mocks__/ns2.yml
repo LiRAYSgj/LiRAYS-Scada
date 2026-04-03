@@ -1,0 +1,35 @@
+[America, Europe, Asia]:
+  Line_[:2]:
+    [:2]:
+      Power: Float
+      Speed: Float
+      Direction: Float
+      Temperature:
+        type: Float
+        unit: kW
+        min: 0
+        max: 100
+      Label:
+        type: Text
+        maxLength: 255
+        options:
+          - RUNNING
+          - STOPPED
+          - ANY_CUSTOM_STRING_OPTION
+      Voltage: Float
+    Valve_[:4]:
+      Position: Float
+      Flow: Float
+      Pressure: Float
+      Temperature: Float
+      Current: Float
+      Voltage: Float
+    Pump_[:2]:
+      Power: Float
+      Speed: Float
+      Direction: Float
+      Temperature: Float
+      Current: Float
+      Voltage: Float
+    PGA:
+      Var_[0:100]: Float

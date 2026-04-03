@@ -104,6 +104,8 @@
 	let treeViewportEl: HTMLDivElement | null = null;
 	let scrollTop = 0;
 	let viewportHeight = 0;
+	/** Measured row height used by virtual scroll math; keeps scrolling correct after style changes. */
+	let virtualRowHeight = ROW_HEIGHT;
 	/** Kept for teardown; also satisfies stale HMR bundles that still call detachTreeViewportResizeObserver. */
 	let treeViewportResizeObserver: ResizeObserver | null = null;
 
@@ -118,6 +120,7 @@
 		viewportHeight = node.clientHeight;
 		const ro = new ResizeObserver(() => {
 			viewportHeight = node.clientHeight;
+			measureVirtualRowHeight();
 		});
 		ro.observe(node);
 		treeViewportResizeObserver = ro;
@@ -126,6 +129,16 @@
 				detachTreeViewportResizeObserver();
 			}
 		};
+	}
+
+	function measureVirtualRowHeight(): void {
+		if (!treeViewportEl) return;
+		const rowEl = treeViewportEl.querySelector('[data-node-row-id]') as HTMLElement | null;
+		if (!rowEl) return;
+		const nextHeight = Math.round(rowEl.getBoundingClientRect().height);
+		if (nextHeight > 0 && nextHeight !== virtualRowHeight) {
+			virtualRowHeight = nextHeight;
+		}
 	}
 
 	function nextId(): string {
@@ -414,7 +427,7 @@
 			if (!row) return null;
 			const ghost = document.createElement('div');
 			ghost.className =
-				'fixed z-[2147483647] cursor-default whitespace-nowrap rounded-md border border-blue-600 bg-[var(--bg-panel)] px-2.5 py-1.5 text-xs text-[var(--text-primary)] opacity-85 shadow-lg pointer-events-none';
+				'fixed z-[2147483647] cursor-default whitespace-nowrap rounded-md border border-primary/60 bg-card px-2.5 py-1.5 text-xs text-foreground opacity-85 shadow-lg pointer-events-none';
 			ghost.textContent = row.node.name || '<New Node>';
 			parent.appendChild(ghost);
 			return ghost;
@@ -790,16 +803,21 @@
 	$: startIndex =
 		isPointerDragging || totalRows === 0
 			? 0
-			: Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
-	$: visibleCount = Math.max(1, Math.ceil(viewportHeight / ROW_HEIGHT) + OVERSCAN * 2);
+			: Math.max(0, Math.floor(scrollTop / virtualRowHeight) - OVERSCAN);
+	$: visibleCount = Math.max(1, Math.ceil(viewportHeight / virtualRowHeight) + OVERSCAN * 2);
 	$: endIndex =
 		isPointerDragging || totalRows === 0
 			? totalRows
 			: Math.min(totalRows, startIndex + visibleCount);
 	$: windowRows = rows.slice(startIndex, endIndex);
-	$: topPadding = isPointerDragging || totalRows === 0 ? 0 : startIndex * ROW_HEIGHT;
+	$: topPadding = isPointerDragging || totalRows === 0 ? 0 : startIndex * virtualRowHeight;
 	$: bottomPadding =
-		isPointerDragging || totalRows === 0 ? 0 : Math.max(0, (totalRows - endIndex) * ROW_HEIGHT);
+		isPointerDragging || totalRows === 0 ? 0 : Math.max(0, (totalRows - endIndex) * virtualRowHeight);
+	$: if (mode === 'visual-tree' && windowRows.length > 0) {
+		void tick().then(() => {
+			measureVirtualRowHeight();
+		});
+	}
 
 	function onTreeViewportScroll(): void {
 		if (treeViewportEl) scrollTop = treeViewportEl.scrollTop;
@@ -840,7 +858,7 @@
 	});
 </script>
 
-<div class="flex min-h-0 flex-col gap-2 h-full">
+<div class="flex h-full min-h-0 min-w-0 flex-col gap-2">
 	<NamespaceBuilderHeader
 		{mode}
 		disabled={createLoading}
@@ -854,12 +872,11 @@
 	/>
 
 	<section
-		class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border"
-		style="border-color: color-mix(in srgb, var(--text-muted) 25%, transparent)"
+		class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-border"
 	>
 		<!-- Tree + YAML both stay mounted; visibility toggled so Monaco isn't recreated (highlight stays instant). -->
 		<div
-			class="flex min-h-0 flex-1 flex-col overflow-hidden"
+			class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
 			class:min-h-0={mode === 'visual-tree' && rows.length > 0}
 			class:flex-1={mode === 'visual-tree'}
 			hidden={mode !== 'visual-tree'}
@@ -882,11 +899,11 @@
 					/>
 				</div>
 			{/if}
-			<div class="w-full" class:flex-1={rows.length > 0} class:min-h-0={rows.length > 0} class:flex={rows.length > 0} class:flex-col={rows.length > 0} class:overflow-hidden={rows.length > 0}>
+				<div class="flex min-h-0 w-full flex-1 flex-col overflow-hidden">
 				{#if rows.length === 0}
 					<div
-						class="row-empty flex min-h-9 items-center border-b text-xs text-(--text-muted)"
-						style="border-color: color-mix(in srgb, var(--text-muted) 18%, transparent)"
+						class="row-empty flex min-h-9 items-center border-b text-xs text-muted-foreground"
+						style="border-color: color-mix(in srgb, var(--border) 95%, transparent)"
 					>
 						<div class="inline-flex items-center gap-0.5 px-1.5 opacity-100">
 							<Button
@@ -903,7 +920,7 @@
 					</div>
 				{:else}
 					<div
-						class="min-h-0 w-full flex-1 overflow-auto"
+						class="min-h-0 w-full flex-1 overflow-y-auto overflow-x-auto"
 						bind:this={treeViewportEl}
 						onscroll={onTreeViewportScroll}
 						use:viewportObserver
@@ -914,7 +931,7 @@
 								<NamespaceBuilderTreeRow
 									{row}
 									{allowedDataTypes}
-									rowHeight={ROW_HEIGHT}
+									rowHeight={virtualRowHeight}
 									actionsDisabled={createLoading}
 									{draggedNodeId}
 									{dropTarget}
@@ -972,10 +989,10 @@
 		position: fixed !important;
 		pointer-events: none !important;
 		margin: 0 !important;
-		background: var(--bg-panel) !important;
+		background: var(--card) !important;
 		opacity: 0.92 !important;
 		filter: drop-shadow(0 10px 24px rgb(0 0 0 / 30%));
-		outline: 1px solid color-mix(in srgb, #2563eb 45%, transparent);
+		outline: 1px solid color-mix(in srgb, var(--primary) 45%, transparent);
 		outline-offset: 0;
 		border-radius: 0.25rem;
 		z-index: 2147483647;

@@ -27,8 +27,7 @@
 </script>
 
 <header
-	class="flex shrink-0 items-center justify-between gap-2 border-b pb-2"
-	style="border-color: color-mix(in srgb, var(--text-muted) 20%, transparent)"
+	class="flex shrink-0 items-center justify-between gap-2 border-b border-border pb-2"
 >
 	<div class="flex gap-1.5">
 		<Button

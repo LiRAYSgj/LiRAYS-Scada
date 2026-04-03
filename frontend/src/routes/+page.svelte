@@ -17,6 +17,7 @@
   } from "@xyflow/svelte";
   import "@xyflow/svelte/dist/style.css";
   import { Button } from "$lib/components/Button";
+  import * as Dialog from "$lib/components/ui/dialog";
   import { Input } from "$lib/components/ui/input";
   import VariableTree from "$lib/features/tree/components/VariableTree.svelte";
   import ContextMenu from "$lib/features/tree/components/ContextMenu.svelte";
@@ -38,7 +39,6 @@
     normalizePipeEdges,
   } from "$lib/features/graph/live-utils";
   import { createPageTagRealtimeProvider } from "$lib/features/realtime/page-tag-realtime-provider";
-  import { createThemeVars } from "$lib/core/theme/theme-utils";
   import { tagStreamClient } from "$lib/core/ws/tag-stream-client";
   import { snackbarStore } from "$lib/stores/snackbar";
   import { themeStore } from "$lib/stores/theme";
@@ -83,15 +83,6 @@
     }
   };
 
-  // Apply theme to <html> only after it has been loaded from storage (or default); no theme until then.
-  $effect(() => {
-    if (!browser || $theme === null) return;
-    const themeClass = $theme === "dark" ? "theme-dark" : "theme-light";
-    const other = $theme === "dark" ? "theme-light" : "theme-dark";
-    document.documentElement.classList.remove(other);
-    document.documentElement.classList.add(themeClass);
-  });
-
   const realtimeProvider = createPageTagRealtimeProvider(WS_ENDPOINT);
   const nodeTypes = {
     plantAsset: PlantAssetNode,
@@ -109,8 +100,8 @@
   let graphNodeCounter = 0;
   let graphEdgeCounter = 0;
   let graphViewport: Viewport = { x: 0, y: 0, zoom: 1 };
-  let removeDialog: HTMLDialogElement | null = null;
-  let namespaceBuilderDialog: HTMLDialogElement | null = null;
+  let removeDialogOpen = $state(false);
+  let namespaceBuilderDialogOpen = $state(false);
   let namespaceBuilderRef: NamespaceBuilder | null = null;
   let namespaceBuilderValid = $state(true);
   let namespaceBuilderCreateLoading = $state(false);
@@ -130,7 +121,7 @@
   /** Snapshot of tree nodes from VariableTree for computing minimal delete set. */
   let treeNodes = $state<Record<string, TreeNode>>({});
   let treeRootIds = $state<string[]>([]);
-  let removeMultipleDialog: HTMLDialogElement | null = null;
+  let removeMultipleDialogOpen = $state(false);
   let removeMultipleSubmitting = $state(false);
   let removeMultipleError = $state("");
   let inspectorDockVisible = $state(true);
@@ -269,22 +260,20 @@
   }
 
   function openRemoveDialog(node: TreeNode): void {
-    if (get(wsStatus) !== "connected" || !removeDialog) {
+    if (get(wsStatus) !== "connected") {
       return;
     }
     removeTargetNode = node;
     removeSubmitting = false;
     removeError = "";
-    removeDialog.showModal();
+    removeDialogOpen = true;
   }
 
   function closeRemoveDialog(force = false): void {
     if (removeSubmitting && !force) {
       return;
     }
-    if (removeDialog?.open) {
-      removeDialog.close();
-    }
+    removeDialogOpen = false;
     removeTargetNode = null;
     removeError = "";
   }
@@ -334,14 +323,14 @@
   }
 
   function openRemoveMultipleDialog(): void {
-    if (get(wsStatus) !== "connected" || !removeMultipleDialog) return;
+    if (get(wsStatus) !== "connected") return;
     removeMultipleError = "";
-    removeMultipleDialog.showModal();
+    removeMultipleDialogOpen = true;
   }
 
   function closeRemoveMultipleDialog(force = false): void {
     if (removeMultipleSubmitting && !force) return;
-    removeMultipleDialog?.close();
+    removeMultipleDialogOpen = false;
     removeMultipleError = "";
   }
 
@@ -768,7 +757,7 @@
   ): void {
     namespaceBuilderParentId = parentId;
     namespaceBuilderParentName = parentDisplay;
-    namespaceBuilderDialog?.showModal();
+    namespaceBuilderDialogOpen = true;
     if (
       namespaceBuilderRef &&
       typeof namespaceBuilderRef.getValidity === "function"
@@ -784,9 +773,7 @@
     ) {
       namespaceBuilderRef.reset();
     }
-    if (namespaceBuilderDialog?.open) {
-      namespaceBuilderDialog.close();
-    }
+    namespaceBuilderDialogOpen = false;
   }
 
   async function onNamespaceBuilderCreate(): Promise<void> {
@@ -951,13 +938,9 @@
     }
   });
 
-  const themeVars = $derived($theme !== null ? createThemeVars($theme) : "");
 </script>
 
-<main
-  class={`h-screen w-full p-4 ${$theme !== null ? ($theme === "dark" ? "theme-dark" : "theme-light") : ""} bg-(--bg-app)`}
-  style={`background-color: var(--bg-app); color: var(--text-primary); ${themeVars}`}
->
+<main class="flex h-dvh w-full flex-col gap-3 overflow-hidden bg-background p-4">
   <PageToolbar
     theme={$theme ?? "light"}
     {canvasMode}
@@ -978,7 +961,7 @@
     onSelectAll={selectAllSelection}
   />
 
-  <div class="flex h-[calc(100vh-5rem)] gap-4">
+  <div class="flex min-h-0 flex-1 gap-4">
     <section class="h-full w-[30%] min-w-[360px]">
       <VariableTree
         onNodeContextMenu={handleNodeContextMenu}
@@ -1003,8 +986,7 @@
     </section>
 
     <section
-      class="relative h-full flex-1 rounded-md border border-black/10 bg-(--bg-panel) p-0 text-sm text-(--text-secondary) dark:border-white/10"
-      style="background-color: var(--bg-panel);"
+      class="relative h-full flex-1 rounded-md border border-border bg-card p-0 text-sm text-muted-foreground"
       aria-label="Drop workspace"
       ondragover={handleRightPanelDragOver}
       ondrop={handleRightPanelDrop}
@@ -1021,7 +1003,6 @@
             zoomOnDoubleClick={false}
             colorMode={$theme ?? "light"}
             class="h-full w-full rounded-md"
-            style="background-color: var(--bg-muted);"
             nodesDraggable={canvasMode === "edit"}
             elementsSelectable={canvasMode === "edit"}
             nodesConnectable={canvasMode === "edit"}
@@ -1041,7 +1022,7 @@
 
         {#if inspectorDockVisible}
           <aside
-            class="h-full w-[340px] shrink-0 border-l border-black/10 bg-(--bg-panel) p-3 dark:border-white/10"
+            class="h-full w-[340px] shrink-0 border-l border-border bg-card p-3"
             ondragover={(event) => {
               event.preventDefault();
               event.stopPropagation();
@@ -1053,7 +1034,7 @@
             }}
           >
             <div class="mb-3 flex items-center justify-between">
-              <h3 class="text-sm font-semibold text-(--text-primary)">
+              <h3 class="text-sm font-semibold text-foreground">
                 Graph Node Inspector
               </h3>
               <Button
@@ -1071,7 +1052,7 @@
                 <div>
                   <label
                     for="node-title-input"
-                    class="mb-1 block text-[10px] uppercase text-(--text-muted)"
+                    class="mb-1 block text-[10px] uppercase text-muted-foreground"
                     >Title</label
                   >
                   <Input
@@ -1089,12 +1070,12 @@
                 </div>
 
                 <div
-                  class="rounded border border-black/10 p-2 dark:border-white/10"
+                  class="rounded border border-border p-2"
                 >
-                  <p class="text-[10px] uppercase text-(--text-muted)">
+                  <p class="text-[10px] uppercase text-muted-foreground">
                     Widget
                   </p>
-                  <p class="text-xs font-medium text-(--text-primary)">
+                  <p class="text-xs font-medium text-foreground">
                     {selectedGraphWidgetDefinition.label}
                   </p>
                 </div>
@@ -1104,19 +1085,19 @@
                     {@const bindingTags =
                       selectedGraphNodeData.bindings?.[binding.key] ?? []}
                     <div
-                      class="rounded border border-black/10 p-2 dark:border-white/10"
+                      class="rounded border border-border p-2"
                     >
                       <div class="mb-1 flex items-center justify-between">
-                        <span class="font-medium text-(--text-primary)"
+                        <span class="font-medium text-foreground"
                           >{binding.label}</span
                         >
-                        <span class="text-[10px] uppercase text-(--text-muted)"
+                        <span class="text-[10px] uppercase text-muted-foreground"
                           >{binding.access}</span
                         >
                       </div>
                       {#if binding.multiple}
                         <div
-                          class="min-h-[38px] rounded border border-dashed border-black/20 bg-(--bg-muted) px-2 py-1 dark:border-white/20"
+                          class="min-h-[38px] rounded border border-dashed border-border/60 bg-muted/50 px-2 py-1"
                           role="group"
                           ondragover={(event) => {
                             event.preventDefault();
@@ -1132,14 +1113,14 @@
                             )}
                         >
                           {#if bindingTags.length === 0}
-                            <span class="text-[10px] text-(--text-muted)"
+                            <span class="text-[10px] text-muted-foreground"
                               >Drop tag(s) here</span
                             >
                           {:else}
                             <div class="flex flex-wrap gap-1">
                               {#each bindingTags as tag (tag.id)}
                                 <span
-                                  class="inline-flex items-center gap-1 rounded bg-(--bg-selected) px-1.5 py-0.5 text-[10px] text-(--text-primary)"
+                                  class="inline-flex items-center gap-1 rounded bg-primary/15 px-1.5 py-0.5 text-[10px] text-foreground"
                                 >
                                   <span class="max-w-[160px] truncate"
                                     >{tag.name}</span
@@ -1183,7 +1164,7 @@
                         />
                       {/if}
                       {#if binding.required}
-                        <p class="mt-1 text-[10px] text-(--text-muted)">
+                        <p class="mt-1 text-[10px] text-muted-foreground">
                           Required
                         </p>
                       {/if}
@@ -1193,7 +1174,7 @@
               </div>
             {:else}
               <div
-                class="flex h-[calc(100%-2rem)] items-center justify-center text-center text-sm text-(--text-muted)"
+                class="flex h-[calc(100%-2rem)] items-center justify-center text-center text-sm text-muted-foreground"
               >
                 Select a node in the graph to configure it.
               </div>
@@ -1212,7 +1193,7 @@
           </div>
         {/if}
       </div>
-      <!-- <div class="pointer-events-none absolute left-3 top-2 text-[11px] text-(--text-muted)">
+      <!-- <div class="pointer-events-none absolute left-3 top-2 text-[11px] text-muted-foreground">
 				{#if canvasMode === 'edit'}
 					Edit mode: drop tags and place assets. No polling is active.
 				{:else}
@@ -1224,8 +1205,8 @@
 
   {#if dragPreview && draggingNode}
     <div
-      class="pointer-events-none fixed z-40 rounded border border-black/10 bg-(--bg-panel) px-2 py-1 text-xs shadow-md dark:border-white/10"
-      style={`background-color: var(--bg-panel); left:${dragPreview.x}px;top:${dragPreview.y}px;`}
+      class="pointer-events-none fixed z-40 rounded border border-border bg-card px-2 py-1 text-xs shadow-md"
+      style={`left:${dragPreview.x}px;top:${dragPreview.y}px;`}
     >
       Dragging: {draggingNode.name}
     </div>
@@ -1241,135 +1222,153 @@
     />
   {/if}
 
-  <dialog
-    bind:this={removeDialog}
-    class="fixed inset-0 m-auto w-[420px] rounded-md border border-black/10 bg-(--bg-panel) p-0 text-(--text-primary) shadow-xl backdrop:bg-black/50 dark:border-white/10"
-  >
-    <form
-      class="flex flex-col p-4"
-      onsubmit={(event) => {
+  <Dialog.Root bind:open={removeDialogOpen}>
+    <Dialog.Content
+      class="max-w-[420px]"
+      showCloseButton={false}
+      onInteractOutside={(event) => {
         event.preventDefault();
-        void confirmRemoveTargetNode();
+      }}
+      onEscapeKeydown={(event) => {
+        event.preventDefault();
       }}
     >
-      <div class="space-y-2">
-        <h2 class="text-sm font-semibold">Confirm removal</h2>
-        <p class="text-xs text-(--text-muted)">
-          Remove "{removeTargetNode?.name}" ({removeTargetNode?.kind ===
-          "folder"
-            ? "folder"
-            : "variable"})? This action cannot be undone.
-        </p>
-        {#if removeError}
-          <p class="text-xs text-red-500">{removeError}</p>
-        {/if}
-      </div>
-      <div
-        class="mt-4 flex justify-end gap-2 border-t border-black/10 pt-4 dark:border-white/10"
+      <form
+        class="flex flex-col gap-4"
+        onsubmit={(event) => {
+          event.preventDefault();
+          void confirmRemoveTargetNode();
+        }}
       >
-        <Button
-          variant="outline-muted"
-          label="Cancel"
-          title="Cancel"
-          disabled={removeSubmitting}
-          onclick={() => closeRemoveDialog()}
-        />
-        <Button
-          type="submit"
-          variant="filled-warn"
-          label="Remove"
-          loadingLabel="Removing..."
-          loading={removeSubmitting}
-          disabled={removeSubmitting ||
-            $wsStatus !== "connected" ||
-            !removeTargetNode}
-        />
-      </div>
-    </form>
-  </dialog>
-
-  <dialog
-    bind:this={removeMultipleDialog}
-    class="fixed inset-0 m-auto w-[420px] rounded-md border border-black/10 bg-(--bg-panel) p-0 text-(--text-primary) shadow-xl backdrop:bg-black/50 dark:border-white/10"
-  >
-    <form
-      class="flex flex-col p-4"
-      onsubmit={(event) => {
-        event.preventDefault();
-        void confirmRemoveMultiple();
-      }}
-    >
-      <div class="space-y-2">
-        <h2 class="text-sm font-semibold">Remove selection</h2>
-        <p class="text-xs text-(--text-muted)">
-          Remove selected item(s)? All descendants will also be removed. This
-          action cannot be undone.
-        </p>
-        {#if removeMultipleError}
-          <p class="text-xs text-red-500">{removeMultipleError}</p>
-        {/if}
-      </div>
-      <div
-        class="mt-4 flex justify-end gap-2 border-t border-black/10 pt-4 dark:border-white/10"
-      >
-        <Button
-          variant="outline-muted"
-          label="Cancel"
-          title="Cancel"
-          disabled={removeMultipleSubmitting}
-          onclick={() => closeRemoveMultipleDialog()}
-        />
-        <Button
-          type="submit"
-          variant="filled-warn"
-          label="Remove"
-          loadingLabel="Removing..."
-          loading={removeMultipleSubmitting}
-          disabled={removeMultipleSubmitting || $wsStatus !== "connected"}
-        />
-      </div>
-    </form>
-  </dialog>
-
-  <dialog
-    bind:this={namespaceBuilderDialog}
-    class="fixed inset-0 m-auto h-[82vh] w-[92vw] max-w-[1400px] rounded-md border border-black/10 bg-(--bg-panel) p-0 text-(--text-primary) shadow-xl backdrop:bg-black/60 dark:border-white/10"
-  >
-    <div class="flex h-full flex-col p-3">
-      <div class="mb-2 flex items-center justify-between">
-        <h2 class="text-sm font-semibold">
-          Namespace Template Builder — {namespaceBuilderParentName}
-        </h2>
-      </div>
-      <div class="min-h-0 flex-1">
-        <NamespaceBuilder
-          bind:this={namespaceBuilderRef}
-          colorMode={$theme ?? "light"}
-          createLoading={namespaceBuilderCreateLoading}
-          onValidityChange={(v) => (namespaceBuilderValid = v)}
-        />
-      </div>
-      <div
-        class="mt-2 flex justify-end gap-2 border-t border-black/10 pt-3 dark:border-white/10"
-      >
-        {#if !namespaceBuilderCreateLoading}
+        <Dialog.Header>
+          <Dialog.Title>Confirm removal</Dialog.Title>
+          <Dialog.Description>
+            Remove "{removeTargetNode?.name}" ({removeTargetNode?.kind ===
+            "folder"
+              ? "folder"
+              : "variable"})? This action cannot be undone.
+          </Dialog.Description>
+          {#if removeError}
+            <p class="text-destructive text-xs/relaxed">{removeError}</p>
+          {/if}
+        </Dialog.Header>
+        <Dialog.Footer class="border-border border-t pt-4">
           <Button
             variant="outline-muted"
             label="Cancel"
             title="Cancel"
-            onclick={closeNamespaceBuilderDialog}
+            disabled={removeSubmitting}
+            onclick={() => closeRemoveDialog()}
           />
-        {/if}
-        <Button
-          variant="filled-accent"
-          label="Create"
-          title="Create"
-          loading={namespaceBuilderCreateLoading}
-          loadingLabel="Creating…"
-          disabled={!namespaceBuilderValid || namespaceBuilderCreateLoading}
-          onclick={() => void onNamespaceBuilderCreate()}
-        />
+          <Button
+            type="submit"
+            variant="filled-warn"
+            label="Remove"
+            loadingLabel="Removing..."
+            loading={removeSubmitting}
+            disabled={removeSubmitting ||
+              $wsStatus !== "connected" ||
+              !removeTargetNode}
+          />
+        </Dialog.Footer>
+      </form>
+    </Dialog.Content>
+  </Dialog.Root>
+
+  <Dialog.Root bind:open={removeMultipleDialogOpen}>
+    <Dialog.Content
+      class="max-w-[420px]"
+      showCloseButton={false}
+      onInteractOutside={(event) => {
+        event.preventDefault();
+      }}
+      onEscapeKeydown={(event) => {
+        event.preventDefault();
+      }}
+    >
+      <form
+        class="flex flex-col gap-4"
+        onsubmit={(event) => {
+          event.preventDefault();
+          void confirmRemoveMultiple();
+        }}
+      >
+        <Dialog.Header>
+          <Dialog.Title>Remove selection</Dialog.Title>
+          <Dialog.Description>
+            Remove selected item(s)? All descendants will also be removed. This
+            action cannot be undone.
+          </Dialog.Description>
+          {#if removeMultipleError}
+            <p class="text-destructive text-xs/relaxed">{removeMultipleError}</p>
+          {/if}
+        </Dialog.Header>
+        <Dialog.Footer class="border-border border-t pt-4">
+          <Button
+            variant="outline-muted"
+            label="Cancel"
+            title="Cancel"
+            disabled={removeMultipleSubmitting}
+            onclick={() => closeRemoveMultipleDialog()}
+          />
+          <Button
+            type="submit"
+            variant="filled-warn"
+            label="Remove"
+            loadingLabel="Removing..."
+            loading={removeMultipleSubmitting}
+            disabled={removeMultipleSubmitting || $wsStatus !== "connected"}
+          />
+        </Dialog.Footer>
+      </form>
+    </Dialog.Content>
+  </Dialog.Root>
+
+  <Dialog.Root bind:open={namespaceBuilderDialogOpen}>
+    <Dialog.Content
+      class="flex h-[82vh] w-[92vw] max-w-[92vw] flex-col overflow-hidden sm:max-w-[1400px]"
+      showCloseButton={false}
+      onInteractOutside={(event) => {
+        event.preventDefault();
+      }}
+      onEscapeKeydown={(event) => {
+        event.preventDefault();
+      }}
+    >
+      <div class="flex min-h-0 min-w-0 flex-1 flex-col">
+        <Dialog.Header class="mb-2">
+          <Dialog.Title>
+            Namespace Template Builder — {namespaceBuilderParentName}
+          </Dialog.Title>
+        </Dialog.Header>
+        <div class="min-h-0 min-w-0 flex-1 overflow-hidden">
+          <NamespaceBuilder
+            bind:this={namespaceBuilderRef}
+            colorMode={$theme ?? "light"}
+            createLoading={namespaceBuilderCreateLoading}
+            onValidityChange={(v) => (namespaceBuilderValid = v)}
+          />
+        </div>
+        <Dialog.Footer class="border-border mt-2 border-t pt-3">
+          {#if !namespaceBuilderCreateLoading}
+            <Button
+              variant="outline-muted"
+              label="Cancel"
+              title="Cancel"
+              onclick={closeNamespaceBuilderDialog}
+            />
+          {/if}
+          <Button
+            variant="filled-accent"
+            label="Create"
+            title="Create"
+            loading={namespaceBuilderCreateLoading}
+            loadingLabel="Creating…"
+            disabled={!namespaceBuilderValid || namespaceBuilderCreateLoading}
+            onclick={() => void onNamespaceBuilderCreate()}
+          />
+        </Dialog.Footer>
       </div>
-    </div>
-  </dialog>
+    </Dialog.Content>
+  </Dialog.Root>
 </main>

@@ -329,7 +329,7 @@
 
 <div
 	class={cn(
-		'border border-black/15 bg-(--bg-muted) text-(--text-primary) relative flex min-h-8 w-full flex-wrap place-items-center gap-1 rounded-lg py-0.5 pr-1 pl-1 transition-colors disabled:opacity-50 aria-disabled:cursor-not-allowed dark:border-white/10',
+		'border-input bg-input/20 dark:bg-input/30 text-foreground focus-within:border-ring focus-within:ring-ring/30 relative flex min-h-8 w-full flex-wrap place-items-center gap-1 rounded-md border py-0.5 pr-1 pl-1 transition-colors focus-within:ring-2 disabled:opacity-50 aria-disabled:cursor-not-allowed',
 		className
 	)}
 	aria-disabled={disabled}
@@ -355,15 +355,14 @@
 		aria-activedescendant={suggestionIndex !== undefined
 			? `${listboxId}-${suggestionIndex}`
 			: undefined}
-		class="placeholder:text-muted-foreground min-w-16 shrink grow basis-0 border-none bg-transparent px-2 outline-hidden focus:outline-hidden disabled:cursor-not-allowed data-[invalid=true]:text-red-500 md:text-sm"
+		class="placeholder:text-muted-foreground min-w-16 shrink grow basis-0 border-none bg-transparent px-2 text-xs/relaxed outline-none focus:outline-none disabled:cursor-not-allowed data-[invalid=true]:text-destructive"
 	/>
 	{#if showSuggestions}
 		<div
 			bind:this={listboxEl}
 			id={listboxId}
 			role="listbox"
-			class="absolute top-full right-0 left-0 z-50 mt-1 max-h-50 overflow-y-auto rounded-md border border-black/15 bg-(--bg-panel) p-1 text-(--text-primary) shadow-md dark:border-white/10"
-			style="background-color: var(--bg-panel);"
+			class="border-border bg-popover text-popover-foreground absolute top-full right-0 left-0 z-50 mt-1 max-h-50 overflow-y-auto rounded-md border p-1 shadow-md"
 		>
 			{#each filteredSuggestions as suggestion, i (suggestion)}
 				<TagsInputSuggestion

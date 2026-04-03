@@ -17,7 +17,7 @@
 		variant="ghost"
 		title={isExpanded ? 'Collapse node' : 'Expand node'}
 		ariaLabel={isExpanded ? 'Collapse node' : 'Expand node'}
-		class="h-5 min-w-0 w-5 p-0 text-(--text-muted)"
+		class="h-5 min-w-0 w-5 p-0 text-muted-foreground"
 		onclick={(e) => {
 			e?.stopPropagation();
 			onToggle();

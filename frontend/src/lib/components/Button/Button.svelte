@@ -1,4 +1,11 @@
 <script lang="ts">
+	import { Button as UIButton } from "$lib/components/ui/button";
+	import { cn } from "$lib/utils.js";
+	import type {
+		ButtonSize as UiButtonSize,
+		ButtonVariant as UiButtonVariant,
+	} from "$lib/components/ui/button";
+
 	/** Accepts Svelte components (e.g. Lucide icons). Typed loosely for compatibility. */
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	export type ButtonIcon = any;
@@ -10,6 +17,12 @@
 		| "outline-accent"
 		| "filled-accent"
 		| "filled-warn";
+
+	type PresetButtonConfig = {
+		variant: UiButtonVariant;
+		size: UiButtonSize;
+		className?: string;
+	};
 
 	let {
 		variant = "outline-muted",
@@ -35,12 +48,11 @@
 		type?: "button" | "submit";
 		disabled?: boolean;
 		loading?: boolean;
-		/** When true with outline-muted, renders as filled-accent (e.g. tab selected). */
+		/** When true with outline-muted or ghost, renders as filled-accent (selected state). */
 		selected?: boolean;
 		icon?: ButtonIcon;
 		label?: string;
 		loadingLabel?: string;
-		/** Optional Tailwind/custom class for the icon (e.g. text-emerald-500). Applied to the icon wrapper so the icon can have a different color than the label. */
 		iconClass?: string;
 		title?: string;
 		ariaLabel?: string;
@@ -59,15 +71,41 @@
 			: variant,
 	);
 	const resolvedAriaLabel = $derived(ariaLabel || title || label || undefined);
+
+	const presetConfig = $derived.by<PresetButtonConfig>(() => {
+		switch (effectiveVariant) {
+			case "icon":
+				return { variant: "outline", size: "icon-sm" };
+			case "ghost":
+				return { variant: "ghost", size: "sm" };
+			case "outline-accent":
+				return {
+					variant: "outline",
+					size: "sm",
+					className: "border-primary/40 text-primary hover:border-primary/60 hover:bg-primary/10",
+				};
+			case "filled-accent":
+				return { variant: "default", size: "sm" };
+			case "filled-warn":
+				return { variant: "destructive", size: "sm" };
+			case "outline-muted":
+			default:
+				return {
+					variant: "outline",
+					size: "sm",
+					className: "border-primary/35 bg-primary/6 text-foreground hover:border-primary/55 hover:bg-primary/14",
+				};
+		}
+	});
 </script>
 
-<button
+<UIButton
 	{type}
-	class="btn btn--{effectiveVariant} {className}"
+	variant={presetConfig.variant}
+	size={presetConfig.size}
+	class={cn("gap-1.5", presetConfig.className, className)}
 	style={style}
-	class:btn--icon-only={effectiveVariant === "icon" && !label && !children}
-	class:btn--ghost={effectiveVariant === "ghost"}
-	{disabled}
+	disabled={disabled || loading}
 	{title}
 	aria-label={resolvedAriaLabel}
 	aria-busy={loading}
@@ -83,151 +121,39 @@
 	{#if loading}
 		<span class="btn__spinner" aria-hidden="true"></span>
 		{#if label || loadingLabel}
-			<span class="btn__label">{loadingLabel}</span>
+			<span class="whitespace-nowrap">{loadingLabel}</span>
 		{/if}
 	{:else if children}
 		{@render children()}
 	{:else}
 		{#if icon}
 			{@const Icon = icon}
-			<span class="btn__icon {iconClass}" aria-hidden="true">
+			<span class={cn("inline-flex shrink-0 items-center justify-center", iconClass)} aria-hidden="true">
 				<Icon />
 			</span>
 		{/if}
 		{#if label}
-			<span class="btn__label">{label}</span>
+			<span class="whitespace-nowrap">{label}</span>
 		{/if}
 	{/if}
-</button>
+</UIButton>
 
 <style>
-	.btn {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		gap: 0.5rem;
-		cursor: pointer;
-		font-size: 0.75rem;
-		line-height: 1.25;
-		border-radius: 0.375rem;
-		border: 1px solid transparent;
-		transition: background-color 0.15s, border-color 0.15s, color 0.15s;
-		box-sizing: border-box;
+	.btn__spinner {
+		display: inline-block;
+		width: 0.75rem;
+		height: 0.75rem;
+		border: 2px solid currentColor;
+		border-right-color: transparent;
+		border-radius: 999px;
+		animation: btn-spin 0.6s linear infinite;
 	}
-	.btn:disabled {
-		cursor: not-allowed;
-		opacity: 0.5;
-	}
-	.btn--align-start {
+
+	:global(.btn--align-start) {
 		justify-content: flex-start;
 		text-align: left;
 	}
-	.btn--icon {
-		min-width: 1.75rem;
-		height: 1.75rem;
-	}
-	.btn--icon-only {
-		padding: 0;
-	}
-	.btn--icon:not(.btn--icon-only) {
-		padding: 0 0.25rem;
-	}
-	.btn:not(.btn--icon):not(.btn--icon-only):not(.btn--ghost) {
-		padding: 0.375rem 0.625rem;
-	}
 
-	/* Ghost: no border, transparent bg (e.g. inline text-style trigger) */
-	.btn--ghost {
-		background: transparent;
-		border-color: transparent;
-		color: var(--text-primary);
-	}
-	.btn--ghost:hover:not(:disabled) {
-		background-color: var(--bg-hover);
-	}
-
-	/* Icon variant: square, muted outline */
-	.btn--icon {
-		background-color: var(--bg-panel);
-		color: var(--text-secondary);
-		border-color: color-mix(in srgb, var(--text-muted) 28%, transparent);
-	}
-	.btn--icon:hover:not(:disabled) {
-		background-color: var(--bg-hover);
-	}
-
-	/* Greyed outline for cancel / general actions */
-	.btn--outline-muted {
-		background-color: var(--bg-panel);
-		color: var(--text-secondary);
-		border-color: color-mix(in srgb, var(--text-muted) 28%, transparent);
-	}
-	.btn--outline-muted:hover:not(:disabled) {
-		background-color: var(--bg-hover);
-		color: var(--text-primary);
-	}
-
-	/* Colored outline for actions inside infos/snacks (parent can override via .btn--outline-accent) */
-	.btn--outline-accent {
-		background-color: var(--bg-panel);
-		color: var(--text-secondary);
-		border-color: color-mix(in srgb, var(--text-muted) 35%, transparent);
-	}
-	.btn--outline-accent:hover:not(:disabled) {
-		background-color: var(--bg-hover);
-	}
-
-	/* Filled accent (primary / call to action) */
-	.btn--filled-accent {
-		background-color: #2563eb;
-		color: white;
-		border-color: #2563eb;
-	}
-	.btn--filled-accent:hover:not(:disabled) {
-		background-color: #3b82f6;
-		border-color: #3b82f6;
-	}
-
-	/* Filled warn (destructive) */
-	.btn--filled-warn {
-		background-color: #dc2626;
-		color: white;
-		border-color: #dc2626;
-	}
-	.btn--filled-warn:hover:not(:disabled) {
-		background-color: #ef4444;
-		border-color: #ef4444;
-	}
-
-	.btn__icon {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		flex-shrink: 0;
-		width: 0.875rem;
-		height: 0.875rem;
-	}
-	.btn__icon :global(svg) {
-		width: 100%;
-		height: 100%;
-	}
-	/* Icon-only: smaller icon relative to button for clearer padding */
-	.btn--icon-only .btn__icon {
-		width: 0.75rem;
-		height: 0.75rem;
-	}
-	.btn__label {
-		white-space: nowrap;
-	}
-	.btn__spinner {
-		display: inline-block;
-		width: 0.875rem;
-		height: 0.875rem;
-		border: 2px solid currentColor;
-		border-right-color: transparent;
-		border-radius: 50%;
-		animation: btn-spin 0.6s linear infinite;
-	}
 	@keyframes btn-spin {
 		to {
 			transform: rotate(360deg);

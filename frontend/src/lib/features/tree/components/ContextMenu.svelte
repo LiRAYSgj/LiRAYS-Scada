@@ -1,21 +1,16 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { Button } from '$lib/components/Button';
-	import { ChevronRight, LoaderCircle } from 'lucide-svelte';
-	import OverlaySurface from './OverlaySurface.svelte';
+	import { onMount } from "svelte";
+	import { ContextMenu as ContextMenuPrimitive } from "bits-ui";
+	import * as ContextMenu from "$lib/components/ui/context-menu";
+	import Loader2Icon from "@lucide/svelte/icons/loader-2";
+	import ContextMenuItems from "./ContextMenuItems.svelte";
 	import {
 		resolveMenuOptions,
 		type MenuContext,
 		type MenuOption,
-		type MenuOptionsResolver
-	} from '../context-menu';
-
-	interface MenuLayer {
-		x: number;
-		y: number;
-		items: MenuOption[];
-		loading: boolean;
-	}
+		type MenuOptionsResolver,
+	} from "../context-menu";
+	import type { ResolvedMenuOption } from "./context-menu-types";
 
 	interface Props {
 		anchorX: number;
@@ -25,178 +20,83 @@
 		onClose: () => void;
 	}
 
-	const LAYER_WIDTH = 220;
-	const LAYER_GAP = 6;
-
 	let { anchorX, anchorY, context, rootResolver, onClose }: Props = $props();
-	let menuLayers = $state<MenuLayer[]>([
-		{
-			x: 0,
-			y: 0,
-			items: [],
-			loading: true
+
+	let open = $state(true);
+	let loading = $state(true);
+	let items = $state<ResolvedMenuOption[]>([]);
+
+	const virtualAnchor = $derived.by<ContextMenuPrimitive.ContentProps["customAnchor"]>(() => ({
+		getBoundingClientRect: () => new DOMRect(anchorX, anchorY, 1, 1),
+	}));
+
+	async function hydrateMenuOptions(options: MenuOption[]): Promise<ResolvedMenuOption[]> {
+		const hydrated: ResolvedMenuOption[] = [];
+		for (const option of options) {
+			const next: ResolvedMenuOption = {
+				id: option.id,
+				label: option.label,
+				icon: option.icon,
+				separator: option.separator,
+				disabled: option.disabled,
+				onSelect: option.onSelect,
+			};
+			const childrenInput = option.children
+				? option.children
+				: option.getChildren
+					? await resolveMenuOptions(option.getChildren(context))
+					: [];
+			if (childrenInput.length > 0) {
+				next.children = await hydrateMenuOptions(childrenInput);
+			}
+			hydrated.push(next);
 		}
-	]);
+		return hydrated;
+	}
 
 	async function loadRootMenu(): Promise<void> {
-		const items = await resolveMenuOptions(rootResolver(context));
-		menuLayers = [
-			{
-				x: anchorX,
-				y: anchorY,
-				items,
-				loading: false
-			}
-		];
+		loading = true;
+		const rootItems = await resolveMenuOptions(rootResolver(context));
+		items = await hydrateMenuOptions(rootItems);
+		loading = false;
 	}
 
-	function closeMenus(): void {
+	function closeMenu(): void {
+		if (!open) {
+			onClose();
+			return;
+		}
+		open = false;
 		onClose();
-	}
-
-	async function openSubmenu(layerIndex: number, item: MenuOption): Promise<void> {
-		menuLayers = menuLayers.slice(0, layerIndex + 1);
-
-		if (item.separator || (!item.children && !item.getChildren)) {
-			return;
-		}
-
-		const parentLayer = menuLayers[layerIndex];
-		const baseX = parentLayer.x + LAYER_WIDTH + LAYER_GAP;
-		const submenuLayer: MenuLayer = {
-			x: baseX,
-			y: parentLayer.y,
-			items: [],
-			loading: true
-		};
-		menuLayers = [...menuLayers, submenuLayer];
-
-		const items = item.children
-			? item.children
-			: await resolveMenuOptions(item.getChildren ? item.getChildren(context) : []);
-
-		menuLayers = [
-			...menuLayers.slice(0, layerIndex + 1),
-			{
-				x: baseX,
-				y: parentLayer.y,
-				items,
-				loading: false
-			}
-		];
-	}
-
-	async function selectOption(item: MenuOption): Promise<void> {
-		if (item.separator || item.disabled) {
-			return;
-		}
-
-		if (item.children || item.getChildren) {
-			return;
-		}
-
-		if (item.onSelect) {
-			await item.onSelect(context);
-		}
-		closeMenus();
 	}
 
 	onMount(() => {
 		void loadRootMenu();
-
-		const onPointerDown = (event: PointerEvent) => {
-			const target = event.target as HTMLElement | null;
-			if (!target?.closest('[data-context-menu]')) {
-				closeMenus();
-			}
-		};
-
-		const onEscape = (event: KeyboardEvent) => {
-			if (event.key === 'Escape') {
-				closeMenus();
-			}
-		};
-
-		window.addEventListener('pointerdown', onPointerDown);
-		window.addEventListener('keydown', onEscape);
-		return () => {
-			window.removeEventListener('pointerdown', onPointerDown);
-			window.removeEventListener('keydown', onEscape);
-		};
 	});
 </script>
 
-<style>
-	.context-menu-item__content {
-		display: flex;
-		align-items: center;
-		justify-content: flex-start;
-		gap: 0.5rem;
-		min-width: 0;
-		flex: 1;
-		text-align: left;
-	}
-	.context-menu-item__content :global(svg) {
-		width: 0.875rem;
-		height: 0.875rem;
-		flex-shrink: 0;
-	}
-	.context-menu-item__label {
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-</style>
-
-{#each menuLayers as layer, layerIndex}
-	<OverlaySurface
-		x={layer.x}
-		y={layer.y}
-		width={LAYER_WIDTH}
-		dataContextMenu={true}
-		className="z-50 w-[220px] rounded-md border border-black/15 bg-(--bg-panel) p-1 shadow-lg dark:border-white/10"
-		style="background-color: var(--bg-panel);"
+<ContextMenu.Root bind:open>
+	<ContextMenu.Content
+		customAnchor={virtualAnchor}
+		side="right"
+		align="start"
+		sideOffset={2}
+		class="z-50 w-[220px]"
+		onEscapeKeydown={closeMenu}
+		onFocusOutside={closeMenu}
+		onInteractOutside={closeMenu}
 	>
-		{#if layer.loading}
-			<div class="flex items-center gap-2 px-2 py-1.5 text-xs text-slate-500 dark:text-slate-300">
-				<LoaderCircle class="h-3.5 w-3.5 animate-spin" />
+		{#if loading}
+			<ContextMenu.Item disabled>
+				<Loader2Icon class="size-3.5 animate-spin" />
 				<span>Loading...</span>
-			</div>
+			</ContextMenu.Item>
 		{:else}
-			{#each layer.items as item (item.id)}
-				{#if item.separator}
-					<div
-						class="my-1 border-t border-black/10 dark:border-white/10"
-						role="separator"
-						aria-hidden="true"
-					></div>
-				{:else}
-					<Button
-						variant="ghost"
-						disabled={item.disabled}
-						class="context-menu-item w-full justify-between rounded px-2 py-1.5 text-left text-xs text-slate-700 dark:text-slate-200"
-						onmouseenter={() => {
-							void openSubmenu(layerIndex, item);
-						}}
-						onclick={() => {
-							void selectOption(item);
-						}}
-					>
-						{#snippet children()}
-							<span class="context-menu-item__content">
-								{#if item.icon}
-									{@const Icon = item.icon}
-									<Icon class="context-menu-item__icon" aria-hidden="true" />
-								{/if}
-								<span class="context-menu-item__label">{item.label}</span>
-							</span>
-							{#if item.children || item.getChildren}
-								<ChevronRight class="h-3.5 w-3.5 shrink-0" />
-							{/if}
-						{/snippet}
-					</Button>
-				{/if}
-			{/each}
+			<ContextMenuItems
+				{items}
+				{context}
+				onLeafSelect={closeMenu}
+			/>
 		{/if}
-	</OverlaySurface>
-{/each}
+	</ContextMenu.Content>
+</ContextMenu.Root>

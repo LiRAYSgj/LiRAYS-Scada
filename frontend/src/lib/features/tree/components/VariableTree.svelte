@@ -867,11 +867,10 @@
 </script>
 
 <section
-  class="flex h-full flex-col rounded-md border border-black/10 bg-(--bg-panel) dark:border-white/10"
-  style="background-color: var(--bg-panel);"
+  class="flex h-full flex-col rounded-md border border-border bg-card"
 >
   <header
-    class="grid h-9 grid-cols-[1fr_90px_90px_80px] items-center border-b border-black/10 px-2 text-[11px] tracking-wider text-(--text-muted) uppercase dark:border-white/10"
+    class="grid h-9 grid-cols-[1fr_90px_90px_80px] items-center border-b border-border px-2 text-[11px] tracking-wider text-muted-foreground uppercase"
   >
     <span> </span>
     <span>Type</span>
@@ -896,15 +895,15 @@
           <div
             class="grid h-8 grid-cols-[1fr_90px_90px_80px] items-center gap-2 rounded px-2"
           >
-            <div class="h-3.5 animate-pulse rounded bg-(--bg-muted)"></div>
-            <div class="h-3.5 animate-pulse rounded bg-(--bg-muted)"></div>
-            <div class="h-3.5 animate-pulse rounded bg-(--bg-muted)"></div>
-            <div class="h-3.5 animate-pulse rounded bg-(--bg-muted)"></div>
+            <div class="h-3.5 animate-pulse rounded bg-muted/50"></div>
+            <div class="h-3.5 animate-pulse rounded bg-muted/50"></div>
+            <div class="h-3.5 animate-pulse rounded bg-muted/50"></div>
+            <div class="h-3.5 animate-pulse rounded bg-muted/50"></div>
           </div>
         {/each}
       </div>
     {:else if $visibleRows.length === 0}
-      <div class="p-3 text-xs text-(--text-muted)">No nodes available</div>
+      <div class="p-3 text-xs text-muted-foreground">No nodes available</div>
     {:else}
       <div
         role="tree"
@@ -940,7 +939,7 @@
   </div>
 
   <footer
-    class="border-t border-black/10 px-2 py-1 text-[11px] text-(--text-muted) dark:border-white/10"
+    class="border-t border-border px-2 py-1 text-[11px] text-muted-foreground"
   >
     <div class="flex items-center justify-start">
       {#if websocketStatus === WebSocketConnectionStatus.CONNECTING || websocketStatus === WebSocketConnectionStatus.RECONNECTING}
@@ -974,7 +973,7 @@
 
 <dialog
   bind:this={addDialog}
-  class="fixed inset-0 m-auto w-[420px] max-w-[90vw] rounded-md border border-black/10 bg-(--bg-panel) p-0 text-(--text-primary) shadow-xl backdrop:bg-black/50 dark:border-white/10"
+  class="fixed inset-0 m-auto w-[420px] max-w-[90vw] rounded-md border border-border bg-card p-0 text-foreground shadow-xl backdrop:bg-black/50"
 >
   <form class="flex h-full flex-col p-4" onsubmit={submitAddDialog} novalidate>
     <div class="flex items-center justify-between pb-4">
@@ -983,7 +982,7 @@
 
     <div class="space-y-4 overflow-y-auto pr-1">
       <div class="space-y-1">
-        <label class="text-xs text-(--text-muted)" for="add-name">Name</label>
+        <label class="text-xs text-muted-foreground" for="add-name">Name</label>
         <Input
           id="add-name"
           type="text"
@@ -1006,7 +1005,7 @@
       </div>
 
       <div class="space-y-1">
-        <label class="text-xs text-(--text-muted)" for="add-kind"
+        <label class="text-xs text-muted-foreground" for="add-kind"
           >Node Type</label
         >
         <Select.Root
@@ -1019,8 +1018,7 @@
           </Select.Trigger>
           <Select.Content
             portalProps={{ disabled: true }}
-            class="z-[80] border border-black/15 bg-(--bg-panel) shadow-lg dark:border-white/10"
-            style="background-color: var(--bg-panel);"
+            class="z-[80] border border-border bg-card shadow-lg"
           >
             <Select.Group>
               <Select.Item
@@ -1042,7 +1040,7 @@
       <div
         class={`space-y-1 ${addKind !== ItemType.ITEM_TYPE_VARIABLE ? "invisible" : ""}`}
       >
-        <label class="text-xs text-(--text-muted)" for="add-dataType"
+        <label class="text-xs text-muted-foreground" for="add-dataType"
           >Data Type</label
         >
         <Select.Root
@@ -1064,8 +1062,7 @@
           </Select.Trigger>
           <Select.Content
             portalProps={{ disabled: true }}
-            class="z-[80] border border-black/15 bg-(--bg-panel) shadow-lg dark:border-white/10"
-            style="background-color: var(--bg-panel);"
+            class="z-[80] border border-border bg-card shadow-lg"
           >
             <Select.Group>
               <Select.Item
@@ -1095,7 +1092,7 @@
       {#if addKind === ItemType.ITEM_TYPE_VARIABLE}
         <div class="space-y-3">
           <div class="space-y-1">
-            <label class="text-xs text-(--text-muted)" for="add-unit"
+            <label class="text-xs text-muted-foreground" for="add-unit"
               >Unit</label
             >
             <Input
@@ -1114,7 +1111,7 @@
           {#if addDataType === VarDataType.VAR_DATA_TYPE_INTEGER || addDataType === VarDataType.VAR_DATA_TYPE_FLOAT}
             <div class="grid grid-cols-2 gap-2">
               <div class="space-y-1">
-                <label class="text-xs text-(--text-muted)" for="add-min"
+                <label class="text-xs text-muted-foreground" for="add-min"
                   >Min</label
                 >
                 <NumberField
@@ -1130,7 +1127,7 @@
                 {/if}
               </div>
               <div class="space-y-1">
-                <label class="text-xs text-(--text-muted)" for="add-max"
+                <label class="text-xs text-muted-foreground" for="add-max"
                   >Max</label
                 >
                 <NumberField
@@ -1148,12 +1145,12 @@
             </div>
           {:else if addDataType === VarDataType.VAR_DATA_TYPE_TEXT}
             <div class="space-y-1">
-              <label class="text-xs text-(--text-muted)" for="add-options"
+              <label class="text-xs text-muted-foreground" for="add-options"
                 >Allowed options</label
               >
               <TagsInput
                 id="add-options"
-                class="w-full rounded border border-black/15 bg-(--bg-muted) text-sm dark:border-white/10"
+                class="w-full text-sm"
                 bind:value={addOptionTags}
                 commitSeparators={[","]}
                 onValueChange={() => touchAddField("options")}
@@ -1164,7 +1161,7 @@
               {/if}
             </div>
             <div class="space-y-1">
-              <label class="text-xs text-(--text-muted)" for="add-maxlen"
+              <label class="text-xs text-muted-foreground" for="add-maxlen"
                 >Max length</label
               >
               <NumberField
@@ -1190,7 +1187,7 @@
     {/if}
 
     <div
-      class="mt-auto flex justify-end gap-2 border-t border-black/10 pt-4 dark:border-white/10"
+      class="mt-auto flex justify-end gap-2 border-t border-border pt-4"
     >
       <Button
         type="button"
@@ -1217,7 +1214,7 @@
 
 <dialog
   bind:this={editDialog}
-  class="fixed inset-0 m-auto w-[420px] max-w-[90vw] rounded-md border border-black/10 bg-(--bg-panel) p-0 text-(--text-primary) shadow-xl backdrop:bg-black/50 dark:border-white/10"
+  class="fixed inset-0 m-auto w-[420px] max-w-[90vw] rounded-md border border-border bg-card p-0 text-foreground shadow-xl backdrop:bg-black/50"
 >
   <form class="flex h-full flex-col p-4" onsubmit={submitEditDialog} novalidate>
     <div class="flex items-center justify-between pb-4">
@@ -1226,16 +1223,16 @@
 
     <div class="space-y-3 overflow-y-auto pr-1">
       <div class="space-y-1">
-        <span class="text-xs text-(--text-muted)">Variable ID</span>
+        <span class="text-xs text-muted-foreground">Variable ID</span>
         <div
-          class="rounded border border-black/15 bg-(--bg-muted) px-2 py-1.5 text-[11px] text-(--text-secondary) dark:border-white/10"
+          class="rounded border border-border bg-muted/50 px-2 py-1.5 text-[11px] text-muted-foreground"
         >
           {editVarId}
         </div>
       </div>
 
       <div class="space-y-1">
-        <label class="text-xs text-(--text-muted)" for="edit-unit">Unit</label>
+        <label class="text-xs text-muted-foreground" for="edit-unit">Unit</label>
         <Input
           id="edit-unit"
           type="text"
@@ -1252,7 +1249,7 @@
       {#if editDataType === "VAR_DATA_TYPE_INTEGER" || editDataType === "VAR_DATA_TYPE_FLOAT"}
         <div class="grid grid-cols-2 gap-2">
           <div class="space-y-1">
-            <label class="text-xs text-(--text-muted)" for="edit-min">Min</label>
+            <label class="text-xs text-muted-foreground" for="edit-min">Min</label>
             <NumberField
               id="edit-min"
               step="any"
@@ -1266,7 +1263,7 @@
             {/if}
           </div>
           <div class="space-y-1">
-            <label class="text-xs text-(--text-muted)" for="edit-max">Max</label>
+            <label class="text-xs text-muted-foreground" for="edit-max">Max</label>
             <NumberField
               id="edit-max"
               step="any"
@@ -1282,12 +1279,12 @@
         </div>
       {:else if editDataType === "VAR_DATA_TYPE_TEXT"}
         <div class="space-y-1">
-          <label class="text-xs text-(--text-muted)" for="edit-options"
+          <label class="text-xs text-muted-foreground" for="edit-options"
             >Options</label
           >
           <TagsInput
             id="edit-options"
-            class="w-full rounded border border-black/15 bg-(--bg-muted) text-sm dark:border-white/10"
+            class="w-full text-sm"
             bind:value={editOptionTags}
             commitSeparators={[","]}
             onValueChange={() => touchEditField("options")}
@@ -1298,7 +1295,7 @@
           {/if}
         </div>
         <div class="space-y-1">
-          <label class="text-xs text-(--text-muted)" for="edit-maxlen"
+          <label class="text-xs text-muted-foreground" for="edit-maxlen"
             >Max length</label
           >
           <NumberField
@@ -1322,7 +1319,7 @@
     {/if}
 
     <div
-      class="mt-auto flex justify-end gap-2 border-t border-black/10 pt-4 dark:border-white/10"
+      class="mt-auto flex justify-end gap-2 border-t border-border pt-4"
     >
       <Button
         variant="outline-muted"

@@ -1,5 +1,9 @@
 <script lang="ts">
 	import { Button } from "$lib/components/Button";
+	import { ButtonGroup } from "$lib/components/ui/button-group";
+	import { Button as UIButton } from "$lib/components/ui/button";
+	import { Separator } from "$lib/components/ui/separator";
+	import * as Avatar from "$lib/components/ui/avatar";
 	import { CheckSquare, Layers, ListChecks, Moon, Play, Plus, Square, Sun, Trash2 } from "lucide-svelte";
 
 	type ThemeMode = "light" | "dark";
@@ -40,12 +44,17 @@
 		onRemoveSelection,
 		onSelectAll,
 	}: Props = $props();
+
+	const avatarInitial = $derived(
+		username.trim().charAt(0).toUpperCase() || "U",
+	);
 </script>
 
-<div class="mb-3 flex items-center justify-between">
-	<div class="flex w-[30%] min-w-[360px] items-center justify-between">
-		<h1 class="truncate pr-2 text-base font-semibold text-(--text-primary)">Namespace Browser</h1>
-		<div class="flex items-center gap-1">
+<div class="flex items-center justify-between rounded-md border border-border bg-card px-3 py-2 shadow-sm">
+	<div class="flex w-[calc(30%-6px)] min-w-[360px] items-center gap-3">
+		<h1 class="truncate pr-1 text-base font-semibold text-foreground">Namespace Browser</h1>
+		<Separator orientation="vertical" class="h-6" />
+		<div class="ml-auto flex items-center gap-1">
 			{#if multiSelectMode}
 				<Button
 					variant="icon"
@@ -53,6 +62,7 @@
 					title="Remove selected"
 					ariaLabel="Remove selected"
 					disabled={selectionCount === 0}
+					class="border-destructive/45 text-destructive hover:border-destructive/70 hover:bg-destructive/12 hover:text-destructive"
 					onclick={onRemoveSelection}
 				/>
 				<Button
@@ -96,35 +106,49 @@
 			{/if}
 		</div>
 	</div>
-	<div class="flex items-center gap-3">
-		<Button
-			variant="outline-muted"
-			icon={canvasMode === "edit" ? Play : Square}
-			label={canvasMode === "edit" ? "Play" : "Edit"}
-			title={canvasMode === "edit" ? "Play" : "Edit"}
-			iconClass={canvasMode === "edit" ? "text-emerald-500" : "text-amber-500"}
-			onclick={onToggleCanvasMode}
-		/>
-		<Button
-			variant="outline-muted"
-			icon={theme === "dark" ? Sun : Moon}
-			label={theme === "dark" ? "Light mode" : "Dark mode"}
-			title={theme === "dark" ? "Light mode" : "Dark mode"}
-			onclick={onToggleTheme}
-		/>
-		<div class="flex items-center gap-2 rounded-xl border border-(--surface-border) bg-(--surface-2) px-3 py-2 shadow-sm">
-			<div
-				class="flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold text-white"
-				style="background: linear-gradient(135deg, #38bdf8, #6366f1);"
-				title="Signed in user"
+	<div class="ml-3 flex shrink-0 items-center gap-2 rounded-lg border border-border bg-card px-2 py-1.5">
+		<ButtonGroup class="gap-0">
+			<UIButton
+				variant="outline"
+				size="sm"
+				class="gap-1.5"
+				title={canvasMode === "edit" ? "Play" : "Edit"}
+				onclick={onToggleCanvasMode}
 			>
-				{username.slice(0, 1).toUpperCase()}
-			</div>
+				{#if canvasMode === "edit"}
+					<Play class="text-emerald-500" />
+					<span>Play</span>
+				{:else}
+					<Square class="text-amber-500" />
+					<span>Edit</span>
+				{/if}
+			</UIButton>
+			<UIButton
+				variant="outline"
+				size="sm"
+				class="gap-1.5"
+				title={theme === "dark" ? "Light mode" : "Dark mode"}
+				onclick={onToggleTheme}
+			>
+				{#if theme === "dark"}
+					<Sun />
+					<span>Light mode</span>
+				{:else}
+					<Moon />
+					<span>Dark mode</span>
+				{/if}
+			</UIButton>
+		</ButtonGroup>
+		<Separator orientation="vertical" class="mx-1 h-6" />
+		<div class="flex items-center gap-2">
+			<Avatar.Root class="bg-primary text-primary-foreground">
+				<Avatar.Fallback>{avatarInitial}</Avatar.Fallback>
+			</Avatar.Root>
 			<div class="leading-tight">
-				<div class="text-sm font-semibold text-(--text-primary)">{username}</div>
-				<div class="text-xs text-(--text-muted)">Signed in</div>
+				<div class="text-sm font-semibold text-foreground">{username}</div>
+				<div class="text-xs text-muted-foreground">Signed in</div>
 			</div>
-			<Button variant="outline-muted" label="Logout" onclick={onLogout} />
 		</div>
+		<UIButton variant="outline" size="sm" class="ml-1" onclick={onLogout}>Logout</UIButton>
 	</div>
 </div>

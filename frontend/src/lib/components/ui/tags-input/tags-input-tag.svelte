@@ -12,13 +12,18 @@
 </script>
 
 <div
-	class="bg-(--bg-muted) text-(--text-primary) ring-offset-background hover:bg-(--bg-muted) aria-selected:ring-ring flex place-items-center gap-2 rounded-md border border-black/10 px-2 py-0.5 transition-all aria-selected:ring-1 aria-selected:ring-blue-500/35 dark:border-white/10"
+	class="bg-secondary text-secondary-foreground border-border ring-offset-background hover:bg-muted aria-selected:ring-ring flex place-items-center gap-2 rounded-md border px-2 py-0.5 text-xs/relaxed transition-all aria-selected:ring-1"
 	aria-selected={active}
 >
 	<span>
 		{value}
 	</span>
-	<button type="button" {disabled} onclick={() => onDelete(value)} class="cursor-pointer">
-		<XIcon class="size-4" />
+	<button
+		type="button"
+		{disabled}
+		onclick={() => onDelete(value)}
+		class="text-muted-foreground hover:text-foreground inline-flex cursor-pointer items-center justify-center rounded-sm p-0.5 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+	>
+		<XIcon class="size-3.5" />
 	</button>
 </div>

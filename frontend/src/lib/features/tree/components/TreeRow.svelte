@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Checkbox } from "$lib/components/ui/checkbox";
   import TreeChevron from "./TreeChevron.svelte";
   import TreeIcon from "./TreeIcon.svelte";
   import type { TreeNode, VisibleTreeRow } from "../types";
@@ -29,7 +30,7 @@
     /** Partially selected: some but not all loaded children are selected (only when multiSelectMode). */
     isIndeterminate?: boolean;
     /** Called when the selection checkbox is clicked (only when multiSelectMode). */
-    onCheckClick?: (event: MouseEvent) => void;
+    onCheckClick?: () => void;
     /** Emits hover metadata anchor for tag rows. */
     onTagTooltipChange?: (
       payload: { node: TreeNode; anchorRect: DOMRect } | null,
@@ -74,9 +75,9 @@
 
 <div
   bind:this={rowEl}
-  class={`group relative grid h-8 grid-cols-[1fr_90px_90px_80px] items-center border-b border-black/10 px-2 text-xs dark:border-white/10 ${
+  class={`group relative grid h-8 grid-cols-[1fr_90px_90px_80px] items-center border-b border-border px-2 text-xs ${
     multiSelectMode ? "cursor-default" : "cursor-pointer"
-  } ${!multiSelectMode && isSelected ? "bg-(--bg-selected)" : "hover:bg-(--bg-hover)"}`}
+  } ${!multiSelectMode && isSelected ? "bg-primary/15" : "hover:bg-muted"}`}
   role="treeitem"
   tabindex="-1"
   aria-expanded={row.node.hasChildren ? row.isExpanded : undefined}
@@ -113,31 +114,20 @@
       {onToggle}
     />
     {#if multiSelectMode}
-      <button
-        type="button"
-        class="cursor-pointer flex h-5 w-5 shrink-0 items-center justify-center rounded border border-black/25 bg-(--bg-panel) text-(--text-primary) hover:border-black/40 dark:border-white/25 dark:hover:border-white/40"
-        role="checkbox"
+      <Checkbox
+        checked={isChecked}
+        indeterminate={isIndeterminate}
         aria-label={isIndeterminate ? "Partially selected" : isChecked ? "Deselect" : "Select"}
-        aria-checked={isChecked ? "true" : isIndeterminate ? "mixed" : "false"}
+        class="cursor-pointer"
         onclick={(e) => {
           e.preventDefault();
           e.stopPropagation();
-          onCheckClick?.(e);
+          onCheckClick?.();
         }}
-      >
-        {#if isIndeterminate}
-          <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="5" y1="12" x2="19" y2="12" />
-          </svg>
-        {:else if isChecked}
-          <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="20 6 9 17 4 12" />
-          </svg>
-        {/if}
-      </button>
+      />
     {/if}
     <TreeIcon kind={row.node.kind} />
-    <span class="truncate text-(--text-primary)">{row.node.name}</span>
+    <span class="truncate text-foreground">{row.node.name}</span>
     {#if row.isErrored}
       <span
         class="ml-2 rounded bg-red-200 px-1.5 py-0.5 text-[10px] text-red-700 dark:bg-red-950 dark:text-red-300"
@@ -146,9 +136,9 @@
       </span>
     {/if}
   </div>
-  <span class="truncate text-(--text-muted)"
+  <span class="truncate text-muted-foreground"
     >{formatDataType(row.node.dataType)}</span
   >
-  <span class="truncate text-(--text-secondary)">{displayValue}</span>
-  <span class="truncate text-(--text-secondary)">{row.node.unit ?? "-"}</span>
+  <span class="truncate text-muted-foreground">{displayValue}</span>
+  <span class="truncate text-muted-foreground">{row.node.unit ?? "-"}</span>
 </div>

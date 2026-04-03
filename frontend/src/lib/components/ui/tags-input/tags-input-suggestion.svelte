@@ -14,7 +14,7 @@
 	type="button"
 	role="option"
 	aria-selected={active}
-	class="hover:bg-(--bg-muted) aria-selected:bg-(--bg-muted) w-full cursor-pointer rounded-sm px-2 py-1.5 text-left text-sm outline-hidden transition-colors select-none"
+	class="hover:bg-accent hover:text-accent-foreground aria-selected:bg-accent aria-selected:text-accent-foreground w-full cursor-pointer rounded-sm px-2 py-1.5 text-left text-xs/relaxed outline-none transition-colors select-none"
 	onmousedown={(e) => {
 		e.preventDefault();
 		onSelect(value);

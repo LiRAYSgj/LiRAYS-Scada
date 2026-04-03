@@ -1,6 +1,7 @@
 <script lang="ts">
 	import MinusIcon from "@lucide/svelte/icons/minus";
 	import PlusIcon from "@lucide/svelte/icons/plus";
+	import { Button } from "$lib/components/ui/button";
 	import { Input } from "$lib/components/ui/input";
 	import { cn } from "$lib/utils.js";
 	import type { HTMLInputAttributes } from "svelte/elements";
@@ -47,7 +48,7 @@
 	}
 </script>
 
-<div class="relative w-full">
+<div class={cn("relative w-full", className)}>
 	<Input
 		type="number"
 		bind:value
@@ -56,32 +57,36 @@
 		{step}
 		{disabled}
 		data-number-field-input="true"
-		class={cn("w-full pr-18", className)}
+		class={cn("w-full pr-[2.6rem]", className)}
 		oninput={handleInput}
 		{...restProps}
 	/>
-	<div class="pointer-events-none absolute inset-y-0 right-1 flex items-center">
+	<div class="pointer-events-none absolute inset-y-0 right-1 z-10 flex items-center">
 		<div class="pointer-events-auto flex items-center gap-1">
-			<button
+			<Button
 				type="button"
-				class="inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-md border border-black/15 bg-(--bg-panel) text-(--text-secondary) transition-colors hover:bg-(--bg-hover) hover:text-(--text-primary) disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10"
+				variant="outline"
+				size="icon-xs"
+				class="border-border bg-background/80 text-foreground shadow-sm hover:bg-accent"
 				disabled={disabled}
-				tabindex="-1"
+				tabindex={-1}
 				aria-label="Decrease value"
 				onclick={() => updateBy(-numericStep)}
 			>
-				<MinusIcon class="size-3.5" />
-			</button>
-			<button
+				<MinusIcon />
+			</Button>
+			<Button
 				type="button"
-				class="inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-md border border-black/15 bg-(--bg-panel) text-(--text-secondary) transition-colors hover:bg-(--bg-hover) hover:text-(--text-primary) disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10"
+				variant="outline"
+				size="icon-xs"
+				class="border-border bg-background/80 text-foreground shadow-sm hover:bg-accent"
 				disabled={disabled}
-				tabindex="-1"
+				tabindex={-1}
 				aria-label="Increase value"
 				onclick={() => updateBy(numericStep)}
 			>
-				<PlusIcon class="size-3.5" />
-			</button>
+				<PlusIcon />
+			</Button>
 		</div>
 	</div>
 </div>

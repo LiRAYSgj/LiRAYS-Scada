@@ -178,12 +178,12 @@
 				: "ns-drop-forbidden"
 			: ""
 	}`}
-	style="min-height: {rowHeight}px; border-color: color-mix(in srgb, var(--text-muted) 18%, transparent)"
+	style="min-height: {rowHeight}px; border-color: color-mix(in srgb, var(--border) 95%, transparent)"
 	role="listitem"
 	data-node-row-id={row.id}
 >
 	<div
-		class="inline-flex items-center gap-0.5 px-1.5 opacity-0 transition-opacity duration-100 group-hover/row:opacity-100"
+		class="inline-flex items-center gap-0.5 px-1.5 opacity-0 transition-opacity duration-100 group-hover/row:opacity-100 group-focus-within/row:opacity-100"
 	>
 		<Button
 			variant="icon"
@@ -275,7 +275,7 @@
 				id={`ns-name-${row.id}`}
 				name={`ns-name-${row.id}`}
 				bind:ref={editingInputEl}
-				class="min-w-[180px] max-w-[320px] h-7 text-[13px] border-blue-600"
+				class="min-w-[180px] max-w-[320px] h-7 text-[13px] border-primary/60"
 				bind:value={editingName}
 				placeholder={getNameEditPlaceholder()}
 				disabled={actionsDisabled}
@@ -295,7 +295,7 @@
 				ondblclick={() => !actionsDisabled && onStartEditName(row.id)}
 				class={`btn--align-start min-w-[150px] py-0 text-[13px] cursor-text h-[22px] ${
 					row.node.name.trim().length === 0
-						? "text-(--text-muted) opacity-70"
+						? "text-muted-foreground opacity-70"
 						: ""
 				}`}
 			/>
@@ -311,8 +311,7 @@
 				<Select.Trigger class="w-[120px]">{getSeriesSelectLabel()}</Select.Trigger>
 				<Select.Content
 					portalProps={{ to: getSelectPortalTarget() }}
-					class="z-[2147483647] border border-black/15 bg-(--bg-panel) shadow-lg dark:border-white/10"
-					style="background-color: var(--bg-panel);"
+					class="z-[2147483647] border border-border bg-card shadow-lg"
 				>
 					<Select.Group>
 						<Select.Item value="literal" label="Literal" />
@@ -322,41 +321,44 @@
 				</Select.Content>
 			</Select.Root>
 			{#if row.node.seriesMode === "numeric"}
-				<Input
+				<NumberField
 					id={`ns-${row.id}-rangeStart`}
 					name={`ns-${row.id}-rangeStart`}
-					class="w-[62px] h-7 text-[11px]"
+					class="w-[102px] h-7 text-[11px]"
 					placeholder="Start"
-					value={row.node.rangeStart}
+					value={parseOptionalNumber(row.node.rangeStart)}
+					step="any"
 					disabled={actionsDisabled}
-					oninput={(event) =>
-						onUpdateRange(row.id, "rangeStart", (event.currentTarget as HTMLInputElement).value)}
+					onValueChange={(value) =>
+						onUpdateRange(row.id, "rangeStart", value === undefined ? "" : String(value))}
 				/>
-				<Input
+				<NumberField
 					id={`ns-${row.id}-rangeEnd`}
 					name={`ns-${row.id}-rangeEnd`}
-					class="w-[62px] h-7 text-[11px]"
+					class="w-[102px] h-7 text-[11px]"
 					placeholder="End"
-					value={row.node.rangeEnd}
+					value={parseOptionalNumber(row.node.rangeEnd)}
+					step="any"
 					disabled={actionsDisabled}
-					oninput={(event) =>
-						onUpdateRange(row.id, "rangeEnd", (event.currentTarget as HTMLInputElement).value)}
+					onValueChange={(value) =>
+						onUpdateRange(row.id, "rangeEnd", value === undefined ? "" : String(value))}
 				/>
-				<Input
+				<NumberField
 					id={`ns-${row.id}-rangeStep`}
 					name={`ns-${row.id}-rangeStep`}
-					class="w-[62px] h-7 text-[11px]"
+					class="w-[102px] h-7 text-[11px]"
 					placeholder="Step"
-					value={row.node.rangeStep}
+					value={parseOptionalNumber(row.node.rangeStep)}
+					step="any"
 					disabled={actionsDisabled}
-					oninput={(event) =>
-						onUpdateRange(row.id, "rangeStep", (event.currentTarget as HTMLInputElement).value)}
+					onValueChange={(value) =>
+						onUpdateRange(row.id, "rangeStep", value === undefined ? "" : String(value))}
 				/>
 			{:else if row.node.seriesMode === "enum"}
 				<div class="w-[260px]">
 					<TagsInput
 						id={`ns-${row.id}-seriesValues`}
-						class="w-full h-8 min-h-8 max-h-8 rounded-lg border border-black/15 bg-(--bg-muted) text-xs !flex-nowrap overflow-x-auto overflow-y-hidden [scrollbar-width:thin] [&>div]:shrink-0 [&_input]:min-w-[96px] [&_input]:shrink-0 [&_input]:grow-0 dark:border-white/10"
+						class="w-full h-8 min-h-8 max-h-8 text-xs !flex-nowrap overflow-x-auto overflow-y-hidden [scrollbar-width:thin] [&>div]:shrink-0 [&_input]:min-w-[96px] [&_input]:shrink-0 [&_input]:grow-0"
 						value={toEnumTags(row.node.seriesValues)}
 						onValueChange={(values) => onUpdateRange(row.id, "seriesValues", values.join(", "))}
 						commitSeparators={[","]}
@@ -379,7 +381,7 @@
 			{/if}
 			{#if row.node.children.length > 0}
 				<span
-					class="ml-4 inline-flex items-center rounded-full bg-blue-900 px-2 py-0.5 text-[10px] text-blue-100"
+					class="ml-4 inline-flex items-center rounded-full border border-primary/40 bg-primary/15 px-2 py-0.5 text-[10px] text-primary"
 					>Folder</span>
 			{:else}
 				<div class="ml-4 inline-flex flex-nowrap gap-0.5">
@@ -399,7 +401,7 @@
 					<Input
 						id={`ns-${row.id}-unit`}
 						name={`ns-${row.id}-unit`}
-						class="w-[90px] h-7 text-[11px]"
+						class="w-[140px] h-7 text-[11px]"
 						placeholder="Unit"
 						value={row.node.unit}
 						disabled={actionsDisabled}
@@ -409,7 +411,7 @@
 					<NumberField
 						id={`ns-${row.id}-min`}
 						name={`ns-${row.id}-min`}
-						class="w-[94px] h-7 text-[11px]"
+						class="w-[140px] h-7 text-[11px]"
 						placeholder="Min"
 						value={parseOptionalNumber(row.node.min)}
 						step="any"
@@ -420,7 +422,7 @@
 					<NumberField
 						id={`ns-${row.id}-max`}
 						name={`ns-${row.id}-max`}
-						class="w-[94px] h-7 text-[11px]"
+						class="w-[140px] h-7 text-[11px]"
 						placeholder="Max"
 						value={parseOptionalNumber(row.node.max)}
 						step="any"
@@ -429,20 +431,22 @@
 							onUpdateVariableMeta(row.id, "max", value === undefined ? "" : String(value))}
 					/>
 				{:else if isTextType()}
-					<Input
+					<NumberField
 						id={`ns-${row.id}-maxLength`}
 						name={`ns-${row.id}-maxLength`}
-						class="w-[88px] h-7 text-[11px]"
+						class="w-[140px] h-7 text-[11px]"
 						placeholder="Max Length"
-						value={row.node.maxLength}
+						value={parseOptionalNumber(row.node.maxLength)}
+						step={1}
+						min={0}
 						disabled={actionsDisabled}
-						oninput={(event) =>
-							onUpdateVariableMeta(row.id, "maxLength", (event.currentTarget as HTMLInputElement).value)}
+						onValueChange={(value) =>
+							onUpdateVariableMeta(row.id, "maxLength", value === undefined ? "" : String(value))}
 					/>
 					<div class="w-[220px]">
 						<TagsInput
 							id={`ns-${row.id}-options`}
-							class="w-full h-8 min-h-8 max-h-8 rounded-lg border border-black/15 bg-(--bg-muted) text-xs !flex-nowrap overflow-x-auto overflow-y-hidden [scrollbar-width:thin] [&>div]:shrink-0 [&_input]:min-w-[88px] [&_input]:shrink-0 [&_input]:grow-0 dark:border-white/10"
+							class="w-full h-8 min-h-8 max-h-8 text-xs flex-nowrap! overflow-x-auto overflow-y-hidden [scrollbar-width:thin] [&>div]:shrink-0 [&_input]:min-w-[88px] [&_input]:shrink-0 [&_input]:grow-0"
 							value={toOptionTags(row.node.options)}
 							onValueChange={(values) => onUpdateVariableMeta(row.id, "options", values)}
 							commitSeparators={[","]}
@@ -458,16 +462,16 @@
 
 <style>
 	.ns-drop-before {
-		box-shadow: inset 0 2px 0 0 #2563eb;
+		box-shadow: inset 0 2px 0 0 color-mix(in srgb, var(--primary) 85%, transparent);
 	}
 	.ns-drop-child {
-		box-shadow: inset 0 -2px 0 0 #2563eb;
-		background: color-mix(in srgb, #2563eb 10%, transparent);
+		box-shadow: inset 0 -2px 0 0 color-mix(in srgb, var(--primary) 85%, transparent);
+		background: color-mix(in srgb, var(--primary) 12%, transparent);
 	}
 	.ns-drop-forbidden {
 		cursor: not-allowed;
-		background: color-mix(in srgb, var(--text-muted) 22%, transparent);
-		box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-muted) 45%, transparent);
+		background: color-mix(in srgb, var(--muted-foreground) 14%, transparent);
+		box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 95%, transparent);
 		opacity: 0.72;
 	}
 	.tree-indent-guides {
@@ -477,14 +481,16 @@
 		height: 100%;
 		pointer-events: none;
 		z-index: 0;
-		--tree-guide: color-mix(in srgb, var(--text-muted) 32%, transparent);
+		/* Match tree guides to regular row border tone for visual consistency. */
+		--tree-guide: color-mix(in srgb, var(--border) 95%, transparent);
+		--tree-guide-strong: color-mix(in srgb, var(--border) 95%, transparent);
 	}
 	.tree-indent-guide-vertical {
 		position: absolute;
 		top: -4px;
 		height: calc(100% + 4px);
 		width: 1px;
-		background: var(--tree-guide);
+		background: var(--tree-guide-strong);
 	}
 	.tree-indent-guide-branch {
 		position: absolute;
@@ -493,8 +499,8 @@
 		margin-top: -6px;
 		overflow: visible;
 		pointer-events: none;
-		color: color-mix(in srgb, var(--text-muted) 48%, transparent);
-		opacity: 0.9;
+		color: var(--tree-guide);
+		opacity: 1;
 	}
 	.tree-indent-guide-branch-path {
 		stroke: currentColor;
