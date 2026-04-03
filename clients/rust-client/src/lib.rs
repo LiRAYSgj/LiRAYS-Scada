@@ -3,6 +3,8 @@ pub mod types;
 
 use futures_util::{SinkExt, StreamExt};
 use prost::Message;
+use reqwest::StatusCode;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -18,6 +20,7 @@ use namespace::{
     VarIdValue, VarInfo, NamespaceSchema, NamespaceNode, NamespaceFolder, NamespaceVariable,
 };
 use uuid::Uuid;
+use url::Url;
 
 pub type WsSink = futures_util::stream::SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, WsMessage>;
 pub type WsStream = futures_util::stream::SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>;
@@ -60,10 +63,20 @@ pub struct BooleanVar {
 }
 
 impl Client {
+    /// Connects without authentication (for servers with auth disabled).
     pub async fn connect(host: &str, port: i64, tls: bool) -> Result<Self, ClientError> {
-        let url = format!("{}://{}:{}/ws", if tls {"wss"} else {"ws"}, host, port);
-        println!("--- {}", url);
-        let (ws, _) = connect_async(url.clone()).await?;
+        Self::connect_with_token(host, port, tls, None).await
+    }
+
+    /// Connects using an already-issued bearer token.
+    pub async fn connect_with_token(
+        host: &str,
+        port: i64,
+        tls: bool,
+        token: Option<String>,
+    ) -> Result<Self, ClientError> {
+        let ws_url = build_ws_url(host, port, tls, token.as_deref())?;
+        let (ws, _) = connect_async(ws_url.clone()).await?;
         let (sink, stream) = ws.split();
 
         let pending: Arc<Mutex<HashMap<String, oneshot::Sender<Response>>>> = Arc::new(Mutex::new(HashMap::new()));
@@ -96,8 +109,20 @@ impl Client {
             sink: Arc::new(Mutex::new(sink)),
             pending,
             reader,
-            url,
+            url: ws_url,
         })
+    }
+
+    /// Connects by authenticating first via `/auth/token` with username/password.
+    pub async fn connect_with_credentials(
+        host: &str,
+        port: i64,
+        tls: bool,
+        username: impl Into<String>,
+        password: impl Into<String>,
+    ) -> Result<Self, ClientError> {
+        let tokens = request_token(host, port, tls, username.into(), password.into()).await?;
+        Self::connect_with_token(host, port, tls, Some(tokens.access_token)).await
     }
 
     pub async fn disconnect(&self) -> Result<(), ClientError> {
@@ -534,6 +559,127 @@ impl Client {
 
         Ok(ReceiverStream::new(rx))
     }
+}
+
+#[derive(Serialize)]
+struct LoginRequest {
+    username: String,
+    password: String,
+}
+
+#[derive(Serialize)]
+struct RefreshPayload {
+    refresh_token: String,
+}
+
+#[derive(Deserialize)]
+struct ApiResponse<T> {
+    success: bool,
+    data: Option<T>,
+    message: Option<String>,
+}
+
+#[derive(Deserialize, Debug)]
+struct ApiTokens {
+    token: String,
+    refresh_token: String,
+    expires_at: i64,
+    refresh_expires_at: i64,
+}
+
+#[derive(Clone, Debug)]
+pub struct TokenPair {
+    pub access_token: String,
+    pub refresh_token: String,
+    pub expires_at: i64,
+    pub refresh_expires_at: i64,
+}
+
+async fn request_token(
+    host: &str,
+    port: i64,
+    tls: bool,
+    username: String,
+    password: String,
+) -> Result<TokenPair, ClientError> {
+    let scheme = if tls { "https" } else { "http" };
+    let url = format!("{scheme}://{host}:{port}/auth/token");
+    let body = LoginRequest { username, password };
+    let client = reqwest::Client::builder()
+        .build()
+        .map_err(ClientError::Http)?;
+
+    let resp = client.post(url.clone()).json(&body).send().await?;
+
+    if resp.status() == StatusCode::UNAUTHORIZED {
+        return Err(ClientError::AuthFailed("invalid credentials".into()));
+    }
+    if resp.status() == StatusCode::FORBIDDEN {
+        return Err(ClientError::AuthFailed("authentication disabled on server".into()));
+    }
+
+    let parsed: ApiResponse<ApiTokens> = resp.json().await?;
+    match (parsed.success, parsed.data) {
+        (true, Some(tokens)) => Ok(TokenPair {
+            access_token: tokens.token,
+            refresh_token: tokens.refresh_token,
+            expires_at: tokens.expires_at,
+            refresh_expires_at: tokens.refresh_expires_at,
+        }),
+        (_, _) => Err(ClientError::AuthFailed(
+            parsed
+                .message
+                .unwrap_or_else(|| "failed to obtain token".to_string()),
+        )),
+    }
+}
+
+/// Exchange a refresh token for a new access+refresh pair.
+pub async fn refresh_tokens_with(
+    host: &str,
+    port: i64,
+    tls: bool,
+    refresh_token: impl Into<String>,
+) -> Result<TokenPair, ClientError> {
+    let scheme = if tls { "https" } else { "http" };
+    let url = format!("{scheme}://{host}:{port}/auth/refresh");
+    let body = RefreshPayload {
+        refresh_token: refresh_token.into(),
+    };
+    let client = reqwest::Client::builder().build().map_err(ClientError::Http)?;
+    let resp = client.post(url.clone()).json(&body).send().await?;
+
+    if resp.status() == StatusCode::UNAUTHORIZED {
+        return Err(ClientError::AuthFailed("invalid or expired refresh token".into()));
+    }
+    if resp.status() == StatusCode::FORBIDDEN {
+        return Err(ClientError::AuthFailed("authentication disabled on server".into()));
+    }
+
+    let parsed: ApiResponse<ApiTokens> = resp.json().await?;
+    match (parsed.success, parsed.data) {
+        (true, Some(tokens)) => Ok(TokenPair {
+            access_token: tokens.token,
+            refresh_token: tokens.refresh_token,
+            expires_at: tokens.expires_at,
+            refresh_expires_at: tokens.refresh_expires_at,
+        }),
+        (_, _) => Err(ClientError::AuthFailed(
+            parsed
+                .message
+                .unwrap_or_else(|| "failed to refresh token".to_string()),
+        )),
+    }
+}
+
+fn build_ws_url(host: &str, port: i64, tls: bool, token: Option<&str>) -> Result<String, ClientError> {
+    let scheme = if tls { "wss" } else { "ws" };
+    let base = format!("{scheme}://{host}:{port}/ws");
+    let mut url = Url::parse(&base).map_err(|_| ClientError::InvalidInput("invalid host/port"))?;
+    if let Some(token) = token {
+        url.query_pairs_mut().append_pair("token", token);
+    }
+    Ok(url.into())
 }
 
 fn build_pairs<T, F>(

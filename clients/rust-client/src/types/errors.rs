@@ -18,6 +18,10 @@ pub enum ClientError {
     Timeout,
     #[error("unexpected text message: {0}")]
     UnexpectedText(String),
+    #[error("authentication failed: {0}")]
+    AuthFailed(String),
+    #[error("http error: {0}")]
+    Http(#[from] reqwest::Error),
     #[error("websocket error: {0}")]
     Ws(#[from] tokio_tungstenite::tungstenite::Error),
     #[error("protobuf decode error: {0}")]

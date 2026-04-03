@@ -13,7 +13,7 @@ async fn main() -> Result<()> {
 
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     let demo = args.get(0).cloned().unwrap_or_else(|| "basic".into());
-    let port = 8088;
+    let port = 8245;
 
     match demo.as_str() {
         "basic" => {

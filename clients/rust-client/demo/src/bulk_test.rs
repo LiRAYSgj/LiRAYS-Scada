@@ -3,7 +3,7 @@ use lirays_ws_client::Client;
 
 /// Bulk create a deep namespace (~10 levels) with ~1k variables using inline JSON.
 pub async fn run(host: &str, port: i64, tls: bool) -> Result<()> {
-    let client = Client::connect(host, port, tls).await?;
+    let client = Client::connect_with_credentials(host, port, tls, "admin", "qwe123").await?;
 
 // Inline schema; expansions target ~1k vars.
     let schema = r#"

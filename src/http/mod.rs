@@ -1,4 +1,4 @@
-mod model;
+mod resources;
 
 use std::{
     io,
@@ -7,28 +7,19 @@ use std::{
 };
 
 use axum::{
-    body::Body,
-    extract::{State, ws::{WebSocketUpgrade, WebSocket, Message as WsMessage}},
-    http::{StatusCode, Uri},
+    extract::State,
+    http::{StatusCode, Uri, header},
     middleware::{self, Next},
     response::{IntoResponse, Redirect, Response},
-    routing::get,
-    Json, Router,
+    routing::{get, post},
+    Router,
 };
 use axum::serve::Listener;
-use futures_util::StreamExt;
 use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
-use prost::Message as ProstMessage;
 use constant_time_eq::constant_time_eq;
 use hmac::{Hmac, Mac};
-use include_dir::{include_dir, Dir};
-use log::{error, info, warn};
-use model::resource::service::{
-    StaticResource, StaticResourceInput, StaticResourceManager,
-};
-use model::user::service::{UserCredentials, UserManager};
-use once_cell::sync::Lazy;
+use log::{error, info};
 use rand::{rngs::OsRng, RngCore};
 use sea_orm::Database;
 use sea_orm_migration::MigratorTrait;
@@ -37,51 +28,88 @@ use sha2::Sha256;
 use time::Duration as CookieDuration;
 use tokio::net::{TcpListener, TcpStream};
 use tokio_rustls::{server::TlsStream, TlsAcceptor};
-use utoipa::{OpenApi, ToSchema};
+use utoipa::ToSchema;
 
 use super::tls::{build_tls_acceptor, ServerTlsConfig};
-use crate::rtdata::{variable::VariableManager, metrics::Metrics, namespace::Command, should_send};
-
-static FRONTEND: Dir = include_dir!("$CARGO_MANIFEST_DIR/frontend/build");
+use crate::rtdata::{variable::VariableManager, metrics::Metrics};
+use resources::resource::service::{StaticResource, StaticResourceManager};
+use resources::user::service::UserManager;
 
 #[derive(Serialize, Deserialize, ToSchema)]
-struct ApiResponse<T> {
+pub(super) struct ApiResponse<T> {
     success: bool,
     data: Option<T>,
     message: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
-struct ApiResponseResource {
+pub(super) struct ApiResponseResource {
     success: bool,
     data: Option<StaticResource>,
     message: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
-struct ApiResponseResourceList {
+pub(super) struct ApiResponseResourceList {
     success: bool,
     data: Option<Vec<StaticResource>>,
     message: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
-struct ApiResponseEmpty {
+pub(super) struct ApiResponseEmpty {
     success: bool,
     data: Option<()>,
     message: Option<String>,
 }
 
+#[derive(Serialize, Deserialize, ToSchema)]
+pub(super) struct ApiTokenResponse {
+    token: String,
+    refresh_token: String,
+    expires_at: i64,
+    refresh_expires_at: i64,
+}
+
+impl ApiResponseEmpty {
+    pub(super) fn success() -> Self {
+        Self {
+            success: true,
+            data: Some(()),
+            message: None,
+        }
+    }
+
+    pub(super) fn error(message: String) -> Self {
+        Self {
+            success: false,
+            data: None,
+            message: Some(message),
+        }
+    }
+}
+
+impl<T> ApiResponse<T> {
+    pub(super) fn success(data: T) -> Self {
+        ApiResponse {
+            success: true,
+            data: Some(data),
+            message: None,
+        }
+    }
+}
+
 #[derive(Clone)]
-struct AuthConfig {
+pub(super) struct AuthConfig {
     enabled: bool,
     secret: Arc<Vec<u8>>,
-    ttl: Duration,
+    access_ttl: Duration,
+    refresh_ttl: Duration,
     secure_cookies: bool,
 }
 
 #[derive(Clone)]
-struct AppState {
+pub(super) struct AppState {
     resources: Arc<StaticResourceManager>,
     users: Arc<UserManager>,
     auth: AuthConfig,
@@ -95,10 +123,20 @@ fn hmac_sign(secret: &[u8], data: &[u8]) -> String {
     URL_SAFE_NO_PAD.encode(sig)
 }
 
+#[derive(Serialize, Deserialize, PartialEq, Eq, Clone, Copy)]
+pub(super) enum TokenType {
+    #[serde(rename = "access")]
+    Access,
+    #[serde(rename = "refresh")]
+    Refresh,
+}
+
 #[derive(Serialize, Deserialize)]
-struct SessionClaims {
+pub(super) struct SessionClaims {
     user: i32,
     exp: i64,
+    #[serde(rename = "typ")]
+    token_type: TokenType,
 }
 
 fn encode_session(secret: &[u8], claims: &SessionClaims) -> Result<String, serde_json::Error> {
@@ -123,11 +161,87 @@ fn decode_session(secret: &[u8], token: &str) -> Option<SessionClaims> {
     serde_json::from_slice(&payload).ok()
 }
 
+pub(super) fn now_ts() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or(Duration::from_secs(0))
+        .as_secs() as i64
+}
+
+pub(super) fn token_is_valid(auth: &AuthConfig, token: &str, expected: TokenType) -> bool {
+    decode_session(&auth.secret, token)
+        .map(|claims| claims.token_type == expected && claims.exp > now_ts())
+        .unwrap_or(false)
+}
+
+fn bearer_from_headers(headers: &axum::http::HeaderMap) -> Option<String> {
+    headers
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer ").map(|s| s.to_string()))
+}
+
+fn token_from_query(uri: &Uri) -> Option<String> {
+    uri.query().and_then(|q| {
+        q.split('&').find_map(|pair| {
+            let mut parts = pair.splitn(2, '=');
+            let key = parts.next()?;
+            let val = parts.next().unwrap_or("");
+            if key == "token" {
+                Some(val.to_string())
+            } else {
+                None
+            }
+        })
+    })
+}
+
+pub(super) fn issue_token(
+    auth: &AuthConfig,
+    user: i32,
+    token_type: TokenType,
+    ttl: Duration,
+) -> Result<(String, i64), StatusCode> {
+    let exp = now_ts() + ttl.as_secs() as i64;
+    let claims = SessionClaims {
+        user,
+        exp,
+        token_type,
+    };
+    let token = encode_session(&auth.secret, &claims).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok((token, exp))
+}
+
+pub(super) fn session_cookie(token: String, secure: bool, ttl: Duration) -> Cookie<'static> {
+    let mut cookie = Cookie::build(("lirays_session", token))
+        .path("/")
+        .http_only(true)
+        .same_site(SameSite::Lax)
+        .max_age(CookieDuration::seconds(ttl.as_secs() as i64))
+        .build();
+    if secure {
+        cookie.set_secure(true);
+    }
+    cookie
+}
+
+pub(super) fn refresh_cookie(token: String, secure: bool, ttl: Duration) -> Cookie<'static> {
+    let mut cookie = Cookie::build(("lirays_refresh", token))
+        .path("/")
+        .http_only(true)
+        .same_site(SameSite::Lax)
+        .max_age(CookieDuration::seconds(ttl.as_secs() as i64))
+        .build();
+    if secure {
+        cookie.set_secure(true);
+    }
+    cookie
+}
+
 async fn run_migrations_safe(db: &sea_orm::DatabaseConnection) -> Result<(), sea_orm_migration::DbErr> {
     match crate::migration::Migrator::up(db, None).await {
         Ok(_) => Ok(()),
         Err(sea_orm_migration::DbErr::Exec(err)) => {
-            // If already applied, skip
             if err.to_string().contains("seaql_migrations.version") {
                 Ok(())
             } else {
@@ -163,46 +277,20 @@ async fn auth_middleware(
         return Ok(Redirect::temporary("/auth/setup").into_response());
     }
 
-    if let Some(cookie) = jar.get("lirays_session") {
-        if let Some(claims) = decode_session(&state.auth.secret, cookie.value()) {
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or(Duration::from_secs(0))
-                .as_secs() as i64;
-            if claims.exp > now {
-                return Ok(next.run(req).await);
-            }
+    let token = bearer_from_headers(req.headers())
+        .or_else(|| token_from_query(req.uri()))
+        .or_else(|| jar.get("lirays_session").map(|c| c.value().to_string()));
+
+    if let Some(token) = token {
+        if token_is_valid(&state.auth, &token, TokenType::Access) {
+            return Ok(next.run(req).await);
         }
     }
 
-    Ok(Redirect::temporary("/auth/login").into_response())
-}
-
-impl ApiResponseEmpty {
-    fn success() -> Self {
-        Self {
-            success: true,
-            data: Some(()),
-            message: None,
-        }
-    }
-
-    fn error(message: String) -> Self {
-        Self {
-            success: false,
-            data: None,
-            message: Some(message),
-        }
-    }
-}
-
-impl<T> ApiResponse<T> {
-    fn success(data: T) -> Self {
-        ApiResponse {
-            success: true,
-            data: Some(data),
-            message: None,
-        }
+    if path.starts_with("/api") || path.starts_with("/ws") {
+        Err(StatusCode::UNAUTHORIZED)
+    } else {
+        Ok(Redirect::temporary("/auth/login").into_response())
     }
 }
 
@@ -244,608 +332,11 @@ impl Listener for TlsIncoming {
     }
 }
 
-async fn serve_static(uri: Uri) -> Response {
-    let path = uri.path().trim_start_matches('/');
-    let path = if path.is_empty() { "index.html" } else { path };
-
-    match FRONTEND.get_file(path) {
-        Some(file) => {
-            let mime = mime_guess::from_path(path).first_or_octet_stream();
-            Response::builder()
-                .header("Content-Type", mime.as_ref())
-                .body(Body::from(file.contents()))
-                .unwrap()
-        }
-        None => {
-            let index = FRONTEND.get_file("index.html").unwrap();
-            Response::builder()
-                .header("Content-Type", "text/html")
-                .body(Body::from(index.contents()))
-                .unwrap()
-        }
-    }
-}
-
-#[utoipa::path(
-    get,
-    path = "/api/resources/{id}",
-    responses(
-        (status = 200, description = "Resource found", body = ApiResponseResource),
-        (status = 404, description = "Resource not found", body = ApiResponseEmpty)
-    ),
-    params(
-        ("id" = i32, Path, description = "Resource id")
-    )
-)]
-async fn get_resource(
-    State(state): State<Arc<AppState>>,
-    axum::extract::Path(id): axum::extract::Path<i32>,
-) -> impl IntoResponse {
-    match state.resources.get_resource(id).await {
-        Ok(Some(resource)) => {
-            (StatusCode::OK, Json(ApiResponse::success(resource))).into_response()
-        }
-        Ok(None) => (
-            StatusCode::NOT_FOUND,
-            Json(ApiResponseEmpty::error("Resource not found".to_string())),
-        )
-            .into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ApiResponseEmpty::error(format!("Database error: {}", e))),
-        )
-            .into_response(),
-    }
-}
-
-#[utoipa::path(
-    get,
-    path = "/api/resources",
-    responses(
-        (status = 200, description = "List resources", body = ApiResponseResourceList)
-    )
-)]
-async fn get_all_resources(
-    State(state): State<Arc<AppState>>,
-) -> impl IntoResponse {
-    match state.resources.get_all_resources().await {
-        Ok(resources) => (StatusCode::OK, Json(ApiResponse::success(resources))).into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ApiResponseEmpty::error(format!("Database error: {}", e))),
-        )
-            .into_response(),
-    }
-}
-
-#[utoipa::path(
-    post,
-    path = "/api/resources",
-    request_body = StaticResourceInput,
-    responses(
-        (status = 200, description = "Resource created", body = ApiResponseResource),
-        (status = 400, description = "Database error", body = ApiResponseEmpty)
-    )
-)]
-async fn create_resource(
-    State(state): State<Arc<AppState>>,
-    Json(input): Json<StaticResourceInput>,
-) -> impl IntoResponse {
-    match state.resources.create_resource(input).await {
-        Ok(resource) => (StatusCode::OK, Json(ApiResponse::success(resource))).into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ApiResponseEmpty::error(format!("Database error: {}", e))),
-        )
-            .into_response(),
-    }
-}
-
-#[utoipa::path(
-    put,
-    path = "/api/resources/{id}",
-    request_body = StaticResourceInput,
-    responses(
-        (status = 200, description = "Resource updated", body = ApiResponseResource),
-        (status = 404, description = "Not found", body = ApiResponseEmpty),
-        (status = 400, description = "Database error", body = ApiResponseEmpty)
-    ),
-    params(
-        ("id" = i32, Path, description = "Resource id")
-    )
-)]
-async fn update_resource(
-    State(state): State<Arc<AppState>>,
-    axum::extract::Path(id): axum::extract::Path<i32>,
-    Json(input): Json<StaticResourceInput>,
-) -> impl IntoResponse {
-    match state.resources.update_resource(id, input).await {
-        Ok(Some(resource)) => (StatusCode::OK, Json(ApiResponse::success(resource))).into_response(),
-        Ok(None) => (
-            StatusCode::NOT_FOUND,
-            Json(ApiResponseEmpty::error("Resource not found".to_string())),
-        )
-            .into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ApiResponseEmpty::error(format!("Database error: {}", e))),
-        )
-            .into_response(),
-    }
-}
-
-#[utoipa::path(
-    delete,
-    path = "/api/resources/{id}",
-    responses(
-        (status = 200, description = "Resource deleted", body = ApiResponseEmpty),
-        (status = 404, description = "Not found", body = ApiResponseEmpty),
-        (status = 400, description = "Database error", body = ApiResponseEmpty)
-    ),
-    params(
-        ("id" = i32, Path, description = "Resource id")
-    )
-)]
-async fn delete_resource(
-    State(state): State<Arc<AppState>>,
-    axum::extract::Path(id): axum::extract::Path<i32>,
-) -> impl IntoResponse {
-    match state.resources.delete_resource(id).await {
-        Ok(true) => (StatusCode::OK, Json(ApiResponseEmpty::success())).into_response(),
-        Ok(false) => (
-            StatusCode::NOT_FOUND,
-            Json(ApiResponseEmpty::error("Resource not found".to_string())),
-        )
-            .into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ApiResponseEmpty::error(format!("Database error: {}", e))),
-        )
-            .into_response(),
-    }
-}
-
-#[derive(OpenApi)]
-#[openapi(
-    paths(
-        get_all_resources,
-        get_resource,
-        create_resource,
-        update_resource,
-        delete_resource
-    ),
-    components(
-        schemas(
-            StaticResource,
-            StaticResourceInput,
-            ApiResponseResource,
-            ApiResponseResourceList,
-            ApiResponseEmpty
-        )
-    ),
-    tags(
-        (name = "Resources", description = "Static resources CRUD")
-    )
-)]
-struct ApiDoc;
-
-static OPENAPI: Lazy<utoipa::openapi::OpenApi> = Lazy::new(|| ApiDoc::openapi());
-
-async fn openapi_spec() -> Json<utoipa::openapi::OpenApi> {
-    Json(OPENAPI.clone())
-}
-
-async fn swagger_ui() -> Response {
-    const HTML: &str = r#"<!DOCTYPE html>
-<html>
-<head>
-  <title>LiRAYS-SCADA API</title>
-  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css" />
-</head>
-<body>
-  <div id="swagger-ui"></div>
-  <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
-  <script>
-    window.onload = () => {
-      SwaggerUIBundle({
-        url: '/api-docs/openapi.json',
-        dom_id: '#swagger-ui'
-      });
-    };
-  </script>
-</body>
-</html>"#;
-    Response::builder()
-        .header("Content-Type", "text/html; charset=utf-8")
-        .body(Body::from(HTML))
-        .unwrap()
-}
-
-fn session_cookie(token: String, secure: bool, ttl: Duration) -> Cookie<'static> {
-    let mut cookie = Cookie::build(("lirays_session", token))
-        .path("/")
-        .http_only(true)
-        .same_site(SameSite::Lax)
-        .max_age(CookieDuration::seconds(ttl.as_secs() as i64))
-        .build();
-    if secure {
-        cookie.set_secure(true);
-    }
-    cookie
-}
-
-async fn ws_handler(
-    State(state): State<Arc<AppState>>,
-    ws: WebSocketUpgrade,
-) -> impl IntoResponse {
-    let vm = state.var_manager.clone();
-    ws.on_upgrade(move |socket| async move {
-        handle_ws_session(vm, socket).await;
-    })
-}
-
-async fn handle_ws_session(vm: Arc<VariableManager>, mut socket: WebSocket) {
-    let mut events_rx = vm.register_listener().await;
-    let mut subscribed_set: std::collections::HashSet<String> = std::collections::HashSet::new();
-    let mut get_tree_changes = false;
-    let mut as_json = false;
-
-    loop {
-        tokio::select! {
-            msg_result = socket.next() => {
-                match msg_result {
-                    Some(Ok(msg)) => {
-                        match msg {
-                            WsMessage::Binary(bin) => {
-                                let (command, is_json_cmd) = match Command::decode(&*bin) {
-                                    Ok(cmd) => (cmd, false),
-                                    Err(_) => (Command { command_type: None }, false),
-                                };
-                                as_json = is_json_cmd;
-                                let response = vm.exec_cmd(command, &mut subscribed_set, &mut get_tree_changes).await;
-                                let resp_msg = if as_json {
-                                    match serde_json::to_string(&response) {
-                                        Ok(str_) => WsMessage::Text(str_.into()),
-                                        Err(e) => WsMessage::Text(format!("Error: {e}").into()),
-                                    }
-                                } else {
-                                    WsMessage::Binary(response.encode_to_vec().into())
-                                };
-                                if let Err(e) = socket.send(resp_msg).await {
-                                    error!("Error sending response to client: {e}");
-                                    break;
-                                }
-                            }
-                            WsMessage::Text(txt) => {
-                                let (command, is_json_cmd) = match serde_json::from_str::<Command>(&txt.to_string()) {
-                                    Ok(cmd) => (cmd, true),
-                                    Err(_) => (Command { command_type: None }, true),
-                                };
-                                as_json = is_json_cmd;
-                                let response = vm.exec_cmd(command, &mut subscribed_set, &mut get_tree_changes).await;
-                                let resp_msg = if as_json {
-                                    match serde_json::to_string(&response) {
-                                        Ok(str_) => WsMessage::Text(str_.into()),
-                                        Err(e) => WsMessage::Text(format!("Error: {e}").into()),
-                                    }
-                                } else {
-                                    WsMessage::Binary(response.encode_to_vec().into())
-                                };
-                                if let Err(e) = socket.send(resp_msg).await {
-                                    error!("Error sending response to client: {e}");
-                                    break;
-                                }
-                            }
-                            WsMessage::Ping(payload) => {
-                                if let Err(e) = socket.send(WsMessage::Pong(payload)).await {
-                                    error!("Error sending Pong: {e}");
-                                    break;
-                                }
-                            }
-                            WsMessage::Close(_) => {
-                                info!("Client closed connection");
-                                break;
-                            }
-                            _ => {}
-                        }
-                    }
-                    Some(Err(e)) => {
-                        error!("WebSocket error: {e}");
-                        break;
-                    }
-                    None => {
-                        info!("Client disconnected");
-                        break;
-                    }
-                }
-            }
-            data_result = events_rx.recv() => {
-                match data_result {
-                    Some(batch) => {
-                        // Pre-serialize once per batch per client.
-                        let mut encoded: Vec<(&super::rtdata::namespace::Event, Vec<u8>, String)> = Vec::with_capacity(batch.events.len());
-                        for ev in batch.events.iter() {
-                            let bin = ev.encode_to_vec();
-                            let json = serde_json::to_string(ev).unwrap_or_else(|_| "{}".to_string());
-                            encoded.push((ev, bin, json));
-                        }
-
-                        for (event, bin, json) in encoded.into_iter() {
-                            if should_send(event, &subscribed_set, get_tree_changes) {
-                                let resp_msg = if as_json {
-                                    WsMessage::Text(json.clone().into())
-                                } else {
-                                    WsMessage::Binary(bin.clone().into())
-                                };
-                                if let Err(e) = socket.send(resp_msg).await {
-                                    error!("Error sending response to client: {e}");
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                    None => {
-                        warn!("Event channel closed for client");
-                        break;
-                    }
-                }
-            }
-        }
-    }
-}
-
-async fn setup_get() -> impl IntoResponse {
-    const FORM: &str = r#"<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Set admin password</title>
-  <style>
-    :root { color-scheme: light dark; }
-    body {
-      margin:0; padding:0;
-      font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-      background: radial-gradient(circle at 20% 20%, #1e3a8a22, transparent 35%),
-                  radial-gradient(circle at 80% 0%, #0ea5e922, transparent 40%),
-                  #0b1220;
-      color: #e5e7eb;
-      display:flex; align-items:center; justify-content:center; min-height:100vh;
-    }
-    .card {
-      background: #0f172a;
-      border: 1px solid #1f2937;
-      padding: 28px;
-      border-radius: 14px;
-      width: min(420px, 90vw);
-      box-shadow: 0 20px 50px rgba(0,0,0,0.45);
-    }
-    h1 { margin: 0 0 8px; font-size: 24px; }
-    p { margin: 0 0 18px; color: #9ca3af; line-height: 1.5; }
-    label { display:block; margin:14px 0 6px; font-weight:600; }
-    input {
-      width: 100%; padding: 12px 14px;
-      border-radius: 10px; border: 1px solid #1f2937;
-      background: #111827; color: #e5e7eb;
-      font-size: 15px;
-    }
-    button {
-      margin-top: 18px; width: 100%;
-      padding: 12px 16px;
-      border: none; border-radius: 10px;
-      background: linear-gradient(135deg, #2563eb, #0ea5e9);
-      color: white; font-weight: 700; font-size: 15px;
-      cursor: pointer; transition: transform 120ms ease, filter 120ms ease;
-    }
-    button:hover { transform: translateY(-1px); filter: brightness(1.05); }
-    .note { font-size: 13px; color: #9ca3af; margin-top: 10px; }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <h1>Set admin password</h1>
-    <p>First-time setup: define the password for user <strong>admin</strong>.</p>
-    <form method="post" action="/auth/setup">
-      <label for="password">New password</label>
-      <input id="password" name="password" type="password" required minlength="6" autofocus />
-      <button type="submit">Save and continue</button>
-      <div class="note">Stored server-side as an Argon2 hash.</div>
-    </form>
-  </div>
-</body>
-</html>"#;
-    Response::builder()
-        .header("Content-Type", "text/html; charset=utf-8")
-        .body(Body::from(FORM))
-        .unwrap()
-}
-
-#[derive(Deserialize)]
-struct PasswordForm {
-    password: String,
-}
-
-async fn setup_post(
-    State(state): State<Arc<AppState>>,
-    jar: CookieJar,
-    axum::extract::Form(form): axum::extract::Form<PasswordForm>,
-) -> impl IntoResponse {
-    if !state.auth.enabled {
-        return Redirect::to("/").into_response();
-    }
-    if state.users.admin_exists().await.unwrap_or(true) {
-        return Redirect::to("/auth/login").into_response();
-    }
-    if form.password.trim().is_empty() {
-        return (StatusCode::BAD_REQUEST, "Password required").into_response();
-    }
-    if let Err(e) = state.users.create_admin(form.password).await {
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Error creando admin: {e}"),
-        )
-            .into_response();
-    }
-
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or(Duration::from_secs(0))
-        .as_secs() as i64;
-    let claims = SessionClaims {
-        user: 1,
-        exp: now + state.auth.ttl.as_secs() as i64,
-    };
-    let token = encode_session(&state.auth.secret, &claims)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
-        .unwrap();
-    let cookie = session_cookie(token, state.auth.secure_cookies, state.auth.ttl);
-    let jar = jar.add(cookie);
-    (jar, Redirect::to("/")).into_response()
-}
-
-async fn login_get() -> impl IntoResponse {
-    const FORM: &str = r#"<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Login</title>
-  <style>
-    :root { color-scheme: light dark; }
-    body {
-      margin:0; padding:0;
-      font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-      background: radial-gradient(circle at 10% 10%, #16a34a22, transparent 35%),
-                  radial-gradient(circle at 80% 20%, #2563eb22, transparent 40%),
-                  #0b1220;
-      color: #e5e7eb;
-      display:flex; align-items:center; justify-content:center; min-height:100vh;
-    }
-    .card {
-      background: #0f172a;
-      border: 1px solid #1f2937;
-      padding: 28px;
-      border-radius: 14px;
-      width: min(420px, 90vw);
-      box-shadow: 0 20px 50px rgba(0,0,0,0.45);
-    }
-    h1 { margin: 0 0 8px; font-size: 24px; }
-    p { margin: 0 0 18px; color: #9ca3af; line-height: 1.5; }
-    label { display:block; margin:14px 0 6px; font-weight:600; }
-    input {
-      width: 100%; padding: 12px 14px;
-      border-radius: 10px; border: 1px solid #1f2937;
-      background: #111827; color: #e5e7eb;
-      font-size: 15px;
-    }
-    button {
-      margin-top: 18px; width: 100%;
-      padding: 12px 16px;
-      border: none; border-radius: 10px;
-      background: linear-gradient(135deg, #16a34a, #22c55e);
-      color: white; font-weight: 700; font-size: 15px;
-      cursor: pointer; transition: transform 120ms ease, filter 120ms ease;
-    }
-    button:hover { transform: translateY(-1px); filter: brightness(1.05); }
-    .hint { font-size: 13px; color: #9ca3af; margin-top: 10px; }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <h1>Sign in</h1>
-    <p>Use the <strong>admin</strong> account.</p>
-    <form method="post" action="/auth/login">
-      <label for="username">Username</label>
-      <input id="username" name="username" value="admin" required />
-      <label for="password">Password</label>
-      <input id="password" name="password" type="password" required />
-      <button type="submit">Sign in</button>
-      <div class="hint">If admin doesn’t exist yet, go to /auth/setup first.</div>
-    </form>
-  </div>
-</body>
-</html>"#;
-    Response::builder()
-        .header("Content-Type", "text/html; charset=utf-8")
-        .body(Body::from(FORM))
-        .unwrap()
-}
-
-#[derive(Deserialize)]
-struct LoginForm {
-    username: String,
-    password: String,
-}
-
-async fn login_post(
-    State(state): State<Arc<AppState>>,
-    jar: CookieJar,
-    axum::extract::Form(form): axum::extract::Form<LoginForm>,
-) -> impl IntoResponse {
-    if !state.auth.enabled {
-        return Redirect::to("/").into_response();
-    }
-    let creds = UserCredentials {
-        username: form.username,
-        password: form.password,
-    };
-    match state.users.verify(&creds).await {
-        Ok(true) => {
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or(Duration::from_secs(0))
-                .as_secs() as i64;
-            let claims = SessionClaims {
-                user: 1,
-                exp: now + state.auth.ttl.as_secs() as i64,
-            };
-            let token = encode_session(&state.auth.secret, &claims)
-                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
-                .unwrap();
-            let cookie = session_cookie(token, state.auth.secure_cookies, state.auth.ttl);
-            let jar = jar.add(cookie);
-            (jar, Redirect::to("/")).into_response()
-        }
-        Ok(false) => (
-            StatusCode::UNAUTHORIZED,
-            "Credenciales inválidas",
-        )
-            .into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Error de base de datos: {e}"),
-        )
-            .into_response(),
-    }
-}
-
-async fn logout(
-    State(state): State<Arc<AppState>>,
-    jar: CookieJar,
-) -> impl IntoResponse {
-    if !state.auth.enabled {
-        return Redirect::to("/").into_response();
-    }
-    let mut cookie = Cookie::build(("lirays_session", ""))
-        .path("/")
-        .http_only(true)
-        .same_site(SameSite::Lax)
-        .max_age(CookieDuration::seconds(0))
-        .build();
-    if state.auth.secure_cookies {
-        cookie.set_secure(true);
-    }
-    let jar = jar.add(cookie);
-    (jar, Redirect::to("/auth/login")).into_response()
-}
-
 pub async fn run_http_server(host: &str, port: u16, rt_db_dir: &str, static_db_file: &str, tls_config: Option<ServerTlsConfig>) {
-    // rwc ensures the sqlite file is created if missing
     let db_url = format!("sqlite://{}?mode=rwc", static_db_file);
     let db = Database::connect(db_url)
         .await
         .expect("Failed to connect database");
-    // Run migrations once for all models
     run_migrations_safe(&db)
         .await
         .expect("Failed to run migrations");
@@ -856,7 +347,6 @@ pub async fn run_http_server(host: &str, port: u16, rt_db_dir: &str, static_db_f
     }
     let var_manager = Arc::new(VariableManager::new(rt_db_dir, metrics));
 
-    // Persist cache periodically
     let flush_ms: u64 = std::env::var("PERSIST_FLUSH_MS").ok().and_then(|v| v.parse().ok()).unwrap_or(15_000);
     let _flush_handle = var_manager.clone().start_flush_loop(flush_ms);
 
@@ -877,7 +367,8 @@ pub async fn run_http_server(host: &str, port: u16, rt_db_dir: &str, static_db_f
     let auth_config = AuthConfig {
         enabled: auth_enabled,
         secret: Arc::new(secret),
-        ttl: Duration::from_secs(60 * 60 * 24), // 24h
+        access_ttl: Duration::from_secs(60 * 60),      // 1h
+        refresh_ttl: Duration::from_secs(60 * 60 * 24), // 24h
         secure_cookies: tls_config.is_some(),
     };
 
@@ -889,23 +380,18 @@ pub async fn run_http_server(host: &str, port: u16, rt_db_dir: &str, static_db_f
     });
 
     let app = Router::new()
-        // Static resource routes
-        .route("/api/resources", get(get_all_resources).post(create_resource))
-        .route("/api/resources/{id}", get(get_resource).put(update_resource).delete(delete_resource))
-        // WebSocket endpoint (shared port)
-        .route("/ws", get(ws_handler))
-        // Docs
-        .route("/api-docs/openapi.json", get(openapi_spec))
-        .route("/swagger", get(swagger_ui))
-        // Auth routes
-        .route("/auth/setup", get(setup_get).post(setup_post))
-        .route("/auth/login", get(login_get).post(login_post))
-        .route("/auth/logout", get(logout))
-        // Fallback to static file serving
-        .fallback(serve_static)
-        // Add state to the app
+        .route("/api/resources", get(resources::get_all_resources).post(resources::create_resource))
+        .route("/api/resources/{id}", get(resources::get_resource).put(resources::update_resource).delete(resources::delete_resource))
+        .route("/ws", get(resources::ws_handler))
+        .route("/api-docs/openapi.json", get(resources::openapi_spec))
+        .route("/swagger", get(resources::swagger_ui))
+        .route("/auth/setup", get(resources::setup_get).post(resources::setup_post))
+        .route("/auth/login", get(resources::login_get).post(resources::login_post))
+        .route("/auth/token", post(resources::login_api))
+        .route("/auth/refresh", post(resources::refresh_api))
+        .route("/auth/logout", get(resources::logout))
+        .fallback(resources::serve_static)
         .with_state(app_state.clone())
-        // Auth middleware on every route/fallback
         .layer(middleware::from_fn_with_state(
             app_state,
             auth_middleware,
@@ -919,7 +405,6 @@ pub async fn run_http_server(host: &str, port: u16, rt_db_dir: &str, static_db_f
         .await
         .expect("Failed to bind");
 
-    // Wait for Ctrl+C / SIGTERM and flush cache before shutdown.
     let shutdown_vm = var_manager.clone();
     async fn shutdown_signal(vm: Arc<VariableManager>) {
         #[cfg(unix)]
