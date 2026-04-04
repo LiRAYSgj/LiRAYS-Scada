@@ -77,12 +77,6 @@
   const theme = themeStore;
   const username = "Admin";
 
-  const logout = () => {
-    if (browser) {
-      window.location.href = "/auth/logout";
-    }
-  };
-
   const realtimeProvider = createPageTagRealtimeProvider(WS_ENDPOINT);
   const nodeTypes = {
     plantAsset: PlantAssetNode,
@@ -950,7 +944,6 @@
     onOpenNamespaceBuilder={openNamespaceBuilderFromToolbar}
     isAddDisabled={false}
     {username}
-    onLogout={logout}
     {multiSelectMode}
     onToggleMultiSelect={() => {
       multiSelectMode = !multiSelectMode;

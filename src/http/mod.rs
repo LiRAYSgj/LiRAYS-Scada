@@ -6,32 +6,32 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+use axum::serve::Listener;
 use axum::{
+    Router,
     extract::State,
     http::{StatusCode, Uri, header},
     middleware::{self, Next},
     response::{IntoResponse, Redirect, Response},
     routing::{get, post},
-    Router,
 };
-use axum::serve::Listener;
 use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use constant_time_eq::constant_time_eq;
 use hmac::{Hmac, Mac};
 use log::{error, info};
-use rand::{rngs::OsRng, RngCore};
+use rand::{RngCore, rngs::OsRng};
 use sea_orm::Database;
 use sea_orm_migration::MigratorTrait;
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use time::Duration as CookieDuration;
 use tokio::net::{TcpListener, TcpStream};
-use tokio_rustls::{server::TlsStream, TlsAcceptor};
+use tokio_rustls::{TlsAcceptor, server::TlsStream};
 use utoipa::ToSchema;
 
-use super::tls::{build_tls_acceptor, ServerTlsConfig};
-use crate::rtdata::{variable::VariableManager, metrics::Metrics};
+use super::tls::{ServerTlsConfig, build_tls_acceptor};
+use crate::rtdata::{metrics::Metrics, variable::VariableManager};
 use resources::resource::service::{StaticResource, StaticResourceManager};
 use resources::user::service::UserManager;
 
@@ -208,7 +208,8 @@ pub(super) fn issue_token(
         exp,
         token_type,
     };
-    let token = encode_session(&auth.secret, &claims).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let token =
+        encode_session(&auth.secret, &claims).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok((token, exp))
 }
 
@@ -238,7 +239,9 @@ pub(super) fn refresh_cookie(token: String, secure: bool, ttl: Duration) -> Cook
     cookie
 }
 
-async fn run_migrations_safe(db: &sea_orm::DatabaseConnection) -> Result<(), sea_orm_migration::DbErr> {
+async fn run_migrations_safe(
+    db: &sea_orm::DatabaseConnection,
+) -> Result<(), sea_orm_migration::DbErr> {
     match crate::migration::Migrator::up(db, None).await {
         Ok(_) => Ok(()),
         Err(sea_orm_migration::DbErr::Exec(err)) => {
@@ -263,7 +266,12 @@ async fn auth_middleware(
     }
 
     let path = req.uri().path();
-    if path.starts_with("/auth/") {
+    if path.starts_with("/auth/")
+        || path.starts_with("/_app/")
+        || path == "/robots.txt"
+        || path.starts_with("/.well-known/")
+        || path.ends_with(".ico")
+    {
         return Ok(next.run(req).await);
     }
 
@@ -332,7 +340,13 @@ impl Listener for TlsIncoming {
     }
 }
 
-pub async fn run_http_server(host: &str, port: u16, rt_db_dir: &str, static_db_file: &str, tls_config: Option<ServerTlsConfig>) {
+pub async fn run_http_server(
+    host: &str,
+    port: u16,
+    rt_db_dir: &str,
+    static_db_file: &str,
+    tls_config: Option<ServerTlsConfig>,
+) {
     let db_url = format!("sqlite://{}?mode=rwc", static_db_file);
     let db = Database::connect(db_url)
         .await
@@ -347,7 +361,10 @@ pub async fn run_http_server(host: &str, port: u16, rt_db_dir: &str, static_db_f
     }
     let var_manager = Arc::new(VariableManager::new(rt_db_dir, metrics));
 
-    let flush_ms: u64 = std::env::var("PERSIST_FLUSH_MS").ok().and_then(|v| v.parse().ok()).unwrap_or(15_000);
+    let flush_ms: u64 = std::env::var("PERSIST_FLUSH_MS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(15_000);
     let _flush_handle = var_manager.clone().start_flush_loop(flush_ms);
 
     let resource_manager = Arc::new(StaticResourceManager::new(db.clone()));
@@ -367,7 +384,7 @@ pub async fn run_http_server(host: &str, port: u16, rt_db_dir: &str, static_db_f
     let auth_config = AuthConfig {
         enabled: auth_enabled,
         secret: Arc::new(secret),
-        access_ttl: Duration::from_secs(60 * 60),      // 1h
+        access_ttl: Duration::from_secs(60 * 60),       // 1h
         refresh_ttl: Duration::from_secs(60 * 60 * 24), // 24h
         secure_cookies: tls_config.is_some(),
     };
@@ -380,22 +397,34 @@ pub async fn run_http_server(host: &str, port: u16, rt_db_dir: &str, static_db_f
     });
 
     let app = Router::new()
-        .route("/api/resources", get(resources::get_all_resources).post(resources::create_resource))
-        .route("/api/resources/{id}", get(resources::get_resource).put(resources::update_resource).delete(resources::delete_resource))
+        .route(
+            "/api/resources",
+            get(resources::get_all_resources).post(resources::create_resource),
+        )
+        .route(
+            "/api/resources/{id}",
+            get(resources::get_resource)
+                .put(resources::update_resource)
+                .delete(resources::delete_resource),
+        )
         .route("/ws", get(resources::ws_handler))
         .route("/api-docs/openapi.json", get(resources::openapi_spec))
         .route("/swagger", get(resources::swagger_ui))
-        .route("/auth/setup", get(resources::setup_get).post(resources::setup_post))
-        .route("/auth/login", get(resources::login_get).post(resources::login_post))
+        .route(
+            "/auth/setup",
+            get(resources::setup_get).post(resources::setup_post),
+        )
+        .route(
+            "/auth/login",
+            get(resources::login_get).post(resources::login_post),
+        )
+        .route("/auth/status", get(resources::auth_status))
         .route("/auth/token", post(resources::login_api))
         .route("/auth/refresh", post(resources::refresh_api))
         .route("/auth/logout", get(resources::logout))
         .fallback(resources::serve_static)
         .with_state(app_state.clone())
-        .layer(middleware::from_fn_with_state(
-            app_state,
-            auth_middleware,
-        ));
+        .layer(middleware::from_fn_with_state(app_state, auth_middleware));
 
     let addr: std::net::SocketAddr = format!("{}:{}", host, port)
         .parse()
@@ -409,7 +438,7 @@ pub async fn run_http_server(host: &str, port: u16, rt_db_dir: &str, static_db_f
     async fn shutdown_signal(vm: Arc<VariableManager>) {
         #[cfg(unix)]
         {
-            use tokio::signal::unix::{signal, SignalKind};
+            use tokio::signal::unix::{SignalKind, signal};
             let mut sigterm = signal(SignalKind::terminate()).expect("install SIGTERM handler");
             let mut sigint = signal(SignalKind::interrupt()).expect("install SIGINT handler");
             tokio::select! {

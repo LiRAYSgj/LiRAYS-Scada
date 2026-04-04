@@ -17,7 +17,6 @@
 		onToggleTheme: () => void;
 		onOpenAddDialog: () => void;
 		onOpenNamespaceBuilder: () => void;
-		onLogout: () => void;
 		isAddDisabled: boolean;
 		/** When true, Add and Namespace Builder are hidden and Remove selection is shown. */
 		multiSelectMode: boolean;
@@ -35,7 +34,6 @@
 		onToggleTheme,
 		onOpenAddDialog,
 		onOpenNamespaceBuilder,
-		onLogout,
 		username,
 		isAddDisabled,
 		multiSelectMode,
@@ -149,6 +147,8 @@
 				<div class="text-xs text-muted-foreground">Signed in</div>
 			</div>
 		</div>
-		<UIButton variant="outline" size="sm" class="ml-1" onclick={onLogout}>Logout</UIButton>
+		<form method="get" action="/auth/logout">
+			<UIButton variant="outline" size="sm" class="ml-1" type="submit">Logout</UIButton>
+		</form>
 	</div>
 </div>

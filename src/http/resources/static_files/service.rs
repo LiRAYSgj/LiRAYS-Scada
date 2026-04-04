@@ -1,30 +1,52 @@
-use axum::{
-    body::Body,
-    http::Uri,
-    response::Response,
-};
-use include_dir::{include_dir, Dir};
+use axum::{body::Body, http::Uri, response::Response};
+use include_dir::{Dir, include_dir};
 
 static FRONTEND: Dir = include_dir!("$CARGO_MANIFEST_DIR/frontend/build");
 
-pub async fn serve_static(uri: Uri) -> Response {
-    let path = uri.path().trim_start_matches('/');
-    let path = if path.is_empty() { "index.html" } else { path };
+fn response_for_file(path: &str) -> Option<Response> {
+    FRONTEND.get_file(path).map(|file| {
+        let mime = mime_guess::from_path(path).first_or_octet_stream();
+        Response::builder()
+            .header("Content-Type", mime.as_ref())
+            .body(Body::from(file.contents()))
+            .unwrap()
+    })
+}
 
-    match FRONTEND.get_file(path) {
-        Some(file) => {
-            let mime = mime_guess::from_path(path).first_or_octet_stream();
-            Response::builder()
-                .header("Content-Type", mime.as_ref())
-                .body(Body::from(file.contents()))
-                .unwrap()
+pub fn serve_static_path(path: &str) -> Response {
+    let normalized = path.trim_start_matches('/').trim();
+    let normalized = if normalized.is_empty() {
+        "index.html"
+    } else {
+        normalized
+    };
+
+    if let Some(response) = response_for_file(normalized) {
+        return response;
+    }
+
+    if normalized.ends_with('/') {
+        let candidate = format!("{normalized}index.html");
+        if let Some(response) = response_for_file(&candidate) {
+            return response;
         }
-        None => {
-            let index = FRONTEND.get_file("index.html").unwrap();
-            Response::builder()
-                .header("Content-Type", "text/html")
-                .body(Body::from(index.contents()))
-                .unwrap()
+    } else {
+        let candidate = format!("{normalized}/index.html");
+        if let Some(response) = response_for_file(&candidate) {
+            return response;
         }
     }
+
+    if !normalized.contains('.') {
+        let candidate = format!("{normalized}.html");
+        if let Some(response) = response_for_file(&candidate) {
+            return response;
+        }
+    }
+
+    response_for_file("index.html").unwrap()
+}
+
+pub async fn serve_static(uri: Uri) -> Response {
+    serve_static_path(uri.path())
 }
