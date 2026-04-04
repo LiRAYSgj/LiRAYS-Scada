@@ -399,9 +399,9 @@ impl VariableManager {
         while let Some((parent_id, nodes)) = stack.pop() {
             let is_first_level = parent_id == root_parent_id;
             for (key, val) in nodes {
-                let mut name_ = key.as_str();
-                let (start, stop, step, options) = parse_repeated_name(&mut name_);
-                let item_names = clone_name(name_, start, stop, step, options);
+                let name_ = key.as_str();
+                let (pfx, sfx, start, stop, step, options) = parse_repeated_name(name_);
+                let item_names = clone_name(&pfx, &sfx, start, stop, step, options);
 
                 let capacity = item_names.len();
                 let mut vars_to_create: Vec<ItemMeta> = Vec::with_capacity(capacity);
