@@ -1,14 +1,8 @@
 # ---------------------------------------------------------------------------
-# LiRAYS SCADA - Default Configuration (YAML)
+# LiRAYS SCADA - Default Configuration (Debian)
 # ---------------------------------------------------------------------------
-# This file ships with the Debian package and is safe to copy or edit.
-# The binary accepts `--config /etc/lirays-scada/settings.yaml`.
-# Precedence (highest → lowest):
-#   1) Environment variables (see names noted below)
-#   2) This YAML file
-#   3) Built-in defaults
-#
-# Most values are strings/numbers/booleans. Set to `null` to unset/let defaults apply.
+# This file is installed under /etc/lirays-scada/settings.yaml by the Debian
+# package. Values can be overridden via environment variables (see comments).
 # ---------------------------------------------------------------------------
 
 server:

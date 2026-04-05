@@ -10,20 +10,16 @@ use std::{
     path::{Path, PathBuf},
 };
 
-pub(crate) const DEFAULT_SETTINGS_YAML: &str = include_str!("../settings-default.yaml");
+pub(crate) const DEFAULT_SETTINGS_YAML: &str =
+    include_str!("../packaging/debian/deb-files/etc/lirays-scada/settings.yaml");
 
 use log::info;
 use rcgen::{generate_simple_self_signed, CertifiedKey};
-use tokio::runtime::{Builder, Runtime};
 use tokio::sync::oneshot;
-use tokio::task::JoinHandle;
 
 use http::run_http_server;
 use settings::{SettingSpec, Settings};
 use tls::ServerTlsConfig;
-
-#[cfg(target_os = "macos")]
-mod mac;
 
 #[derive(Clone)]
 pub(crate) struct RuntimeConfig {
@@ -35,14 +31,6 @@ pub(crate) struct RuntimeConfig {
     auth_enabled: bool,
     auth_secret_bytes: Option<Vec<u8>>,
     server_tls: Option<ServerTlsConfig>,
-    tls_enabled: bool,
-    config_path: Option<PathBuf>,
-}
-
-pub(crate) struct ServerRuntime {
-    pub runtime: Runtime,
-    pub handle: JoinHandle<Result<(), String>>,
-    pub ready_rx: Option<oneshot::Receiver<Result<(), String>>>,
 }
 
 fn generate_self_signed_cert(out_dir: &Path) -> (PathBuf, PathBuf) {
@@ -62,69 +50,22 @@ fn generate_self_signed_cert(out_dir: &Path) -> (PathBuf, PathBuf) {
     (cert_path, key_path)
 }
 
-#[cfg(target_os = "macos")]
-fn main() {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
-
-    let user_config_arg = parse_config_arg();
-    let in_bundle = mac::running_in_app_bundle();
-    let config = load_runtime_config(user_config_arg.clone(), in_bundle);
-    let service_url = build_service_url(&config.host, config.port, config.tls_enabled);
-
-    let mut server_runtime = spawn_server(&config);
-
-    mac::wait_for_server_ready(&mut server_runtime);
-
-    if in_bundle {
-        mac::launch_window(
-            user_config_arg,
-            in_bundle,
-            service_url,
-            config,
-            server_runtime,
-            DEFAULT_SETTINGS_YAML,
-        );
-    } else {
-        let ServerRuntime { runtime, handle, .. } = server_runtime;
-        runtime.block_on(async move {
-            match handle.await {
-                Ok(Ok(())) => {}
-                Ok(Err(err)) => eprintln!("Server error: {err}"),
-                Err(err) => eprintln!("Server task failed: {err}"),
-            }
-        });
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
 #[tokio::main]
 async fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     let config_path = parse_config_arg();
-    let config = load_runtime_config(config_path, false);
+    let config = load_runtime_config(config_path);
     run_server(config, None)
         .await
         .expect("server failed to start");
 }
 
-pub(crate) fn load_runtime_config(config_path: Option<PathBuf>, in_bundle: bool) -> RuntimeConfig {
+pub(crate) fn load_runtime_config(config_path: Option<PathBuf>) -> RuntimeConfig {
     let cwd = env::current_dir().expect("failed to get cwd");
 
-    let default_data_dir = if in_bundle {
-        #[cfg(target_os = "macos")]
-        {
-            mac::mac_default_data_dir().unwrap_or_else(|| cwd.join("data_dir"))
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            cwd.join("data_dir")
-        }
-    } else {
-        cwd.join("data_dir")
-    };
+    let default_data_dir = cwd.join("data_dir");
 
-    let resolved_config =
-        config_path.or_else(|| resolve_default_config(in_bundle, DEFAULT_SETTINGS_YAML));
+    let resolved_config = config_path.or_else(|| resolve_default_config(DEFAULT_SETTINGS_YAML));
 
     let settings = Settings::from_optional_file(resolved_config.as_ref()).unwrap_or_else(|e| {
         eprintln!("Failed to load settings: {e}");
@@ -259,8 +200,6 @@ pub(crate) fn load_runtime_config(config_path: Option<PathBuf>, in_bundle: bool)
         auth_enabled,
         auth_secret_bytes,
         server_tls,
-        tls_enabled,
-        config_path: resolved_config,
     }
 }
 
@@ -291,21 +230,6 @@ async fn run_server(
         ready_tx,
     )
     .await
-}
-
-pub(crate) fn spawn_server(config: &RuntimeConfig) -> ServerRuntime {
-    let runtime = Builder::new_multi_thread()
-        .enable_all()
-        .build()
-        .expect("failed to create tokio runtime");
-    let config_clone = config.clone();
-    let (ready_tx, ready_rx) = oneshot::channel();
-    let handle = runtime.spawn(async move { run_server(config_clone, Some(ready_tx)).await });
-    ServerRuntime {
-        runtime,
-        handle,
-        ready_rx: Some(ready_rx),
-    }
 }
 
 fn parse_config_arg() -> Option<PathBuf> {
@@ -346,23 +270,11 @@ fn parse_config_arg() -> Option<PathBuf> {
     config
 }
 
-pub(crate) fn build_service_url(host: &str, port: u16, tls_enabled: bool) -> String {
-    let scheme = if tls_enabled { "https" } else { "http" };
-    let browser_host = if host == "0.0.0.0" { "localhost" } else { host };
-    format!("{scheme}://{browser_host}:{port}")
-}
-
-fn resolve_default_config(in_bundle: bool, default_yaml: &str) -> Option<PathBuf> {
-    #[cfg(target_os = "macos")]
-    return mac::resolve_default_config(in_bundle, default_yaml);
-
-    #[cfg(not(target_os = "macos"))]
-    {
-        let etc_cfg = PathBuf::from("/etc/lirays-scada/settings.yaml");
-        if etc_cfg.exists() {
-            Some(etc_cfg)
-        } else {
-            None
-        }
+fn resolve_default_config(_default_yaml: &str) -> Option<PathBuf> {
+    let etc_cfg = PathBuf::from("/etc/lirays-scada/settings.yaml");
+    if etc_cfg.exists() {
+        Some(etc_cfg)
+    } else {
+        None
     }
 }

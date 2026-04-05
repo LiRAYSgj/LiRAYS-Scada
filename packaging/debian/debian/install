@@ -1,2 +1,2 @@
 deb-files/usr/bin/* usr/bin/
-deb-files/etc/systemd/system/* etc/systemd/system/
+deb-files/etc/* etc/
