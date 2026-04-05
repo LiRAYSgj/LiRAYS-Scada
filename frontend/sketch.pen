@@ -118762,11 +118762,11 @@
   "variables": {
     "accent-primary": {
       "type": "color",
-      "value": "#2563EB"
+      "value": "#6C8E00"
     },
     "accent-primary-hover": {
       "type": "color",
-      "value": "#3B82F6"
+      "value": "#6C8E00"
     },
     "accent-warn": {
       "type": "color",

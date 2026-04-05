@@ -37,7 +37,7 @@
       class="h-8 w-auto select-none object-contain"
       draggable="false"
     />
-    <h1 class="pb-[2px] text-xl leading-none font-semibold tracking-wide text-primary">
+    <h1 class="pb-[2px] text-xl leading-none font-semibold tracking-wide text-foreground">
       SCADA
     </h1>
     <h1 class="sr-only">LiRAYS SCADA</h1>

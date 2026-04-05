@@ -5,7 +5,9 @@ export default {
     adapter: adapter({
       pages: "build",
       assets: "build",
-      // No fallback: every route is prerendered (`+layout.ts`). Avoids overwriting prerendered `index.html`.
+      strict: false,
+      // Keep prerendered pages while allowing backend-served/dynamic routes (e.g. /api/*, /views/[id]).
+      // No fallback avoids overwriting prerendered root index.html.
     }),
   },
 };

@@ -273,11 +273,23 @@ async fn auth_middleware(
     }
 
     let path = req.uri().path();
+    let is_public_static = matches!(
+        path,
+        "/site.webmanifest"
+            | "/favicon-16x16.png"
+            | "/favicon-32x32.png"
+            | "/apple-touch-icon.png"
+            | "/android-chrome-192x192.png"
+            | "/android-chrome-512x512.png"
+            | "/favicon.ico"
+            | "/logo.svg"
+    );
+
     if path.starts_with("/auth/")
         || path.starts_with("/_app/")
         || path == "/robots.txt"
         || path.starts_with("/.well-known/")
-        || path.ends_with(".ico")
+        || is_public_static
     {
         return Ok(next.run(req).await);
     }
