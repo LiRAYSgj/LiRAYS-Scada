@@ -123,7 +123,9 @@ export function splitNameAndRange(raw: string): {
   };
 }
 
-function splitKeyAndValue(line: string): { key: string; value: string | null } | null {
+function splitKeyAndValue(
+  line: string,
+): { key: string; value: string | null } | null {
   let depth = 0;
   for (let i = 0; i < line.length; i += 1) {
     const ch = line[i];
@@ -205,7 +207,9 @@ export function parseYamlLike(
     const key = parsedLine.key;
     const value = parsedLine.value;
     const isVariableDeclaration = value !== null;
-    const isVariableBlockKey = VARIABLE_BLOCK_KEYS.has(key.trim().toLowerCase());
+    const isVariableBlockKey = VARIABLE_BLOCK_KEYS.has(
+      key.trim().toLowerCase(),
+    );
 
     if (isVariableDeclaration) {
       const typeRaw = value?.trim() ?? "";
@@ -423,14 +427,10 @@ export function validateNamespaceAst(
         }
       } else if (isNumericType) {
         if (min && !isNumericLiteral(min)) {
-          throw new Error(
-            `Invalid namespace: "${label}" Min must be numeric.`,
-          );
+          throw new Error(`Invalid namespace: "${label}" Min must be numeric.`);
         }
         if (max && !isNumericLiteral(max)) {
-          throw new Error(
-            `Invalid namespace: "${label}" Max must be numeric.`,
-          );
+          throw new Error(`Invalid namespace: "${label}" Max must be numeric.`);
         }
         if (maxLength) {
           throw new Error(
@@ -462,14 +462,10 @@ export function validateNamespaceAst(
         }
       } else {
         if (min && !isNumericLiteral(min)) {
-          throw new Error(
-            `Invalid namespace: "${label}" Min must be numeric.`,
-          );
+          throw new Error(`Invalid namespace: "${label}" Min must be numeric.`);
         }
         if (max && !isNumericLiteral(max)) {
-          throw new Error(
-            `Invalid namespace: "${label}" Max must be numeric.`,
-          );
+          throw new Error(`Invalid namespace: "${label}" Max must be numeric.`);
         }
         if (maxLength && !isIntegerLiteral(maxLength)) {
           throw new Error(
@@ -566,7 +562,8 @@ export function serializeYamlLike(
         return `${pad}${label}: ${dataType}`;
       }
       const lines: string[] = [`${pad}${label}:`, `${pad}  type: ${dataType}`];
-      if (node.unit.trim() !== "") lines.push(`${pad}  unit: ${node.unit.trim()}`);
+      if (node.unit.trim() !== "")
+        lines.push(`${pad}  unit: ${node.unit.trim()}`);
       if (node.min.trim() !== "") lines.push(`${pad}  min: ${node.min.trim()}`);
       if (node.max.trim() !== "") lines.push(`${pad}  max: ${node.max.trim()}`);
       if (node.maxLength.trim() !== "") {

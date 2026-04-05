@@ -4,20 +4,20 @@ import type { LayoutLoad } from "./$types";
 import { getAuthStatus } from "$lib/auth/session";
 
 export const load: LayoutLoad = async ({ fetch }) => {
-	if (!browser) {
-		return;
-	}
+  if (!browser) {
+    return;
+  }
 
-	const status = await getAuthStatus(fetch);
-	if (!status || !status.authEnabled) {
-		return;
-	}
+  const status = await getAuthStatus(fetch);
+  if (!status || !status.authEnabled) {
+    return;
+  }
 
-	if (!status.adminExists) {
-		throw redirect(307, "/auth/setup");
-	}
+  if (!status.adminExists) {
+    throw redirect(307, "/auth/setup");
+  }
 
-	if (!status.authenticated) {
-		throw redirect(307, "/auth/login");
-	}
+  if (!status.authenticated) {
+    throw redirect(307, "/auth/login");
+  }
 };
