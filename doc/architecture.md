@@ -14,7 +14,7 @@ Rust runtime
 ## Processes & Ports
 - Single Rust binary (`lirays-scada`).
 - HTTP/S + WebSocket (same listener): `BIND_HOST`/`BIND_PORT` (default `0.0.0.0:8245`).
-- TLS: `WS_TLS_ENABLE` drives both WebSocket and HTTP listeners (shared cert/key or auto self-signed).
+- TLS: `TLS_ENABLE` drives both WebSocket and HTTP listeners (shared cert/key or auto self-signed).
 - Auth (optional): `AUTH_ENABLED` gates HTTP (SPA, Swagger, API) behind a session cookie; `AUTH_SECRET` signs the cookie.
 
 ## Data & Storage
@@ -40,7 +40,7 @@ Rust runtime
 - Assets built into `frontend/build` and embedded in the binary.
 
 ## Security/TLS Flow
-- With `WS_TLS_ENABLE=true`: uses provided cert/key or generates self-signed under `${DATA_DIR}/certificates/` when `WS_TLS_AUTO=1`.
+- With `TLS_ENABLE=true`: uses provided cert/key or generates self-signed under `${DATA_DIR}/certificates/` when `TLS_AUTO=1`.
 - HTTP serves HTTPS on `BIND_PORT`; WebSocket upgrades to `wss` on the same port.
 - With `AUTH_ENABLED=true`: first visit forces `/auth/setup` to set `admin`; then `/auth/login`. HttpOnly cookie `lirays_session`, 24h, `Secure` if TLS.
 

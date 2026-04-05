@@ -1,68 +1,134 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [ "$(uname -s)" != "Darwin" ]; then
-  echo "This script must be run on macOS." >&2
-  exit 1
-fi
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-DIST_DIR="$REPO_ROOT/distributions"
-ARCH="${ARCH:-$(uname -m)}"       # arm64 or x86_64
-VERSION="${VERSION:-0.1.0}"
-PKG_ID="com.lirays.scada"
-PKG_NAME="lirays-scada-${VERSION}-${ARCH}.pkg"
-DMG_NAME="lirays-scada-${VERSION}-${ARCH}.dmg"
+ARCH="${ARCH:-$(uname -m)}"
+VERSION="${VERSION:-0.0.0}"
+APP_NAME="LiRays SCADA"
+APP_BUNDLE_NAME="LiRays-Scada.app"
+BIN_NAME="lirays-scada"
+VOLUME_NAME="LiRays SCADA"
+ICON_SRC="$ROOT_DIR/frontend/static/android-chrome-512x512.png"
+ICON_NAME="icon.icns"
+DEFAULT_CONFIG="$ROOT_DIR/settings-default.yaml"
 
-if [ "$ARCH" = "x86_64" ]; then
-  BIN_PATH="$REPO_ROOT/target/x86_64-apple-darwin/release/lirays-scada"
-else
-  BIN_PATH="$REPO_ROOT/target/release/lirays-scada"
-fi
-PLIST_SRC="$REPO_ROOT/packaging/macos/com.lirays.scada.plist"
-POSTINSTALL_SRC="$REPO_ROOT/packaging/macos/postinstall"
+DIST_DIR="$ROOT_DIR/distributions"
+STAGING_DIR="$SCRIPT_DIR/build-${ARCH}"
+APP_DIR="$STAGING_DIR/$APP_BUNDLE_NAME"
+DMG_PATH="$DIST_DIR/lirays-scada-${VERSION}-mac-${ARCH}.dmg"
 
-if [ ! -x "$BIN_PATH" ]; then
-  echo "Binary not found at $BIN_PATH. Build the backend first (cargo build --release)." >&2
-  exit 1
-fi
+cleanup() {
+  rm -rf "$STAGING_DIR"
+}
+trap cleanup EXIT
 
 mkdir -p "$DIST_DIR"
+rm -f "$DMG_PATH"
+rm -rf "$STAGING_DIR"
+mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 
-PKGROOT="$(mktemp -d)"
-SCRIPTS_DIR="$(mktemp -d)"
-DMG_STAGE="$(mktemp -d)"
+build_icns() {
+  if [ ! -f "$ICON_SRC" ]; then
+    echo "⚠️  Icon source not found at $ICON_SRC; skipping icon generation."
+    return
+  fi
+  if ! command -v sips >/dev/null || ! command -v iconutil >/dev/null; then
+    echo "⚠️  sips/iconutil not available; skipping icon generation."
+    return
+  fi
 
-trap 'rm -rf "$PKGROOT" "$SCRIPTS_DIR" "$DMG_STAGE"' EXIT
+  local iconset="$STAGING_DIR/icon.iconset"
+  rm -rf "$iconset"
+  mkdir -p "$iconset"
 
-echo "Staging payload at $PKGROOT"
+  for size in 16 32 64 128 256 512 1024; do
+    local base="$iconset/icon_${size}x${size}.png"
+    sips -z "$size" "$size" "$ICON_SRC" --out "$base" >/dev/null
+    if [ "$size" -ne 1024 ]; then
+      local retina=$((size * 2))
+      sips -z "$retina" "$retina" "$ICON_SRC" --out "$iconset/icon_${size}x${size}@2x.png" >/dev/null
+    fi
+  done
 
-/usr/bin/install -d "$PKGROOT/usr/local/bin"
-/usr/bin/install -m 755 "$BIN_PATH" "$PKGROOT/usr/local/bin/lirays-scada"
+  iconutil -c icns "$iconset" -o "$APP_DIR/Contents/Resources/$ICON_NAME" >/dev/null
+}
 
-/usr/bin/install -d "$PKGROOT/usr/local/var/lirays-scada/data_dir"
-/usr/bin/install -d "$PKGROOT/usr/local/var/log"
+build_icns
 
-/usr/bin/install -d "$PKGROOT/Library/LaunchDaemons"
-/usr/bin/install -m 644 "$PLIST_SRC" "$PKGROOT/Library/LaunchDaemons/com.lirays.scada.plist"
+choose_binary() {
+  case "$ARCH" in
+    arm64|aarch64)
+      candidates=(
+        "$ROOT_DIR/target/aarch64-apple-darwin/release/$BIN_NAME"
+        "$ROOT_DIR/target/arm64-apple-darwin/release/$BIN_NAME"
+        "$ROOT_DIR/target/release/$BIN_NAME"
+      )
+      ;;
+    x86_64)
+      candidates=(
+        "$ROOT_DIR/target/x86_64-apple-darwin/release/$BIN_NAME"
+        "$ROOT_DIR/target/release/$BIN_NAME"
+      )
+      ;;
+    *)
+      echo "Unsupported ARCH: $ARCH" >&2
+      exit 2
+      ;;
+  esac
 
-/usr/bin/install -m 755 "$POSTINSTALL_SRC" "$SCRIPTS_DIR/postinstall"
+  for bin in "${candidates[@]}"; do
+    if [ -f "$bin" ]; then
+      echo "$bin"
+      return 0
+    fi
+  done
 
-echo "Cleaning previous artifacts"
-rm -f "$DIST_DIR/$PKG_NAME" "$DIST_DIR/$DMG_NAME"
+  echo "Binary $BIN_NAME not found for arch $ARCH. Build it first (make mac-local/mac-all)." >&2
+  exit 1
+}
 
-echo "Building pkg -> $DIST_DIR/$PKG_NAME"
-/usr/bin/pkgbuild \
-  --root "$PKGROOT" \
-  --identifier "$PKG_ID" \
-  --version "$VERSION" \
-  --scripts "$SCRIPTS_DIR" \
-  "$DIST_DIR/$PKG_NAME"
+BIN_PATH="$(choose_binary)"
+install -m 755 "$BIN_PATH" "$APP_DIR/Contents/MacOS/$BIN_NAME"
 
-echo "Creating dmg -> $DIST_DIR/$DMG_NAME"
-cp "$DIST_DIR/$PKG_NAME" "$DMG_STAGE/"
-/usr/bin/hdiutil create -fs HFS+ -volname "LiRAYS-SCADA" -srcfolder "$DMG_STAGE" "$DIST_DIR/$DMG_NAME" >/dev/null
+cat >"$APP_DIR/Contents/Info.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key><string>en</string>
+  <key>CFBundleExecutable</key><string>${BIN_NAME}</string>
+  <key>CFBundleIdentifier</key><string>com.lirays.scada</string>
+  <key>CFBundleName</key><string>${APP_NAME}</string>
+  <key>CFBundleDisplayName</key><string>${APP_NAME}</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>${VERSION}</string>
+  <key>CFBundleVersion</key><string>${VERSION}</string>
+  <key>LSMinimumSystemVersion</key><string>11.0</string>
+  <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
+  <key>NSHighResolutionCapable</key><true/>
+  <key>CFBundleIconFile</key><string>${ICON_NAME}</string>
+</dict>
+</plist>
+EOF
 
-echo "Done."
-echo "  PKG: $DIST_DIR/$PKG_NAME"
-echo "  DMG: $DIST_DIR/$DMG_NAME"
+# Ship default settings alongside the app bundle so first run can copy to Application Support
+if [ -f "$DEFAULT_CONFIG" ]; then
+  cp "$DEFAULT_CONFIG" "$APP_DIR/Contents/Resources/settings.yaml"
+fi
+
+DMG_ROOT="$STAGING_DIR/dmg-root"
+mkdir -p "$DMG_ROOT"
+cp -R "$APP_DIR" "$DMG_ROOT/"
+ln -sf /Applications "$DMG_ROOT/Applications"
+
+hdiutil create \
+  -volname "$VOLUME_NAME" \
+  -srcfolder "$DMG_ROOT" \
+  -fs HFS+ \
+  -format UDZO \
+  -ov \
+  "$DMG_PATH" >/dev/null
+
+echo "✅ Built DMG: $DMG_PATH"

@@ -4,9 +4,9 @@
 - `BIND_HOST` / `BIND_PORT` – unified host/port for HTTP + WS (default `0.0.0.0:8245`).
 - `DATA_DIR` – data root (default `./data_dir`); contains `rt_data/` (sled) and `static.db` (SQLite).
 - TLS:
-  - `WS_TLS_ENABLE` – enable TLS for HTTP and WS.
-  - `WS_TLS_AUTO` – when true, generates self-signed cert/key in `${DATA_DIR}/certificates/`.
-  - `WS_TLS_CERT_PATH` / `WS_TLS_KEY_PATH` – PEM paths when TLS is on and AUTO is off.
+  - `TLS_ENABLE` – enable TLS for HTTP and WS.
+  - `TLS_AUTO` – when true, generates self-signed cert/key in `${DATA_DIR}/certificates/` if no cert/key provided.
+  - `TLS_CERT_PATH` / `TLS_KEY_PATH` – PEM paths when TLS is on and AUTO is off.
 - Auth (optional):
   - `AUTH_ENABLED` – gate SPA, Swagger, API.
   - `AUTH_SECRET` – HMAC for session cookie; if missing, a random one is generated (sessions invalidated on restart).
@@ -18,7 +18,7 @@
 ## Directories & files
 - `${DATA_DIR}/rt_data/` – sled trees (`mainTree`, `valuesTree`).
 - `${DATA_DIR}/static.db` – SQLite for static resources and users.
-- `${DATA_DIR}/certificates/` – self-signed pair when `WS_TLS_AUTO=1`.
+- `${DATA_DIR}/certificates/` – self-signed pair when `TLS_AUTO=1`.
 - Service logs (packages and macOS LaunchDaemon): `/var/log/lirays-scada*.log` or `/usr/local/var/log/lirays-scada*.log` on macOS.
 
 ## Authentication
@@ -27,9 +27,9 @@
 - Cookie: `lirays_session`, HttpOnly, TTL 24h, `Secure` if TLS.
 
 ## TLS
-- With `WS_TLS_ENABLE=true`:
-  - Use `WS_TLS_CERT_PATH`/`WS_TLS_KEY_PATH` if provided.
-  - Otherwise, with `WS_TLS_AUTO=1`, generate self-signed in `${DATA_DIR}/certificates/`.
+- With `TLS_ENABLE=true`:
+  - Use `TLS_CERT_PATH`/`TLS_KEY_PATH` if provided.
+  - Otherwise, with `TLS_AUTO=1`, generate self-signed in `${DATA_DIR}/certificates/`.
   - HTTP serves HTTPS on `BIND_PORT`, WS upgrades to `wss` on `/ws`.
 
 ## Metrics

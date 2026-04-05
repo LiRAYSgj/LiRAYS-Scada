@@ -4,6 +4,10 @@ ROOT          := $(CURDIR)
 FRONTEND_DIR  := $(ROOT)/frontend
 TARGET_DIR    := $(ROOT)/target
 DIST_DIR      := $(ROOT)/distributions
+PACKAGING_DIR := $(ROOT)/packaging
+DEB_ROOT_DIR  := $(PACKAGING_DIR)/debian
+DEBIAN_DIR    := $(DEB_ROOT_DIR)/debian
+DEBFILES_DIR  := $(DEB_ROOT_DIR)/deb-files
 NVM_DIR       ?= $(HOME)/.nvm
 NODE_VERSION  ?= 24
 VERSION       ?= $(shell sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
@@ -51,8 +55,8 @@ help:
 	@echo "Targets:"
 	@echo "  make                -> build installer for current OS/arch (no Docker)"
 	@echo "  make release        -> full release from macOS: mac (arm/x86), deb (amd/arm), windows zip/NSIS"
-	@echo "  make mac-local      -> pkg/dmg for host mac arch"
-	@echo "  make mac-all        -> pkg/dmg for arm64 + x86_64 (mac host)"
+	@echo "  make mac-local      -> DMG app bundle for host mac arch"
+	@echo "  make mac-all        -> DMG app bundle for arm64 + x86_64 (mac host)"
 	@echo "  make deb-local      -> .deb for host arch (Debian/Ubuntu)"
 	@echo "  make windows-local  -> zip (+NSIS if makensis) for host Windows"
 	@echo "  make clean          -> clean Rust + frontend outputs"
@@ -139,10 +143,20 @@ deb-local: ensure-linux backend-build deb-package
 
 deb-package: prepare-dist
 	@echo "📦 Creating Debian package..."
-	@install -Dm755 $(TARGET_DIR)/release/lirays-scada deb-files/usr/bin/lirays-scada
-	@DEB_BUILD_OPTIONS="nostrip nocheck" debuild -b -us -uc
-	@rm -rf ../*.build ../*.buildinfo ../*.changes ../*.ddeb ../*dbgsym*.deb
-	@mv ../lirays-scada_*[0-9].deb $(DIST_DIR)
+	@bash -lc 'set -euo pipefail; \
+	  ROOT="$(ROOT)"; \
+	  DIST="$(DIST_DIR)"; \
+	  DEBFILES="$(DEBFILES_DIR)"; \
+	  install -Dm644 "$$ROOT/settings-default.yaml" "$$DEBFILES/etc/lirays-scada/settings.yaml"; \
+	  ln -sfn "$(DEBIAN_DIR)" "$$ROOT/debian"; \
+	  ln -sfn "$(DEBFILES_DIR)" "$$ROOT/deb-files"; \
+	  trap "rm -f \"$$ROOT/debian\" \"$$ROOT/deb-files\"" EXIT; \
+	  install -Dm755 "$(TARGET_DIR)/release/lirays-scada" "$$DEBFILES/usr/bin/lirays-scada"; \
+	  cd "$$ROOT"; \
+	  DEB_BUILD_OPTIONS="nostrip nocheck" debuild -b -us -uc; \
+	  rm -rf ../*.build ../*.buildinfo ../*.changes ../*.ddeb ../*dbgsym*.deb; \
+	  mv ../lirays-scada_*[0-9].deb "$$DIST"; \
+	'
 
 # cross-build .deb from macOS via Docker
 
@@ -153,10 +167,13 @@ deb-docker-amd64: ensure-mac
 		apt-get install -y curl ca-certificates gnupg; \
 		curl -fsSL https://deb.nodesource.com/setup_$(NODE_VERSION).x | bash -; \
 		apt-get install -y nodejs protobuf-compiler debhelper devscripts equivs pkg-config libssl-dev build-essential; \
+		ln -sfn packaging/debian/debian ./debian; \
+		ln -sfn packaging/debian/deb-files ./deb-files; \
 		mk-build-deps -i -r -t "apt-get -y --no-install-recommends" ./debian/control; \
 		export PATH="/usr/local/cargo/bin:/root/.cargo/bin:$$PATH"; \
 		export CARGO=/usr/local/cargo/bin/cargo; \
-		VERSION=$(VERSION) CARGO=$$CARGO make deb-local'
+		VERSION=$(VERSION) CARGO=$$CARGO make deb-local; \
+		rm -f ./debian ./deb-files'
 
 
 deb-docker-arm64: ensure-mac
@@ -166,10 +183,13 @@ deb-docker-arm64: ensure-mac
 		apt-get install -y curl ca-certificates gnupg; \
 		curl -fsSL https://deb.nodesource.com/setup_$(NODE_VERSION).x | bash -; \
 		apt-get install -y nodejs protobuf-compiler debhelper devscripts equivs pkg-config libssl-dev build-essential; \
+		ln -sfn packaging/debian/debian ./debian; \
+		ln -sfn packaging/debian/deb-files ./deb-files; \
 		mk-build-deps -i -r -t "apt-get -y --no-install-recommends" ./debian/control; \
 		export PATH="/usr/local/cargo/bin:/root/.cargo/bin:$$PATH"; \
 		export CARGO=/usr/local/cargo/bin/cargo; \
-		VERSION=$(VERSION) CARGO=$$CARGO make deb-local'
+		VERSION=$(VERSION) CARGO=$$CARGO make deb-local; \
+		rm -f ./debian ./deb-files'
 
 # --- Windows ---------------------------------------------------------------
 

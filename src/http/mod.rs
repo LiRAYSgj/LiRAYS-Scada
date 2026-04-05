@@ -2,6 +2,7 @@ mod resources;
 
 use std::{
     io,
+    path::{Path, PathBuf},
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -362,28 +363,38 @@ impl Listener for TlsIncoming {
 pub async fn run_http_server(
     host: &str,
     port: u16,
-    rt_db_dir: &str,
-    static_db_file: &str,
+    rt_db_dir: &Path,
+    static_db_file: &Path,
     tls_config: Option<ServerTlsConfig>,
-) {
-    let db_url = format!("sqlite://{}?mode=rwc", static_db_file);
-    let db = Database::connect(db_url)
-        .await
-        .expect("Failed to connect database");
-    run_migrations_safe(&db)
-        .await
-        .expect("Failed to run migrations");
+    metrics_dir: Option<PathBuf>,
+    flush_ms: u64,
+    auth_enabled: bool,
+    auth_secret: Option<Vec<u8>>,
+    ready_tx: Option<tokio::sync::oneshot::Sender<Result<(), String>>>,
+) -> Result<(), String> {
+    let db_url = format!("sqlite://{}?mode=rwc", static_db_file.to_string_lossy());
+    let db = match Database::connect(db_url).await {
+        Ok(db) => db,
+        Err(err) => {
+            if let Some(tx) = ready_tx {
+                let _ = tx.send(Err(format!("Failed to connect database: {err}")));
+            }
+            return Err(format!("Failed to connect database: {err}"));
+        }
+    };
+    if let Err(err) = run_migrations_safe(&db).await {
+        if let Some(tx) = ready_tx {
+            let _ = tx.send(Err(format!("Failed to run migrations: {err}")));
+        }
+        return Err(format!("Failed to run migrations: {err}"));
+    }
 
-    let metrics = Arc::new(Metrics::new_from_env());
+    let metrics = Arc::new(Metrics::new(metrics_dir));
     if metrics.enabled() {
         Metrics::spawn_logger(metrics.clone());
     }
-    let var_manager = Arc::new(VariableManager::new(rt_db_dir, metrics));
+    let var_manager = Arc::new(VariableManager::new(rt_db_dir.to_str().unwrap(), metrics));
 
-    let flush_ms: u64 = std::env::var("PERSIST_FLUSH_MS")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(15_000);
     let _flush_handle = var_manager.clone().start_flush_loop(flush_ms);
 
     let view_manager = Arc::new(ViewManager::new(db.clone()));
@@ -393,17 +404,11 @@ pub async fn run_http_server(
         .expect("Failed to initialize views storage");
     let user_manager = Arc::new(UserManager::new(db.clone()));
 
-    let auth_enabled = std::env::var("AUTH_ENABLED")
-        .map(|v| matches!(v.to_lowercase().as_str(), "1" | "true" | "yes" | "on"))
-        .unwrap_or(false);
-    let secret = std::env::var("AUTH_SECRET")
-        .ok()
-        .map(|s| s.into_bytes())
-        .unwrap_or_else(|| {
-            let mut buf = vec![0u8; 32];
-            OsRng.fill_bytes(&mut buf);
-            buf
-        });
+    let secret = auth_secret.unwrap_or_else(|| {
+        let mut buf = vec![0u8; 32];
+        OsRng.fill_bytes(&mut buf);
+        buf
+    });
     let auth_config = AuthConfig {
         enabled: auth_enabled,
         secret: Arc::new(secret),
@@ -461,9 +466,19 @@ pub async fn run_http_server(
         .parse()
         .expect("Invalid host/port");
 
-    let listener = tokio::net::TcpListener::bind(addr)
-        .await
-        .expect("Failed to bind");
+    let listener = match tokio::net::TcpListener::bind(addr).await {
+        Ok(l) => l,
+        Err(err) => {
+            if let Some(tx) = ready_tx {
+                let _ = tx.send(Err(format!("Failed to bind {addr}: {err}")));
+            }
+            return Err(format!("Failed to bind {addr}: {err}"));
+        }
+    };
+
+    if let Some(tx) = ready_tx {
+        let _ = tx.send(Ok(()));
+    }
 
     let shutdown_vm = var_manager.clone();
     async fn shutdown_signal(vm: Arc<VariableManager>) {
@@ -492,11 +507,13 @@ pub async fn run_http_server(
         axum::serve(incoming, app)
             .with_graceful_shutdown(shutdown_signal(shutdown_vm))
             .await
-            .expect("HTTPS server error");
+            .map_err(|e| format!("HTTPS server error: {e}"))?;
     } else {
         axum::serve(listener, app)
             .with_graceful_shutdown(shutdown_signal(shutdown_vm))
             .await
-            .expect("HTTP server error");
+            .map_err(|e| format!("HTTP server error: {e}"))?;
     }
+
+    Ok(())
 }

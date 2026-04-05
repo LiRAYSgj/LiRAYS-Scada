@@ -18,8 +18,7 @@ pub struct Metrics {
 }
 
 impl Metrics {
-    pub fn new_from_env() -> Self {
-        let dir_path = std::env::var("METRICS_DIR").ok().filter(|s| !s.is_empty()).map(PathBuf::from);
+    pub fn new(dir_path: Option<PathBuf>) -> Self {
         Self {
             dir_path,
             add_ops: AtomicU64::new(0),

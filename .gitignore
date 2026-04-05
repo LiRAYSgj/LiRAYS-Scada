@@ -211,10 +211,10 @@ __marimo__/
 # Service
 demo_data
 *.dSYM
-deb-files/usr/bin/lirays-scada
-debian/.debhelper
-debian/lirays-scada
-debian/files
+packaging/debian/deb-files/usr/bin/lirays-scada
+packaging/debian/debian/.debhelper
+packaging/debian/debian/lirays-scada
+packaging/debian/debian/files
 *.deb
 *.buildinfo
 *.changes
