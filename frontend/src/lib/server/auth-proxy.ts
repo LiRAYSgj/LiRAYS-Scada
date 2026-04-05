@@ -5,9 +5,7 @@ const DEFAULT_BACKEND_ORIGIN = "http://127.0.0.1:8245";
 
 function getBackendOrigin(): string {
   return (
-    env.BACKEND_ORIGIN ??
-    env.SCADA_BACKEND_ORIGIN ??
-    DEFAULT_BACKEND_ORIGIN
+    env.BACKEND_ORIGIN ?? env.SCADA_BACKEND_ORIGIN ?? DEFAULT_BACKEND_ORIGIN
   );
 }
 

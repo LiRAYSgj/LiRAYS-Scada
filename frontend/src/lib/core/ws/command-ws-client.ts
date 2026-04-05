@@ -46,7 +46,9 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function isNamespaceVariableSpec(value: unknown): value is NamespaceVariableSpec {
+function isNamespaceVariableSpec(
+  value: unknown,
+): value is NamespaceVariableSpec {
   if (!isPlainObject(value)) return false;
   return typeof value.type === "string";
 }
@@ -65,8 +67,13 @@ function toOptionalString(value: unknown, field: string): string | undefined {
 
 function toStringArray(value: unknown, field: string): string[] {
   if (value === undefined) return [];
-  if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) {
-    throw new Error(`Invalid namespace variable "${field}" (expected string[]).`);
+  if (
+    !Array.isArray(value) ||
+    !value.every((item) => typeof item === "string")
+  ) {
+    throw new Error(
+      `Invalid namespace variable "${field}" (expected string[]).`,
+    );
   }
   return value;
 }

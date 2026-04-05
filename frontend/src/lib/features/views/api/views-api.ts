@@ -31,7 +31,8 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
     envelope.data === undefined
   ) {
     throw new Error(
-      envelope.message || `Request failed: ${response.status} ${response.statusText}`,
+      envelope.message ||
+        `Request failed: ${response.status} ${response.statusText}`,
     );
   }
   return envelope.data;
@@ -50,7 +51,8 @@ async function requestEmpty(path: string, init?: RequestInit): Promise<void> {
   const envelope = await parseEnvelope<unknown>(response);
   if (!response.ok || envelope.success === false) {
     throw new Error(
-      envelope.message || `Request failed: ${response.status} ${response.statusText}`,
+      envelope.message ||
+        `Request failed: ${response.status} ${response.statusText}`,
     );
   }
 }
@@ -74,7 +76,9 @@ export async function listViews(params: ListViewsParams): Promise<ViewsPage> {
   if (query) {
     search.set("search", query);
   }
-  return requestJson<ViewsPage>(`/api/views?${search.toString()}`, { method: "GET" });
+  return requestJson<ViewsPage>(`/api/views?${search.toString()}`, {
+    method: "GET",
+  });
 }
 
 export async function getView(id: string): Promise<ScadaView> {

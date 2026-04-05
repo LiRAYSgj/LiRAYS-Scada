@@ -412,7 +412,7 @@ describe("namespace-yaml", () => {
           rangeEnd: "20",
           rangeStep: "",
           nameSuffix: "",
-          seriesMode: "none",
+          seriesMode: "numeric",
           seriesValues: "",
           children: [
             {
@@ -429,7 +429,7 @@ describe("namespace-yaml", () => {
               rangeEnd: "4",
               rangeStep: "",
               nameSuffix: "",
-              seriesMode: "none",
+              seriesMode: "numeric",
               seriesValues: "",
               children: [
                 {
@@ -728,7 +728,7 @@ describe("namespace-yaml", () => {
           rangeEnd: "20",
           rangeStep: "",
           nameSuffix: "",
-          seriesMode: "none",
+          seriesMode: "numeric",
           seriesValues: "",
           children: [
             {
@@ -745,7 +745,7 @@ describe("namespace-yaml", () => {
               rangeEnd: "4",
               rangeStep: "",
               nameSuffix: "",
-              seriesMode: "none",
+              seriesMode: "numeric",
               seriesValues: "",
               children: [
                 {
