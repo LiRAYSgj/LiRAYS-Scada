@@ -1013,7 +1013,7 @@
           bind:value={addKindValue}
           onValueChange={() => touchAddField("kind")}
         >
-          <Select.Trigger class="w-full">
+          <Select.Trigger id="add-kind" class="w-full">
             {addKindValue === String(ItemType.ITEM_TYPE_FOLDER) ? "Folder" : "Variable"}
           </Select.Trigger>
           <Select.Content
@@ -1049,7 +1049,7 @@
           onValueChange={() => touchAddField("dataType")}
           disabled={addKind !== ItemType.ITEM_TYPE_VARIABLE}
         >
-          <Select.Trigger class="w-full">
+          <Select.Trigger id="add-dataType" class="w-full">
             {#if addDataTypeValue === String(VarDataType.VAR_DATA_TYPE_INTEGER)}
               Integer
             {:else if addDataTypeValue === String(VarDataType.VAR_DATA_TYPE_FLOAT)}

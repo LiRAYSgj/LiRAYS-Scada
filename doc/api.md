@@ -3,18 +3,20 @@
 ## HTTP
 - Base: `http(s)://<host>:<BIND_PORT>`
 - Swagger UI: `/swagger` (generated OpenAPI).
-- CRUD examples for static resources:
+- CRUD examples for views:
 ```sh
-curl -X POST http://localhost:8245/api/resources \
+curl -X POST http://localhost:8245/api/views \
   -H "Content-Type: application/json" \
-  -d '{"name":"Example Resource","description":"This is an example"}'
+  -d '{"name":"Main View","description":"Primary dashboard","canvas_json":"{}"}'
 
-curl http://localhost:8245/api/resources
-curl http://localhost:8245/api/resources/1
-curl -X PUT http://localhost:8245/api/resources/1 \
+curl http://localhost:8245/api/views
+curl http://localhost:8245/api/views/<view-id>
+curl -X PUT http://localhost:8245/api/views/<view-id> \
   -H "Content-Type: application/json" \
-  -d '{"name":"Updated Resource","description":"Updated description"}'
-curl -X DELETE http://localhost:8245/api/resources/1
+  -d '{"name":"Updated View","description":"Updated description","canvas_json":"{}"}'
+curl -X DELETE http://localhost:8245/api/views/<view-id>
+curl http://localhost:8245/api/views/entry-point
+curl -X POST http://localhost:8245/api/views/<view-id>/entry-point
 ```
 
 ## WebSocket

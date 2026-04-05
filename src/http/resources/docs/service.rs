@@ -1,32 +1,33 @@
-use axum::{
-    response::Response,
-    Json,
-};
+use axum::{Json, response::Response};
 use once_cell::sync::Lazy;
 use utoipa::OpenApi;
 
-use crate::http::resources::resources::service as res;
+use crate::http::resources::views::service as views;
 
 #[derive(OpenApi)]
 #[openapi(
     paths(
-        res::get_all_resources,
-        res::get_resource,
-        res::create_resource,
-        res::update_resource,
-        res::delete_resource
+        views::get_all_views,
+        views::get_view,
+        views::create_view,
+        views::update_view,
+        views::delete_view,
+        views::get_entry_point_view,
+        views::set_entry_point_view
     ),
     components(
         schemas(
-            crate::http::resources::resource::service::StaticResource,
-            crate::http::resources::resource::service::StaticResourceInput,
-            crate::http::ApiResponseResource,
-            crate::http::ApiResponseResourceList,
+            crate::http::resources::views::service::View,
+            crate::http::resources::views::service::ViewPage,
+            crate::http::resources::views::service::ViewInput,
+            crate::http::ApiResponseView,
+            crate::http::ApiResponseViewList,
+            crate::http::ApiResponseViewPage,
             crate::http::ApiResponseEmpty
         )
     ),
     tags(
-        (name = "Resources", description = "Static resources CRUD")
+        (name = "Views", description = "Canvas views CRUD")
     )
 )]
 pub struct ApiDoc;

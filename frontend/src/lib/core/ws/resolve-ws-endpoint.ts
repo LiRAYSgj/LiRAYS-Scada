@@ -1,15 +1,16 @@
-import { browser, dev } from "$app/environment";
+import { browser } from "$app/environment";
 
-/** Rust realtime server while the UI runs on the Vite dev server (different port than `location`). */
+/** Fallback realtime server endpoint when no browser location is available (SSR/tests). */
 const WS_DEV_BACKEND = "ws://127.0.0.1:8245/ws";
 
 /**
  * Single source of truth for `tagStreamClient` (tree LIST/ADD/… and realtime).
- * - **Production + browser:** same origin as the page + `/ws` (e.g. Axum).
- * - **Otherwise** (`vite dev`, or prerender / Node): `WS_DEV_BACKEND` (no socket in Node).
+ * - **Browser (dev + prod):** same origin as the page + `/ws`.
+ *   In dev this allows Vite WS proxy middleware to forward upgrades to backend.
+ * - **Otherwise** (prerender / Node): fallback endpoint string.
  */
 export function resolveTagStreamWsEndpoint(): string {
-  if (!dev && browser) {
+  if (browser) {
     const isHttps = location.protocol === "https:";
     const scheme = isHttps ? "wss" : "ws";
     const host = location.host || location.hostname;

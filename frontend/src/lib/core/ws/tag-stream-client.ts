@@ -392,7 +392,6 @@ export class TagStreamClient {
   }
 
   private send(message: Command): void {
-    console.log("Sending message:", message);
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
       return;
     }
@@ -559,7 +558,6 @@ export class TagStreamClient {
           return;
         }
 
-        console.log("Received message:", payload);
         const errorMsg = payload.errorMsg ?? "";
         const status =
           payload.status ?? OperationStatus.OPERATION_STATUS_INVALID;

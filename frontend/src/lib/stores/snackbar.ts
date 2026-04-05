@@ -13,6 +13,9 @@ const DEFAULT_DURATION_MS = 5_000;
 
 function createSnackbarStore() {
   const { subscribe, set } = writable<SnackbarMessage | null>(null);
+  const log = (level: SnackbarType, message: string): void => {
+    console.log(`[snackbar:${level}] ${message}`);
+  };
 
   return {
     subscribe,
@@ -25,9 +28,11 @@ function createSnackbarStore() {
               type: payload.type,
               duration: payload.duration ?? DEFAULT_DURATION_MS,
             };
+      log(entry.type, entry.message);
       set(entry);
     },
     success(message: string, duration?: number): void {
+      log("success", message);
       set({
         message,
         type: "success",
@@ -35,6 +40,7 @@ function createSnackbarStore() {
       });
     },
     warning(message: string, duration?: number): void {
+      log("warning", message);
       set({
         message,
         type: "warning",
@@ -42,6 +48,7 @@ function createSnackbarStore() {
       });
     },
     error(message: string, duration?: number): void {
+      log("error", message);
       set({
         message,
         type: "error",

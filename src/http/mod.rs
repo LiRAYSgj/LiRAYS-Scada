@@ -32,8 +32,8 @@ use utoipa::ToSchema;
 
 use super::tls::{ServerTlsConfig, build_tls_acceptor};
 use crate::rtdata::{metrics::Metrics, variable::VariableManager};
-use resources::resource::service::{StaticResource, StaticResourceManager};
 use resources::user::service::UserManager;
+use resources::views::service::{View, ViewManager};
 
 #[derive(Serialize, Deserialize, ToSchema)]
 pub(super) struct ApiResponse<T> {
@@ -43,16 +43,23 @@ pub(super) struct ApiResponse<T> {
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
-pub(super) struct ApiResponseResource {
+pub(super) struct ApiResponseView {
     success: bool,
-    data: Option<StaticResource>,
+    data: Option<View>,
     message: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, ToSchema)]
-pub(super) struct ApiResponseResourceList {
+pub(super) struct ApiResponseViewList {
     success: bool,
-    data: Option<Vec<StaticResource>>,
+    data: Option<Vec<View>>,
+    message: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, ToSchema)]
+pub(super) struct ApiResponseViewPage {
+    success: bool,
+    data: Option<resources::views::service::ViewPage>,
     message: Option<String>,
 }
 
@@ -110,7 +117,7 @@ pub(super) struct AuthConfig {
 
 #[derive(Clone)]
 pub(super) struct AppState {
-    resources: Arc<StaticResourceManager>,
+    views: Arc<ViewManager>,
     users: Arc<UserManager>,
     auth: AuthConfig,
     var_manager: Arc<VariableManager>,
@@ -367,7 +374,11 @@ pub async fn run_http_server(
         .unwrap_or(15_000);
     let _flush_handle = var_manager.clone().start_flush_loop(flush_ms);
 
-    let resource_manager = Arc::new(StaticResourceManager::new(db.clone()));
+    let view_manager = Arc::new(ViewManager::new(db.clone()));
+    view_manager
+        .ensure_initialized()
+        .await
+        .expect("Failed to initialize views storage");
     let user_manager = Arc::new(UserManager::new(db.clone()));
 
     let auth_enabled = std::env::var("AUTH_ENABLED")
@@ -390,7 +401,7 @@ pub async fn run_http_server(
     };
 
     let app_state = Arc::new(AppState {
-        resources: resource_manager,
+        views: view_manager,
         users: user_manager,
         auth: auth_config,
         var_manager: var_manager.clone(),
@@ -398,14 +409,22 @@ pub async fn run_http_server(
 
     let app = Router::new()
         .route(
-            "/api/resources",
-            get(resources::get_all_resources).post(resources::create_resource),
+            "/api/views",
+            get(resources::get_all_views).post(resources::create_view),
         )
         .route(
-            "/api/resources/{id}",
-            get(resources::get_resource)
-                .put(resources::update_resource)
-                .delete(resources::delete_resource),
+            "/api/views/entry-point",
+            get(resources::get_entry_point_view),
+        )
+        .route(
+            "/api/views/{id}",
+            get(resources::get_view)
+                .put(resources::update_view)
+                .delete(resources::delete_view),
+        )
+        .route(
+            "/api/views/{id}/entry-point",
+            axum::routing::put(resources::set_entry_point_view),
         )
         .route("/ws", get(resources::ws_handler))
         .route("/api-docs/openapi.json", get(resources::openapi_spec))

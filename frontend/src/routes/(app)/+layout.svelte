@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { goto } from "$app/navigation";
+  import { page } from "$app/stores";
   import { browser } from "$app/environment";
   import { resolveTagStreamWsEndpoint } from "$lib/core/ws/resolve-ws-endpoint";
   import { onDestroy, onMount } from "svelte";
@@ -23,6 +25,8 @@
   import ContextMenu from "$lib/features/tree/components/ContextMenu.svelte";
   import PageToolbar from "$lib/features/workspace/components/PageToolbar.svelte";
   import NamespaceBuilder from "$lib/features/namespace-builder/components/NamespaceBuilder.svelte";
+  import ViewsListPanel from "$lib/features/views/components/ViewsListPanel.svelte";
+  import ViewEditorHeader from "$lib/features/views/components/ViewEditorHeader.svelte";
   import PlantAssetNode from "$lib/features/graph/components/PlantAssetNode.svelte";
   import {
     getRegisteredAssetDefinitions,
@@ -54,8 +58,26 @@
     getLoadedDescendantIds,
     getMinimalAncestorSet,
   } from "$lib/features/tree/tree-selection";
-  import { Layers, Plus, Trash2, Pencil } from "lucide-svelte";
+  import { CheckSquare, Layers, ListChecks, Plus, Trash2, Pencil } from "lucide-svelte";
   import { sanitizeIdentifierLike, sanitizeText } from "$lib/forms/sanitize";
+  import {
+    createView,
+    deleteView,
+    getView,
+    listViews,
+    setEntryPointView,
+    updateView,
+  } from "$lib/features/views/api/views-api";
+  import {
+    deserializeCanvasState,
+    serializeCanvasState,
+    type CanvasMode,
+    type ScadaView,
+  } from "$lib/features/views/types";
+  import {
+    DEFAULT_VIEWS_TABLE_STATE,
+    type ViewsTableState,
+  } from "$lib/features/views/table/views-table-state";
 
   interface ActiveMenuState {
     x: number;
@@ -69,7 +91,7 @@
     y: number;
   }
 
-  type CanvasMode = "edit" | "play";
+  type WorkspaceMode = "designer" | "runtime";
 
   const WS_ENDPOINT = resolveTagStreamWsEndpoint();
   const PIPE_EDGE_TYPE = "step";
@@ -87,10 +109,35 @@
   let activeMenu = $state<ActiveMenuState | null>(null);
   let draggingNode = $state<TreeNode | null>(null);
   let dragPreview = $state<DragPreviewState | null>(null);
+  let workspaceMode = $state<WorkspaceMode>("designer");
+  const routeViewId = $derived($page.params.id ?? null);
+  const rightPaneMode = $derived(
+    routeViewId ? "view-editor" : "views-list",
+  );
+  let previousRightPaneMode = $state<"views-list" | "view-editor" | null>(null);
   let canvasMode = $state<CanvasMode>("edit");
-  let graphNodes = $state<Node[]>([]);
-  let graphEdges = $state<Edge[]>([]);
-  let graphHostRef: HTMLElement | null = null;
+  let views = $state<ScadaView[]>([]);
+  let viewsTotal = $state(0);
+  let viewsLoadError = $state("");
+  let viewsTableState = $state<ViewsTableState>({ ...DEFAULT_VIEWS_TABLE_STATE });
+  let viewsSearchInput = $state("");
+  let viewsSearchQuery = $state("");
+  let viewsSearchDebounceTimer = $state<ReturnType<typeof setTimeout> | null>(null);
+  let viewsLoading = $state(false);
+  let viewCreateLoading = $state(false);
+  let viewActionBusyId = $state<string | null>(null);
+  let loadedViewId = $state<string | null>(null);
+  let viewEditorLoading = $state(false);
+  let viewEditorError = $state("");
+  let viewSaveLoading = $state(false);
+  let removeViewDialogOpen = $state(false);
+  let removeViewTarget = $state<ScadaView | null>(null);
+  let removeViewSubmitting = $state(false);
+  let removeViewError = $state("");
+  // Large graph collections: keep as raw state to avoid deep proxy overhead.
+  let graphNodes = $state.raw<Node[]>([]);
+  let graphEdges = $state.raw<Edge[]>([]);
+  let graphHostRef = $state<HTMLElement | null>(null);
   let graphNodeCounter = 0;
   let graphEdgeCounter = 0;
   let graphViewport: Viewport = { x: 0, y: 0, zoom: 1 };
@@ -122,6 +169,13 @@
   const transparentDragImage: HTMLImageElement | null = browser
     ? new Image()
     : null;
+  const canDropToCanvas = $derived(
+    rightPaneMode === "view-editor" && canvasMode === "edit",
+  );
+  const activeView = $derived(views.find((view) => view.id === routeViewId) ?? null);
+  const treeActionsDisabled = $derived($wsStatus !== "connected");
+  const selectionCount = $derived(treeSelection.size);
+  let { children } = $props();
   if (transparentDragImage) {
     transparentDragImage.src =
       "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxIiBoZWlnaHQ9IjEiLz4=";
@@ -205,6 +259,307 @@
     folder: (context) => buildDropAssetMenuOptions(context),
     tag: (context) => buildDropAssetMenuOptions(context),
   };
+
+  function extractTrailingCounter(id: string): number {
+    const match = id.match(/-(\d+)$/);
+    return match ? Number(match[1]) : 0;
+  }
+
+  function syncGraphCounters(nodes: Node[], edges: Edge[]): void {
+    graphNodeCounter = nodes.reduce(
+      (max, node) => Math.max(max, extractTrailingCounter(node.id)),
+      0,
+    );
+    graphEdgeCounter = edges.reduce(
+      (max, edge) => Math.max(max, extractTrailingCounter(edge.id)),
+      0,
+    );
+  }
+
+  function hydratePlantAssetNodeData(
+    nodeId: string,
+    raw: PlantAssetNodeData,
+  ): PlantAssetNodeData {
+    const definition = resolveAssetDefinition(raw.assetKind);
+    const primaryBindingKey = raw.primaryBindingKey ?? definition.primaryBindingKey;
+    const canWritePrimary =
+      definition.bindings.find((binding) => binding.key === primaryBindingKey)
+        ?.access !== "read";
+
+    return {
+      ...raw,
+      primaryBindingKey,
+      onWriteValue: canWritePrimary
+        ? (value: TagScalarValue) =>
+            writeWidgetBindingValue(nodeId, primaryBindingKey, value)
+        : undefined,
+      onWriteBindingValue: (
+        bindingKey: string,
+        value: TagScalarValue,
+        tagId?: string,
+      ) => writeWidgetBindingValue(nodeId, bindingKey, value, tagId),
+      onOpenBindingConfig: () => focusGraphNodeInInspector(nodeId),
+    };
+  }
+
+  function hydrateCanvasNodes(nodes: Node[]): Node[] {
+    return nodes.map((node) => {
+      if (node.type !== "plantAsset") {
+        return node;
+      }
+
+      const data = node.data as PlantAssetNodeData;
+      return {
+        ...node,
+        data: hydratePlantAssetNodeData(node.id, data),
+      };
+    });
+  }
+
+  function replaceViewInState(nextView: ScadaView): void {
+    if (views.some((view) => view.id === nextView.id)) {
+      views = views.map((view) => (view.id === nextView.id ? nextView : view));
+      return;
+    }
+    views = [...views, nextView];
+  }
+
+  async function loadViewsList(tableState = viewsTableState): Promise<void> {
+    viewsLoading = true;
+    viewsLoadError = "";
+    try {
+      const result = await listViews({
+        page: tableState.pageIndex + 1,
+        pageSize: tableState.pageSize,
+        sortBy: tableState.sortBy,
+        sortDirection: tableState.sortDirection,
+        search: viewsSearchQuery,
+      });
+      views = result.items;
+      viewsTotal = result.total;
+    } catch (error) {
+      const message =
+        error instanceof Error && error.message
+          ? error.message
+          : "Unable to load views.";
+      views = [];
+      viewsTotal = 0;
+      viewsLoadError = message;
+      snackbarStore.error(
+        "Failed to fetch views",
+      );
+    } finally {
+      viewsLoading = false;
+    }
+  }
+
+  function onViewsTableStateChange(nextState: ViewsTableState): void {
+    viewsTableState = nextState;
+    void loadViewsList(nextState);
+  }
+
+  function onViewsSearchChange(value: string): void {
+    viewsSearchInput = value;
+    if (viewsSearchDebounceTimer) {
+      clearTimeout(viewsSearchDebounceTimer);
+    }
+    viewsSearchDebounceTimer = setTimeout(() => {
+      viewsSearchDebounceTimer = null;
+      const nextQuery = value.trim();
+      if (viewsSearchQuery === nextQuery) {
+        return;
+      }
+      viewsSearchQuery = nextQuery;
+      const nextState = { ...viewsTableState, pageIndex: 0 };
+      viewsTableState = nextState;
+      void loadViewsList(nextState);
+    }, 250);
+  }
+
+  async function loadViewEditor(viewId: string): Promise<void> {
+    viewEditorLoading = true;
+    viewEditorError = "";
+    viewActionBusyId = viewId;
+    try {
+      const view = await getView(viewId);
+      const canvas = deserializeCanvasState(view.canvas_json);
+      graphNodes = hydrateCanvasNodes(canvas.nodes);
+      graphEdges = canvas.edges;
+      graphViewport = canvas.viewport;
+      syncGraphCounters(graphNodes, graphEdges);
+      replaceViewInState(view);
+      canvasMode = "edit";
+      loadedViewId = view.id;
+    } catch (error) {
+      graphNodes = [];
+      graphEdges = [];
+      graphViewport = { x: 0, y: 0, zoom: 1 };
+      loadedViewId = null;
+      viewEditorError =
+        error instanceof Error && error.message
+          ? error.message
+          : "Unable to load this view.";
+      snackbarStore.error(
+        "Failed to open view",
+      );
+    } finally {
+      viewEditorLoading = false;
+      viewActionBusyId = null;
+    }
+  }
+
+  function randomViewName(): string {
+    const suffix = (browser && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : Math.random().toString(36).slice(2, 10)
+    ).slice(0, 8);
+    return `View ${suffix}`;
+  }
+
+  async function createViewInPlace(): Promise<void> {
+    if (viewCreateLoading) {
+      return;
+    }
+    viewCreateLoading = true;
+    try {
+      await createView({
+        name: randomViewName(),
+        description: "",
+        canvas_json: serializeCanvasState([], [], { x: 0, y: 0, zoom: 1 }),
+      });
+      const nextState = { ...viewsTableState, pageIndex: 0 };
+      viewsTableState = nextState;
+      await loadViewsList(nextState);
+    } catch (error) {
+      snackbarStore.error(
+        "Failed to create view",
+      );
+    } finally {
+      viewCreateLoading = false;
+    }
+  }
+
+  function openRemoveViewDialog(view: ScadaView): void {
+    removeViewTarget = view;
+    removeViewSubmitting = false;
+    removeViewError = "";
+    removeViewDialogOpen = true;
+  }
+
+  function closeRemoveViewDialog(force = false): void {
+    if (removeViewSubmitting && !force) {
+      return;
+    }
+    removeViewDialogOpen = false;
+    removeViewTarget = null;
+    removeViewError = "";
+  }
+
+  async function confirmRemoveView(): Promise<void> {
+    if (!removeViewTarget) {
+      return;
+    }
+
+    const view = removeViewTarget;
+    removeViewSubmitting = true;
+    removeViewError = "";
+    viewActionBusyId = view.id;
+    try {
+      await deleteView(view.id);
+      views = views.filter((item) => item.id !== view.id);
+      if (routeViewId === view.id) {
+        graphNodes = [];
+        graphEdges = [];
+        graphViewport = { x: 0, y: 0, zoom: 1 };
+        loadedViewId = null;
+        await goto("/views");
+      }
+      const nextTotal = Math.max(0, viewsTotal - 1);
+      const pageCountAfterDelete = Math.max(
+        1,
+        Math.ceil(nextTotal / viewsTableState.pageSize),
+      );
+      const nextState = {
+        ...viewsTableState,
+        pageIndex: Math.min(viewsTableState.pageIndex, pageCountAfterDelete - 1),
+      };
+      viewsTableState = nextState;
+      await loadViewsList(nextState);
+      closeRemoveViewDialog(true);
+    } catch (error) {
+      removeViewError =
+        error instanceof Error ? error.message : "Failed to remove view";
+    } finally {
+      removeViewSubmitting = false;
+      viewActionBusyId = null;
+    }
+  }
+
+  async function saveActiveViewCanvas(): Promise<void> {
+    if (!activeView) {
+      return;
+    }
+
+    viewSaveLoading = true;
+    try {
+      const updated = await updateView(activeView.id, {
+        name: activeView.name,
+        description: activeView.description,
+        is_entry_point: activeView.is_entry_point,
+        canvas_json: serializeCanvasState(graphNodes, graphEdges, graphViewport),
+      });
+      replaceViewInState(updated);
+      snackbarStore.success("View saved.");
+    } catch (error) {
+      snackbarStore.error(
+        "Failed to save view",
+      );
+    } finally {
+      viewSaveLoading = false;
+    }
+  }
+
+  async function setActiveViewAsEntryPoint(): Promise<void> {
+    if (!activeView) return;
+    viewActionBusyId = activeView.id;
+    try {
+      const updated = await setEntryPointView(activeView.id);
+      views = views.map((view) => ({
+        ...view,
+        is_entry_point: view.id === updated.id,
+        updated_at: view.id === updated.id ? updated.updated_at : view.updated_at,
+      }));
+      snackbarStore.success("Entry-point view updated.");
+    } catch (error) {
+      snackbarStore.error(
+        "Failed to update entry-point",
+      );
+    } finally {
+      viewActionBusyId = null;
+    }
+  }
+
+  async function updateInlineViewFields(
+    view: ScadaView,
+    changes: { name?: string; description?: string },
+  ): Promise<boolean> {
+    viewActionBusyId = view.id;
+    try {
+      const updated = await updateView(view.id, {
+        name: changes.name ?? view.name,
+        description: changes.description ?? view.description,
+        is_entry_point: view.is_entry_point,
+        canvas_json: view.canvas_json,
+      });
+      replaceViewInState(updated);
+      return true;
+    } catch (error) {
+      snackbarStore.error("Failed to update view");
+      return false;
+    } finally {
+      viewActionBusyId = null;
+    }
+  }
 
   async function createTreeItem(input: {
     parentId: string | null;
@@ -316,6 +671,15 @@
     }
   }
 
+  function toggleMultiSelectMode(): void {
+    if (multiSelectMode) {
+      multiSelectMode = false;
+      treeSelection = new Set();
+      return;
+    }
+    multiSelectMode = true;
+  }
+
   function openRemoveMultipleDialog(): void {
     if (get(wsStatus) !== "connected") return;
     removeMultipleError = "";
@@ -375,7 +739,7 @@
   }
 
   function handleNodeDragStart(event: DragEvent, node: TreeNode): void {
-    if (canvasMode === "play") {
+    if (!canDropToCanvas) {
       event.preventDefault();
       return;
     }
@@ -411,7 +775,7 @@
   }
 
   function handleRightPanelDragOver(event: DragEvent): void {
-    if (canvasMode === "play") {
+    if (!canDropToCanvas) {
       return;
     }
 
@@ -423,7 +787,7 @@
   }
 
   function handleRightPanelDrop(event: DragEvent): void {
-    if (canvasMode === "play") {
+    if (!canDropToCanvas) {
       return;
     }
 
@@ -615,6 +979,9 @@
     nodeId: string,
     bindingKey: string,
   ): void {
+    if (!canDropToCanvas) {
+      return;
+    }
     event.preventDefault();
     event.stopPropagation();
     const dropped = resolveDroppedTreeNode(event);
@@ -699,7 +1066,7 @@
   }
 
   function handleConnect(connection: Connection): void {
-    if (canvasMode !== "edit") {
+    if (!canDropToCanvas) {
       return;
     }
 
@@ -717,6 +1084,9 @@
   }
 
   function toggleCanvasMode(): void {
+    if (rightPaneMode !== "view-editor") {
+      return;
+    }
     canvasMode = canvasMode === "edit" ? "play" : "edit";
   }
 
@@ -885,7 +1255,11 @@
       if (event.key !== "Delete") {
         return;
       }
-      if (canvasMode !== "edit" || isTypingTarget(event.target)) {
+      if (
+        rightPaneMode !== "view-editor" ||
+        canvasMode !== "edit" ||
+        isTypingTarget(event.target)
+      ) {
         return;
       }
 
@@ -900,11 +1274,40 @@
   });
 
   onDestroy(() => {
+    if (viewsSearchDebounceTimer) {
+      clearTimeout(viewsSearchDebounceTimer);
+    }
     realtimeProvider.stop();
   });
 
   $effect(() => {
-    realtimeProvider.setActive(canvasMode === "play");
+    if (
+      rightPaneMode === "views-list" &&
+      previousRightPaneMode !== "views-list"
+    ) {
+      void loadViewsList(viewsTableState);
+    }
+    previousRightPaneMode = rightPaneMode;
+  });
+
+  $effect(() => {
+    if (!routeViewId) {
+      loadedViewId = null;
+      viewEditorError = "";
+      viewEditorLoading = false;
+      canvasMode = "edit";
+      return;
+    }
+    if (loadedViewId === routeViewId) {
+      return;
+    }
+    void loadViewEditor(routeViewId);
+  });
+
+  $effect(() => {
+    realtimeProvider.setActive(
+      rightPaneMode === "view-editor" && canvasMode === "play",
+    );
   });
 
   const subscribedTagIds = $derived(getTrackedTagIds(graphNodes));
@@ -914,7 +1317,7 @@
   });
 
   $effect(() => {
-    if (canvasMode !== "play") return;
+    if (rightPaneMode !== "view-editor" || canvasMode !== "play") return;
     const result = applyLiveValuesToGraphNodes(graphNodes, $tagValues);
     if (result.changed) {
       graphNodes = result.nodes;
@@ -937,25 +1340,68 @@
 <main class="flex h-dvh w-full flex-col gap-3 overflow-hidden bg-background p-4">
   <PageToolbar
     theme={$theme ?? "light"}
-    {canvasMode}
-    onToggleCanvasMode={toggleCanvasMode}
+    {workspaceMode}
+    onSelectWorkspaceMode={(mode) => (workspaceMode = mode)}
     onToggleTheme={toggleTheme}
-    onOpenAddDialog={openTreeAddDialog}
-    onOpenNamespaceBuilder={openNamespaceBuilderFromToolbar}
-    isAddDisabled={false}
     {username}
-    {multiSelectMode}
-    onToggleMultiSelect={() => {
-      multiSelectMode = !multiSelectMode;
-      if (!multiSelectMode) treeSelection = new Set();
-    }}
-    selectionCount={treeSelection.size}
-    onRemoveSelection={openRemoveMultipleDialog}
-    onSelectAll={selectAllSelection}
   />
 
   <div class="flex min-h-0 flex-1 gap-4">
-    <section class="h-full w-[30%] min-w-[360px]">
+    <section class="flex h-full w-[30%] min-w-[360px] flex-col gap-2">
+      <div class="flex items-center justify-between rounded-md border border-border bg-card px-3 py-2">
+        <h2 class="text-[15px] font-semibold text-foreground">Namespace Browser</h2>
+        <div class="flex items-center gap-1">
+          {#if multiSelectMode}
+            <Button
+              variant="icon"
+              icon={Trash2}
+              title="Remove selected"
+              ariaLabel="Remove selected"
+              disabled={selectionCount === 0}
+              class="border-destructive/45 text-destructive hover:border-destructive/70 hover:bg-destructive/12 hover:text-destructive"
+              onclick={openRemoveMultipleDialog}
+            />
+            <Button
+              variant="icon"
+              icon={CheckSquare}
+              title="Select all"
+              ariaLabel="Select all"
+              onclick={selectAllSelection}
+            />
+            <Button
+              variant="icon"
+              icon={ListChecks}
+              title="Multi-selection mode (click to exit)"
+              ariaLabel="Multi-selection mode"
+              selected={true}
+              onclick={toggleMultiSelectMode}
+            />
+          {:else}
+            <Button
+              variant="icon"
+              icon={Plus}
+              title="Add variable or folder"
+              ariaLabel="Add variable or folder"
+              disabled={treeActionsDisabled}
+              onclick={openTreeAddDialog}
+            />
+            <Button
+              variant="icon"
+              icon={Layers}
+              title="Namespace Template Builder"
+              ariaLabel="Namespace Template Builder"
+              onclick={openNamespaceBuilderFromToolbar}
+            />
+            <Button
+              variant="icon"
+              icon={ListChecks}
+              title="Multi-selection mode"
+              ariaLabel="Multi-selection mode"
+              onclick={toggleMultiSelectMode}
+            />
+          {/if}
+        </div>
+      </div>
       <VariableTree
         onNodeContextMenu={handleNodeContextMenu}
         onNodeDragStart={handleNodeDragStart}
@@ -964,7 +1410,7 @@
         onCreateItem={createTreeItem}
         onEditMeta={editTreeMeta}
         websocketStatus={$wsStatus}
-        realtimeEnabled={canvasMode === "play"}
+        realtimeEnabled={rightPaneMode === "view-editor" && canvasMode === "play"}
         liveTagValues={$tagValues}
         {multiSelectMode}
         selection={treeSelection}
@@ -984,215 +1430,257 @@
       ondragover={handleRightPanelDragOver}
       ondrop={handleRightPanelDrop}
     >
-      <div class="relative flex h-full w-full">
-        <div bind:this={graphHostRef} class="h-full flex-1">
-          <SvelteFlow
-            bind:nodes={graphNodes}
-            bind:edges={graphEdges}
-            {nodeTypes}
-            initialViewport={{ x: 0, y: 0, zoom: 1 }}
-            minZoom={0.4}
-            maxZoom={1.6}
-            zoomOnDoubleClick={false}
-            colorMode={$theme ?? "light"}
-            class="h-full w-full rounded-md"
-            nodesDraggable={canvasMode === "edit"}
-            elementsSelectable={canvasMode === "edit"}
-            nodesConnectable={canvasMode === "edit"}
-            selectionOnDrag={canvasMode === "edit"}
-            panOnDrag={[1]}
-            connectionLineType={ConnectionLineType.Step}
-            connectionLineStyle={PIPE_EDGE_STYLE}
-            proOptions={{ hideAttribution: true }}
-            onmove={handleFlowMove}
-            onconnect={handleConnect}
-          >
-            <Controls />
-            <MiniMap />
-            <Background />
-          </SvelteFlow>
-        </div>
-
-        {#if inspectorDockVisible}
-          <aside
-            class="h-full w-[340px] shrink-0 border-l border-border bg-card p-3"
-            ondragover={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
-            }}
-            ondrop={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-            }}
-          >
-            <div class="mb-3 flex items-center justify-between">
-              <h3 class="text-sm font-semibold text-foreground">
-                Graph Node Inspector
-              </h3>
-              <Button
-                variant="icon"
-                title="Hide inspector"
-                ariaLabel="Hide inspector"
-                label="×"
-                onclick={() => (inspectorDockVisible = false)}
-              />
-            </div>
-
-            {#if selectedGraphNodeData && selectedGraphWidgetDefinition}
-              {@const selectedGraphNodeId = selectedGraphNode?.id ?? ""}
-              <div class="space-y-3">
-                <div>
-                  <label
-                    for="node-title-input"
-                    class="mb-1 block text-[10px] uppercase text-muted-foreground"
-                    >Title</label
-                  >
-                  <Input
-                    id="node-title-input"
-                    class="w-full text-xs"
-                    value={selectedGraphNodeData.title}
-                    oninput={(event) => {
-                      const target = event.currentTarget as HTMLInputElement;
-                      updateNodeData(selectedGraphNodeId, (current) => ({
-                        ...current,
-                        title: sanitizeText(target.value, 80),
-                      }));
+      {#if rightPaneMode === "views-list"}
+        <ViewsListPanel
+          {views}
+          total={viewsTotal}
+          errorMessage={viewsLoadError}
+          tableState={viewsTableState}
+          searchValue={viewsSearchInput}
+          loading={viewsLoading}
+          createLoading={viewCreateLoading}
+          busyId={viewActionBusyId}
+          onCreate={() => void createViewInPlace()}
+          onEdit={(view) => void goto(`/views/${view.id}`)}
+          onRemove={(view) => openRemoveViewDialog(view)}
+          onInlineUpdate={updateInlineViewFields}
+          onSearchChange={onViewsSearchChange}
+          onTableStateChange={onViewsTableStateChange}
+        />
+      {:else}
+        <div class="flex h-full flex-col">
+          <ViewEditorHeader
+            view={activeView}
+            {canvasMode}
+            saving={viewSaveLoading}
+            onBackToViewsList={() => goto("/views")}
+            onToggleCanvasMode={toggleCanvasMode}
+            onSave={() => void saveActiveViewCanvas()}
+            onSetEntryPoint={() => void setActiveViewAsEntryPoint()}
+          />
+          {#if viewEditorError}
+            <div class="flex min-h-0 flex-1 items-center justify-center px-6 py-10">
+              <div class="max-w-xl px-6 py-5 text-center">
+                <h2 class="text-base font-semibold text-foreground">Failed to load view</h2>
+                <p class="mt-2 text-sm text-muted-foreground">{viewEditorError}</p>
+                <div class="mt-4 flex justify-center">
+                  <Button
+                    variant="outline-accent"
+                    label="Retry"
+                    loading={viewEditorLoading}
+                    loadingLabel="Retrying..."
+                    disabled={!routeViewId || viewEditorLoading}
+                    onclick={() => {
+                      if (routeViewId) {
+                        void loadViewEditor(routeViewId);
+                      }
                     }}
                   />
                 </div>
+              </div>
+            </div>
+          {:else}
+          <div class="relative flex min-h-0 flex-1">
+            <div bind:this={graphHostRef} class="h-full flex-1">
+              <SvelteFlow
+                bind:nodes={graphNodes}
+                bind:edges={graphEdges}
+                {nodeTypes}
+                initialViewport={{ x: 0, y: 0, zoom: 1 }}
+                minZoom={0.4}
+                maxZoom={1.6}
+                zoomOnDoubleClick={false}
+                colorMode={$theme ?? "light"}
+                class="h-full w-full rounded-md"
+                nodesDraggable={canDropToCanvas}
+                elementsSelectable={canDropToCanvas}
+                nodesConnectable={canDropToCanvas}
+                selectionOnDrag={canDropToCanvas}
+                panOnDrag={[1]}
+                connectionLineType={ConnectionLineType.Step}
+                connectionLineStyle={PIPE_EDGE_STYLE}
+                proOptions={{ hideAttribution: true }}
+                onmove={handleFlowMove}
+                onconnect={handleConnect}
+              >
+                <Controls />
+                <MiniMap />
+                <Background />
+              </SvelteFlow>
+            </div>
 
-                <div
-                  class="rounded border border-border p-2"
-                >
-                  <p class="text-[10px] uppercase text-muted-foreground">
-                    Widget
-                  </p>
-                  <p class="text-xs font-medium text-foreground">
-                    {selectedGraphWidgetDefinition.label}
-                  </p>
+            {#if inspectorDockVisible}
+              <aside
+                class="h-full w-[340px] shrink-0 border-l border-border bg-card p-3"
+                ondragover={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+                }}
+                ondrop={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                }}
+              >
+                <div class="mb-3 flex items-center justify-between">
+                  <h3 class="text-sm font-semibold text-foreground">
+                    Graph Node Inspector
+                  </h3>
+                  <Button
+                    variant="icon"
+                    title="Hide inspector"
+                    ariaLabel="Hide inspector"
+                    label="×"
+                    onclick={() => (inspectorDockVisible = false)}
+                  />
                 </div>
 
-                <div class="space-y-2">
-                  {#each selectedGraphWidgetDefinition.bindings as binding}
-                    {@const bindingTags =
-                      selectedGraphNodeData.bindings?.[binding.key] ?? []}
-                    <div
-                      class="rounded border border-border p-2"
-                    >
-                      <div class="mb-1 flex items-center justify-between">
-                        <span class="font-medium text-foreground"
-                          >{binding.label}</span
-                        >
-                        <span class="text-[10px] uppercase text-muted-foreground"
-                          >{binding.access}</span
-                        >
-                      </div>
-                      {#if binding.multiple}
-                        <div
-                          class="min-h-[38px] rounded border border-dashed border-border/60 bg-muted/50 px-2 py-1"
-                          role="group"
-                          ondragover={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            if (event.dataTransfer)
-                              event.dataTransfer.dropEffect = "copy";
-                          }}
-                          ondrop={(event) =>
-                            handleBindingDrop(
-                              event,
-                              selectedGraphNodeId,
-                              binding.key,
-                            )}
-                        >
-                          {#if bindingTags.length === 0}
-                            <span class="text-[10px] text-muted-foreground"
-                              >Drop tag(s) here</span
+                {#if selectedGraphNodeData && selectedGraphWidgetDefinition}
+                  {@const selectedGraphNodeId = selectedGraphNode?.id ?? ""}
+                  <div class="space-y-3">
+                    <div>
+                      <label
+                        for="node-title-input"
+                        class="mb-1 block text-[10px] uppercase text-muted-foreground"
+                        >Title</label
+                      >
+                      <Input
+                        id="node-title-input"
+                        class="w-full text-xs"
+                        value={selectedGraphNodeData.title}
+                        oninput={(event) => {
+                          const target = event.currentTarget as HTMLInputElement;
+                          updateNodeData(selectedGraphNodeId, (current) => ({
+                            ...current,
+                            title: sanitizeText(target.value, 80),
+                          }));
+                        }}
+                      />
+                    </div>
+
+                    <div class="rounded border border-border p-2">
+                      <p class="text-[10px] uppercase text-muted-foreground">
+                        Widget
+                      </p>
+                      <p class="text-xs font-medium text-foreground">
+                        {selectedGraphWidgetDefinition.label}
+                      </p>
+                    </div>
+
+                    <div class="space-y-2">
+                      {#each selectedGraphWidgetDefinition.bindings as binding}
+                        {@const bindingTags =
+                          selectedGraphNodeData.bindings?.[binding.key] ?? []}
+                        <div class="rounded border border-border p-2">
+                          <div class="mb-1 flex items-center justify-between">
+                            <span class="font-medium text-foreground"
+                              >{binding.label}</span
                             >
-                          {:else}
-                            <div class="flex flex-wrap gap-1">
-                              {#each bindingTags as tag (tag.id)}
-                                <span
-                                  class="inline-flex items-center gap-1 rounded bg-primary/15 px-1.5 py-0.5 text-[10px] text-foreground"
+                            <span class="text-[10px] uppercase text-muted-foreground"
+                              >{binding.access}</span
+                            >
+                          </div>
+                          {#if binding.multiple}
+                            <div
+                              class="min-h-[38px] rounded border border-dashed border-border/60 bg-muted/50 px-2 py-1"
+                              role="group"
+                              ondragover={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                if (event.dataTransfer)
+                                  event.dataTransfer.dropEffect = "copy";
+                              }}
+                              ondrop={(event) =>
+                                handleBindingDrop(
+                                  event,
+                                  selectedGraphNodeId,
+                                  binding.key,
+                                )}
+                            >
+                              {#if bindingTags.length === 0}
+                                <span class="text-[10px] text-muted-foreground"
+                                  >Drop tag(s) here</span
                                 >
-                                  <span class="max-w-[160px] truncate"
-                                    >{tag.name}</span
-                                  >
-                                  <button
-                                    type="button"
-                                    class="text-[10px] opacity-70 hover:opacity-100"
-                                    title="Remove binding"
-                                    onclick={() =>
-                                      removeTagFromBinding(
-                                        selectedGraphNodeId,
-                                        binding.key,
-                                        tag.id,
-                                      )}
-                                  >
-                                    ×
-                                  </button>
-                                </span>
-                              {/each}
+                              {:else}
+                                <div class="flex flex-wrap gap-1">
+                                  {#each bindingTags as tag (tag.id)}
+                                    <span
+                                      class="inline-flex items-center gap-1 rounded bg-primary/15 px-1.5 py-0.5 text-[10px] text-foreground"
+                                    >
+                                      <span class="max-w-[160px] truncate"
+                                        >{tag.name}</span
+                                      >
+                                      <button
+                                        type="button"
+                                        class="text-[10px] opacity-70 hover:opacity-100"
+                                        title="Remove binding"
+                                        onclick={() =>
+                                          removeTagFromBinding(
+                                            selectedGraphNodeId,
+                                            binding.key,
+                                            tag.id,
+                                          )}
+                                      >
+                                        ×
+                                      </button>
+                                    </span>
+                                  {/each}
+                                </div>
+                              {/if}
                             </div>
+                          {:else}
+                            <Input
+                              class="w-full text-[10px]"
+                              readonly
+                              value={bindingTags[0]?.path ?? ""}
+                              placeholder="Drop tag here"
+                              ondragover={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                if (event.dataTransfer)
+                                  event.dataTransfer.dropEffect = "copy";
+                              }}
+                              ondrop={(event) =>
+                                handleBindingDrop(
+                                  event,
+                                  selectedGraphNodeId,
+                                  binding.key,
+                                )}
+                            />
+                          {/if}
+                          {#if binding.required}
+                            <p class="mt-1 text-[10px] text-muted-foreground">
+                              Required
+                            </p>
                           {/if}
                         </div>
-                      {:else}
-                        <Input
-                          class="w-full text-[10px]"
-                          readonly
-                          value={bindingTags[0]?.path ?? ""}
-                          placeholder="Drop tag here"
-                          ondragover={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            if (event.dataTransfer)
-                              event.dataTransfer.dropEffect = "copy";
-                          }}
-                          ondrop={(event) =>
-                            handleBindingDrop(
-                              event,
-                              selectedGraphNodeId,
-                              binding.key,
-                            )}
-                        />
-                      {/if}
-                      {#if binding.required}
-                        <p class="mt-1 text-[10px] text-muted-foreground">
-                          Required
-                        </p>
-                      {/if}
+                      {/each}
                     </div>
-                  {/each}
+                  </div>
+                {:else}
+                  <div
+                    class="flex h-[calc(100%-2rem)] items-center justify-center text-center text-sm text-muted-foreground"
+                  >
+                    Select a node in the graph to configure it.
+                  </div>
+                {/if}
+              </aside>
+            {:else}
+              <div class="pointer-events-none absolute right-3 top-3 z-30">
+                <div class="pointer-events-auto">
+                  <Button
+                    variant="outline-muted"
+                    label="Show inspector"
+                    title="Show inspector"
+                    onclick={() => (inspectorDockVisible = true)}
+                  />
                 </div>
               </div>
-            {:else}
-              <div
-                class="flex h-[calc(100%-2rem)] items-center justify-center text-center text-sm text-muted-foreground"
-              >
-                Select a node in the graph to configure it.
-              </div>
             {/if}
-          </aside>
-        {:else}
-          <div class="pointer-events-none absolute right-3 top-3 z-30">
-            <div class="pointer-events-auto">
-              <Button
-                variant="outline-muted"
-                label="Show inspector"
-                title="Show inspector"
-                onclick={() => (inspectorDockVisible = true)}
-              />
-            </div>
           </div>
-        {/if}
-      </div>
-      <!-- <div class="pointer-events-none absolute left-3 top-2 text-[11px] text-muted-foreground">
-				{#if canvasMode === 'edit'}
-					Edit mode: drop tags and place assets. No polling is active.
-				{:else}
-					Play mode: 2s polling active for all tag IDs on canvas.
-				{/if}
-			</div> -->
+          {/if}
+        </div>
+      {/if}
     </section>
   </div>
 
@@ -1214,6 +1702,55 @@
       onClose={closeMenu}
     />
   {/if}
+
+  <Dialog.Root bind:open={removeViewDialogOpen}>
+    <Dialog.Content
+      class="max-w-[420px]"
+      showCloseButton={false}
+      onInteractOutside={(event) => {
+        event.preventDefault();
+      }}
+      onEscapeKeydown={(event) => {
+        event.preventDefault();
+      }}
+    >
+      <form
+        class="flex flex-col gap-4"
+        onsubmit={(event) => {
+          event.preventDefault();
+          void confirmRemoveView();
+        }}
+      >
+        <Dialog.Header>
+          <Dialog.Title>Confirm removal</Dialog.Title>
+          <Dialog.Description>
+            Remove view "{removeViewTarget?.name}"? This action cannot be
+            undone.
+          </Dialog.Description>
+          {#if removeViewError}
+            <p class="text-destructive text-xs/relaxed">{removeViewError}</p>
+          {/if}
+        </Dialog.Header>
+        <Dialog.Footer class="border-border border-t pt-4">
+          <Button
+            variant="outline-muted"
+            label="Cancel"
+            title="Cancel"
+            disabled={removeViewSubmitting}
+            onclick={() => closeRemoveViewDialog()}
+          />
+          <Button
+            type="submit"
+            variant="filled-warn"
+            label="Remove"
+            loadingLabel="Removing..."
+            loading={removeViewSubmitting}
+            disabled={removeViewSubmitting || !removeViewTarget}
+          />
+        </Dialog.Footer>
+      </form>
+    </Dialog.Content>
+  </Dialog.Root>
 
   <Dialog.Root bind:open={removeDialogOpen}>
     <Dialog.Content
@@ -1365,3 +1902,4 @@
     </Dialog.Content>
   </Dialog.Root>
 </main>
+<div class="hidden">{@render children()}</div>
