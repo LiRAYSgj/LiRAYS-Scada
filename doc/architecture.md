@@ -3,24 +3,26 @@
 ## Runtime Topology
 ```
 Browser (SvelteKit static SPA: Svelte 5 + TypeScript)
-    ↕  WebSocket (same port as HTTP, default 8245) – binary protobuf command/event stream
-    ↕  HTTPS/HTTP  (default 8245) – static UI assets + REST resources
+    ↕  WebSocket (same port as HTTP, default 8245) – protobuf commands/events
+    ↕  HTTPS/HTTP (default 8245) – static UI assets + REST resources + Swagger
+Systemd service: lirays-scada (runs single Rust binary)
 Rust runtime
     ├─ unified axum server (HTTP + WS upgrade)
-    ├─ sled        (runtime RT data)
-    └─ SQLite via SeaORM (static resources + auth users)
+    ├─ sled (runtime RT data) under ${DATA_DIR}/rt_data
+    └─ SQLite via SeaORM (static resources + auth users) at ${DATA_DIR}/static.db
 ```
 
 ## Processes & Ports
-- Single Rust binary (`lirays-scada`).
+- Single Rust binary (`lirays-scada`) managed by systemd in packaged installs.
 - HTTP/S + WebSocket (same listener): `BIND_HOST`/`BIND_PORT` (default `0.0.0.0:8245`).
-- TLS: `TLS_ENABLE` drives both WebSocket and HTTP listeners (shared cert/key or auto self-signed).
-- Auth (optional): `AUTH_ENABLED` gates HTTP (SPA, Swagger, API) behind a session cookie; `AUTH_SECRET` signs the cookie.
+- TLS: `TLS_ENABLE` covers both HTTP and WebSocket; uses supplied cert/key or auto-generates self-signed into `${DATA_DIR}/certificates` when `TLS_AUTO=true`.
+- Auth (optional): `AUTH_ENABLED` gates SPA/Swagger/API; `AUTH_SECRET` signs the session cookie and refresh token.
 
 ## Data & Storage
 - **sled** under `${DATA_DIR}/rt_data/` for variable tree and live values.
-- **SQLite** file `${DATA_DIR}/static.db` for static resources served by the HTTP API (managed with SeaORM).
+- **SQLite** `${DATA_DIR}/static.db` for static resources and users.
 - Frontend assets compiled into the binary via `include_dir` (rebuilt when `frontend/build` changes).
+- Metrics (optional): `${METRICS_DIR}/metrics_rt.txt` snapshot + `${METRICS_DIR}/metrics_hist.csv` history.
 
 ## Backend Modules
 - `src/rtdata/server`: WebSocket command handling, event broadcast, variable management, TLS acceptor builder.
@@ -40,14 +42,14 @@ Rust runtime
 - Assets built into `frontend/build` and embedded in the binary.
 
 ## Security/TLS Flow
-- With `TLS_ENABLE=true`: uses provided cert/key or generates self-signed under `${DATA_DIR}/certificates/` when `TLS_AUTO=1`.
+- With `TLS_ENABLE=true`: uses provided cert/key or generates self-signed under `${DATA_DIR}/certificates/` when `TLS_AUTO=true`.
 - HTTP serves HTTPS on `BIND_PORT`; WebSocket upgrades to `wss` on the same port.
-- With `AUTH_ENABLED=true`: first visit forces `/auth/setup` to set `admin`; then `/auth/login`. HttpOnly cookie `lirays_session`, 24h, `Secure` if TLS.
+- With `AUTH_ENABLED=true`: first visit forces `/auth/setup` to set `admin`; then `/auth/login`. HttpOnly cookies `lirays_session` (access) and `lirays_refresh`; `Secure` flag when TLS is on.
 
 ## Build & Packaging (overview)
-- Frontend: `npm install && npm run build` (Node 24 recommended).
+- Frontend: `npm install && npm run generate:proto && npm run build` (Node 24).
 - Backend: `cargo build` (proto via `build.rs`).
-- Distribution: `.deb` packages (Linux) and Docker image. macOS/Windows not supported yet.
+- Distribution: `.deb` and `.rpm` packages for amd64/x86_64 and arm64/aarch64. Docker image build target available. macOS/Windows not supported yet.
 
 ## Data Flow (happy path)
 1) Client opens WS (`ws/wss`).  

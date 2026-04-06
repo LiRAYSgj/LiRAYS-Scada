@@ -1,64 +1,75 @@
 # LiRAYS‑SCADA
 
-Rust-based SCADA server with an embedded Svelte UI, HTTP + WebSocket on the same port, and local persistence (sled + SQLite).
+Compact SCADA server with a web interface that runs comfortably on low-resource hardware. It provides real-time tag handling, visualization, and control through a single service and installs as a native systemd package (amd64/x86_64 and arm64/aarch64).
 
-## Download & Install
+## What’s included
 
-Descargas: usa la versión publicada en GitHub Releases (reemplaza `v0.1.0` por la nueva versión cuando corresponda).
+- Web UI, REST API, Swagger docs, and WebSocket on the same port (default 8245).
+- Systemd unit installed and enabled automatically.
+- Optional TLS (your certs or auto self‑signed) and optional authentication with session cookies.
 
-### Ubuntu / Debian (amd64, arm64)
+## Download (beta 0.1.0)
 
-- Descarga:
-  - [lirays-scada_0.1.0-1_amd64.deb](https://github.com/LiRAYSgj/LiRAYS-Scada/releases/download/v0.1.0/lirays-scada_0.1.0-1_amd64.deb)
-  - [lirays-scada_0.1.0-1_arm64.deb](https://github.com/LiRAYSgj/LiRAYS-Scada/releases/download/v0.1.0/lirays-scada_0.1.0-1_arm64.deb)
-- Instala:
+**Debian / Ubuntu**
 
-```sh
-sudo dpkg -i lirays-scada_0.1.0_*.deb
-# if dependencies are missing:
-sudo apt-get install -f
-```
+- amd64: https://github.com/LiRAYSgj/LiRAYS-Scada/releases/download/v0.1.0/lirays-scada_0.1.0-1_amd64.deb
+- arm64: https://github.com/LiRAYSgj/LiRAYS-Scada/releases/download/v0.1.0/lirays-scada_0.1.0-1_arm64.deb
 
-- Service: `systemctl status lirays-scada.service` (listens on 8245 by default).
+**RHEL / Rocky / Alma / Fedora (EL9)**
 
-Uninstall:
+- x86_64: https://github.com/LiRAYSgj/LiRAYS-Scada/releases/download/v0.1.0/lirays-scada-0.1.0-1.el9.x86_64.rpm
+- aarch64: https://github.com/LiRAYSgj/LiRAYS-Scada/releases/download/v0.1.0/lirays-scada-0.1.0-1.el9.aarch64.rpm
 
-```sh
-# prerm already stops/disables the service
-sudo apt-get remove -y lirays-scada
-```
+## Install
 
-Optional cleanup (data/logs):
+### Debian / Ubuntu
 
 ```sh
-sudo rm -rf /var/lib/lirays-scada /var/log/lirays-scada.log
+sudo dpkg -i lirays-scada_0.1.0-1_amd64.deb   # or _arm64
+sudo apt-get -f install                       # pulls any missing deps
 ```
 
-### macOS
-
-Not supported yet.
-
-### Windows
-
-Not supported yet.
-
-### Docker
-
-- Public image (Not available yet): `docker pull registry.example.com/lirays-scada:0.1.0`
-- Or build from the repo:
+### RHEL / Rocky / Alma / Fedora
 
 ```sh
-docker build --target production -t lirays:latest .
-docker run --rm -p 8245:8245 -v $(pwd)/data_dir:/data lirays:latest
+sudo dnf install -y lirays-scada-0.1.0-1.el9.x86_64.rpm   # or .aarch64.rpm
 ```
 
-## Build desde código fuente
+## Verify the service
 
-- `make` (en Debian/Ubuntu) genera el instalador .deb local.
-- `make deb-docker-amd64` / `make deb-docker-arm64` (desde macOS/Linux, requiere Docker Desktop)
-  - `make clean`, `make test`
+```sh
+systemctl status lirays-scada          # service health
+journalctl -u lirays-scada -f          # live logs
+```
 
-## Documentation
+Default listener: `http://<host>:8245` (auto-switches to HTTPS/WSS when TLS is enabled).
+
+## Configure
+
+- Main config: `/etc/lirays-scada/settings.yaml`
+- Data dir: `/var/lib/lirays-scada/data_dir` (sled + SQLite + auto TLS certs)
+- Common toggles (YAML or env vars):
+  - `TLS_ENABLE=true` and `TLS_AUTO=true` to auto-generate a self-signed cert, or provide `TLS_CERT_PATH` / `TLS_KEY_PATH`.
+  - `AUTH_ENABLED=true` to require login; first visit `/auth/setup` to set the admin password, then `/auth/login`.
+- Apply changes:
+
+```sh
+sudo systemctl restart lirays-scada
+```
+
+## Use
+
+- Web UI: `/`
+- API docs: `/swagger` (OpenAPI at `/api-docs/openapi.json`)
+- WebSocket endpoint: `/ws`
+
+## Remove
+
+- Debian/Ubuntu: `sudo apt remove lirays-scada` (use `apt purge` to also drop `/etc`), then `sudo rm -rf /var/lib/lirays-scada` if you want all data gone.
+- RHEL/Rocky/Alma/Fedora: `sudo dnf remove lirays-scada`, optional `sudo rm -rf /var/lib/lirays-scada`.
+  The systemd unit `lirays-scada.service` stops and disables automatically on removal.
+
+## More docs
 
 - Architecture: [doc/architecture.md](doc/architecture.md)
 - Configuration & operations: [doc/configuration.md](doc/configuration.md)

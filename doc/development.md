@@ -1,33 +1,31 @@
 # Developer Guide
 
 ## Prerequisites
-- Node 24 (nvm recommended).
-- Stable Rust toolchain (1.74+; Dockerfile uses 1.94).
-- `protobuf` CLI to generate messages (installed in Dockerfile and used by frontend build).
+- Node 24 (use nvm).
+- Rust stable 1.74+ (packaging uses 1.94).
+- `protobuf` compiler available on PATH.
 
-## Quick local flow
+## Repo layout (high level)
+- `src/` — Rust server (axum, sled, SQLite/SeaORM, TLS, auth, metrics).
+- `frontend/` — SvelteKit SPA; assets embedded via `include_dir`.
+- `proto/` — protobuf definitions used by backend and frontend.
+- `packaging/debian` and `packaging/rpm` — systemd units, default settings, specs.
+- `distributions/` — build outputs (.deb/.rpm).
+- `clients/rust-client` — demos and reference client.
+
+## Local dev (hot iteration)
 ```sh
-# Frontend + backend debug
-cd frontend
-npm install
-npm run generate:proto
-npm run build
-cd ..
+# Backend only
 cargo run --bin lirays-scada
-# http://localhost:8245
+# Frontend dev server (with live reload)
+cd frontend && npm install && npm run dev
 ```
 
-## Production build
+## Full rebuild (release-like)
 ```sh
-# Frontend (Node 24)
 (cd frontend && npm install && npm run generate:proto && npm run build)
-# Backend
 cargo build --release
 ```
-
-## Dev server
-- Frontend: `npm run dev`.
-- Backend: `cargo run`.
 
 ## Tests
 ```sh
@@ -35,16 +33,32 @@ cargo build --release
 cargo test
 ```
 
+## Packaging (via Makefile)
+Requirements on the host:
+- Docker with multi-arch support (Docker Desktop or dockerd + binfmt/qemu) — Makefile runs builds inside containers.
+- `make`, `bash`, internet access for base images.
+- Optional: `nvm` for local frontend build if you bypass Docker.
+
+Commands:
+- Debian/Ubuntu packages (.deb): `make deb` (builds amd64 + arm64) or `make deb-amd64` / `make deb-arm64` for a single arch.
+- RHEL/Rocky/Alma/Fedora packages (.rpm): `make rpm` (x86_64 + aarch64) or `make rpm-amd64` / `make rpm-arm64`.
+
+What happens:
+- Frontend is built once per run (`frontend/.frontend-built` stamp).
+- Backend is compiled in containerized Rust toolchains (1.94) per arch.
+- Artifacts are placed in `distributions/`.
+- Systemd units and default configs are injected from `packaging/debian/deb-files` and `packaging/rpm/SOURCES`.
+
+## Release checklist (manual)
+1) Bump `version` in `Cargo.toml`.
+2) Tag release `vX.Y.Z` and build packages: `make deb rpm`.
+3) Upload `.deb`/`.rpm` from `distributions/` to GitHub Releases with matching tag.
+4) Ensure README download links point to the new tag/filenames.
+
 ## Clients and demos
-- Async Rust client: `clients/rust-client`.
+- Rust client: `clients/rust-client`.
 - Demos: `cargo run --manifest-path clients/rust-client/Cargo.toml --bin demo <basic|tree_stress|data_stress|bulk_test>`.
 
-## Frontend stack
-- SvelteKit (adapter-static, SPA), Svelte 5 runes, TS, Tailwind CSS v4, `@xyflow/svelte`.
-- Main UI: variable tree (left) + SvelteFlow canvas (right) with plant nodes.
-- Template Builder: modal with YAML → `ADD_BULK`.
-
-## Build/packaging notes
-- Debian packages: `make` on Linux → `.deb` in `distributions/`.
-- RPM packages: `make rpm` (or rpm-docker-*) → `.rpm` in `distributions/`.
-- Docker: `docker build --target production -t lirays:latest .`
+## Frontend stack (quick notes)
+- SvelteKit (adapter-static), Svelte 5 runes, TS, Tailwind v4, `@xyflow/svelte`.
+- Variable tree + SvelteFlow canvas; Template Builder supports YAML → `ADD_BULK`.

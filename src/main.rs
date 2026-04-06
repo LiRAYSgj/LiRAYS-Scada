@@ -63,7 +63,7 @@ async fn main() {
 pub(crate) fn load_runtime_config(config_path: Option<PathBuf>) -> RuntimeConfig {
     let cwd = env::current_dir().expect("failed to get cwd");
 
-    let default_data_dir = cwd.join("data_dir");
+    let default_data_dir = cwd.join("data");
 
     let resolved_config = config_path.or_else(|| resolve_default_config(DEFAULT_SETTINGS_YAML));
 

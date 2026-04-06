@@ -1,44 +1,64 @@
 # Configuration & Operations
 
-## Environment variables
-- `BIND_HOST` / `BIND_PORT` – unified host/port for HTTP + WS (default `0.0.0.0:8245`).
-- `DATA_DIR` – data root (default `./data_dir`); contains `rt_data/` (sled) and `static.db` (SQLite).
+Applies to both package installs (systemd-managed) and manual runs.
+
+## Paths & service (packages)
+
+- Binary: `/usr/bin/lirays-scada`
+- Config: `/etc/lirays-scada/settings.yaml` (loaded automatically unless `--config` points elsewhere)
+- Data root: `/var/lib/lirays-scada/data` (sled + SQLite + certificates)
+- Systemd service: `lirays-scada.service`
+  - Status/logs: `systemctl status lirays-scada`, `journalctl -u lirays-scada`
+
+## Runtime flags
+
+- `--config /path/to/settings.yaml` – override default config file
+- No other CLI flags; everything else is env or YAML.
+
+## Environment variables (override YAML)
+
+- Server:
+  - `BIND_HOST` / `BIND_PORT` — unified listener (default `0.0.0.0:8245`)
+  - `DATA_DIR` — data root (default `./data` when running manually; `/var/lib/lirays-scada/data` in packages)
 - TLS:
-  - `TLS_ENABLE` – enable TLS for HTTP and WS.
-  - `TLS_AUTO` – when true, generates self-signed cert/key in `${DATA_DIR}/certificates/` if no cert/key provided.
-  - `TLS_CERT_PATH` / `TLS_KEY_PATH` – PEM paths when TLS is on and AUTO is off.
+  - `TLS_ENABLE` — enable TLS for HTTP and WS
+  - `TLS_AUTO` — generate self-signed under `${DATA_DIR}/certificates` when no cert/key
+  - `TLS_CERT_PATH` / `TLS_KEY_PATH` — PEM files when `TLS_ENABLE=true` and `TLS_AUTO=false`
 - Auth (optional):
-  - `AUTH_ENABLED` – gate SPA, Swagger, API.
-  - `AUTH_SECRET` – HMAC for session cookie; if missing, a random one is generated (sessions invalidated on restart).
+  - `AUTH_ENABLED` — gate UI/API
+  - `AUTH_SECRET` — HMAC for access/refresh tokens; random per start if unset
 - Observability:
-  - `METRICS_DIR` – optional; if set, emits `metrics_rt.txt` (snapshot) and `metrics_hist.csv` (history) every 5s.
+  - `METRICS_DIR` — writes `metrics_rt.txt` (snapshot) + `metrics_hist.csv` (history, 5s cadence)
 - Persistence:
-  - `PERSIST_FLUSH_MS` – interval (ms) to flush values to sled (`valuesTree`); default 1000 ms.
+  - `PERSIST_FLUSH_MS` — interval to flush sled values (default 15000)
 
 ## Directories & files
-- `${DATA_DIR}/rt_data/` – sled trees (`mainTree`, `valuesTree`).
-- `${DATA_DIR}/static.db` – SQLite for static resources and users.
-- `${DATA_DIR}/certificates/` – self-signed pair when `TLS_AUTO=1`.
-- Service logs (packages): `/var/log/lirays-scada*.log`.
+
+- `${DATA_DIR}/rt_data/` — sled trees (`mainTree`, `valuesTree`)
+- `${DATA_DIR}/static.db` — SQLite for static resources + users
+- `${DATA_DIR}/certificates/` — self-signed pair when `TLS_AUTO=true`
+- Metrics (optional): `${METRICS_DIR}/metrics_rt.txt`, `${METRICS_DIR}/metrics_hist.csv`
 
 ## Authentication
-- First visit with `AUTH_ENABLED=true`: redirect to `/auth/setup` to create `admin` password.
-- Next visits: `/auth/login`.
-- Cookie: `lirays_session`, HttpOnly, TTL 24h, `Secure` if TLS.
+
+- Enable with `AUTH_ENABLED=true`.
+- First visit redirects to `/auth/setup` to create admin password.
+- Logins at `/auth/login`; session via HttpOnly `lirays_session` (1h) + `lirays_refresh` (24h), `Secure` when TLS is on.
 
 ## TLS
-- With `TLS_ENABLE=true`:
-  - Use `TLS_CERT_PATH`/`TLS_KEY_PATH` if provided.
-  - Otherwise, with `TLS_AUTO=1`, generate self-signed in `${DATA_DIR}/certificates/`.
-  - HTTP serves HTTPS on `BIND_PORT`, WS upgrades to `wss` on `/ws`.
+
+- Unified for HTTP + WS on the same port.
+- Choose one:
+  - Provide `TLS_CERT_PATH` and `TLS_KEY_PATH`
+  - Or set `TLS_AUTO=true` to auto-generate self-signed under `${DATA_DIR}/certificates`
+- WebSocket switches to `wss` automatically when TLS is active.
 
 ## Metrics
-- If `METRICS_DIR` is set:
-  - Colored snapshot: `${METRICS_DIR}/metrics_rt.txt` (overwrites).
-  - CSV history: `${METRICS_DIR}/metrics_hist.csv` (append).
-- Quick view:
-  - `watch -n1 cat "$METRICS_DIR/metrics_rt.txt"` (Linux) or `while true; do clear; cat ...; sleep 1; done`.
+
+- Enable by setting `METRICS_DIR` to a writable folder.
+- Watch snapshot: `watch -n1 cat "$METRICS_DIR/metrics_rt.txt"` (Linux) or `while true; do clear; cat "$METRICS_DIR/metrics_rt.txt"; sleep 1; done`.
 
 ## Persistence & shutdown
-- `values_cache` keeps values in memory; dirty keys flush every `PERSIST_FLUSH_MS` or on SIGINT/SIGTERM.
-- sled provides local durability; SQLite handles static resources and users.
+
+- Dirty values flush every `PERSIST_FLUSH_MS` ms and again on SIGINT/SIGTERM.
+- sled provides local durability; SQLite stores static resources and users.

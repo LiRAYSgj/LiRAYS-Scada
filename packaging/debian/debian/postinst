@@ -29,10 +29,10 @@ case "$1" in
         fi
 
         # Create data directory
-        mkdir -p /var/lib/lirays-scada/data_dir
+        mkdir -p /var/lib/lirays-scada/data
         chown -R lirays:lirays /var/lib/lirays-scada
         chmod 755 /var/lib/lirays-scada
-        chmod 755 /var/lib/lirays-scada/data_dir
+        chmod 755 /var/lib/lirays-scada/data
 
         # Install systemd service
         systemctl daemon-reload
