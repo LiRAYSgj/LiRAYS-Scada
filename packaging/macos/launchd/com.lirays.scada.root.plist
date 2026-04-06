@@ -14,6 +14,8 @@
 	<true/>
 	<key>KeepAlive</key>
 	<true/>
+	<key>UserName</key>
+	<string>root</string>
 	<key>StandardOutPath</key>
 	<string>/Library/Logs/LiRAYS-Scada/lirays-scada.out.log</string>
 	<key>StandardErrorPath</key>

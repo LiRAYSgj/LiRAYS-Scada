@@ -10,7 +10,7 @@ use wry::WebViewBuilder;
 
 const SERVICE_LABEL: &str = "com.lirays.scada";
 const DASHBOARD_URL: &str = "http://127.0.0.1:8245/";
-const SETTINGS_PATH: &str = "/Library/Application Support/LiRAYS-Scada/settings.yaml";
+const SETTINGS_PATH: &str = "/Library/LiRAYS-Scada/settings.yaml";
 const LOG_DIR: &str = "/Library/Logs/LiRAYS-Scada";
 
 #[derive(Serialize, Clone)]
@@ -31,9 +31,14 @@ fn load_icon() -> Icon {
 }
 
 fn run_osascript(cmd: &str) -> std::io::Result<bool> {
+    // Escape for AppleScript string literal
+    let escaped = cmd.replace('\\', "\\\\").replace('\"', "\\\"");
     let status = Command::new("osascript")
         .arg("-e")
-        .arg(format!(r#"do shell script "{}" with administrator privileges"#, cmd))
+        .arg(format!(
+            r#"do shell script "{}" with administrator privileges"#,
+            escaped
+        ))
         .status()?;
     Ok(status.success())
 }
@@ -100,8 +105,43 @@ fn open_logs() {
     let _ = Command::new("open").arg(LOG_DIR).status();
 }
 
+fn uninstall(keep_data: bool) -> Status {
+    let data_cmd = if keep_data {
+        String::from("echo \"Keeping data & logs\";")
+    } else {
+        String::from("rm -rf \"/Library/Application Support/LiRAYS-Scada\" \"/Library/Logs/LiRAYS-Scada\";")
+    };
+
+    let script = format!(
+        r#"bash -lc 'set -e;
+launchctl bootout system/com.lirays.scada 2>/dev/null || true;
+launchctl disable system/com.lirays.scada 2>/dev/null || true;
+rm -f "/Library/LaunchDaemons/com.lirays.scada.plist";
+rm -f "/usr/local/bin/lirays-scada";
+{data_cmd}
+pkgutil --forget com.lirays.scada 2>/dev/null || true;
+(sleep 2; rm -rf "/Applications/LiRAYS Scada.app") &
+'"#
+    );
+
+    match run_osascript(&script) {
+        Ok(true) => {
+            // Exit so the running app doesn't block its own removal
+            std::process::exit(0);
+        }
+        Ok(false) => Status {
+            running: false,
+            message: "Uninstall failed".into(),
+        },
+        Err(e) => Status {
+            running: false,
+            message: e.to_string(),
+        },
+    }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let event_loop = EventLoopBuilder::with_user_event().build();
+    let event_loop = EventLoopBuilder::<serde_json::Value>::with_user_event().build();
     let icon = load_icon();
 
     let window = WindowBuilder::new()
@@ -136,8 +176,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
       cursor: pointer;
     }}
     button.secondary {{ background: #1f2937; color: #e6edf5; }}
+    button.danger {{ background: #b91c1c; }}
     button:disabled {{ opacity: 0.6; cursor: not-allowed; }}
     .row {{ display: flex; flex-wrap: wrap; gap: 8px; }}
+    .muted {{ color: #9ca3af; font-size: 12px; margin-top: 6px; }}
   </style>
 </head>
 <body>
@@ -151,10 +193,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     <button class="secondary" onclick="send('open-settings')">Open Settings</button>
     <button class="secondary" onclick="send('open-logs')">Open Logs Folder</button>
     <button class="secondary" onclick="send('refresh')">Refresh</button>
+    <button class="danger" onclick="confirmUninstall()">Uninstall…</button>
+  </div>
+  <div style="margin-top:10px;">
+    <label><input type="checkbox" id="keepData" checked> Keep data & logs</label>
+    <div class="muted">Uninstall stops the service, removes the daemon and binary. Uncheck to also delete config/data/logs.</div>
   </div>
   <script>
     function send(action) {{
-      window.ipc.postMessage(JSON.stringify({{ action }}));
+      const payload = {{ action }};
+      const keepBox = document.getElementById('keepData');
+      if (keepBox) payload.keepData = keepBox.checked;
+      window.ipc.postMessage(JSON.stringify(payload));
+    }}
+    function confirmUninstall() {{
+      if (confirm('Uninstall LiRAYS Scada?')) {{
+        send('uninstall');
+      }}
     }}
     function updateStatus(s) {{
       const box = document.getElementById('status');
@@ -172,11 +227,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_html(html)
         .with_ipc_handler(move |msg: String| {
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(&msg) {
-                if let Some(action) = v.get("action").and_then(|a| a.as_str()) {
-                    proxy
-                        .send_event(action.to_string())
-                        .expect("send event");
-                }
+                proxy
+                    .send_event(v)
+                    .expect("send event");
             }
         })
         .build()?;
@@ -198,8 +251,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     serde_json::to_string(&status()).unwrap()
                 ));
             }
-            Event::UserEvent(action) => {
-                let st = match action.as_str() {
+            Event::UserEvent(payload) => {
+                let action = payload
+                    .get("action")
+                    .and_then(|a| a.as_str())
+                    .unwrap_or("");
+                let keep = payload
+                    .get("keepData")
+                    .and_then(|b| b.as_bool())
+                    .unwrap_or(true);
+                let st = match action {
                     "start" => start_service(),
                     "stop" => stop_service(),
                     "restart" => start_service(),
@@ -215,6 +276,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         open_logs();
                         status()
                     }
+                    "uninstall" => uninstall(keep),
                     "refresh" => status(),
                     _ => status(),
                 };

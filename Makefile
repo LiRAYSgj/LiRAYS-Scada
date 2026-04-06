@@ -236,14 +236,15 @@ mac-stage: mac-build-service mac-build-gui mac-icon
 	@echo "==> Staging macOS payload"
 	@rm -rf $(MAC_PAYLOAD)
 	@mkdir -p "$(MAC_PAYLOAD)/usr/local/bin" \
-		"$(MAC_PAYLOAD)/Library/Application Support/LiRAYS-Scada" \
+		"$(MAC_PAYLOAD)/Library/LiRAYS-Scada" \
 		"$(MAC_PAYLOAD)/Library/LaunchDaemons" \
 		"$(MAC_PAYLOAD)/Library/Logs/LiRAYS-Scada" \
 		"$(MAC_APP)/Contents/MacOS" \
 		"$(MAC_APP)/Contents/Resources"
 	@install -m755 $(MAC_BUILD_DIR)/lirays-scada-universal "$(MAC_PAYLOAD)/usr/local/bin/lirays-scada"
-	@install -m644 packaging/rpm/SOURCES/settings.yaml "$(MAC_PAYLOAD)/Library/Application Support/LiRAYS-Scada/settings.yaml.default"
+	@install -m644 $(MAC_DIR)/resources/settings.yaml "$(MAC_PAYLOAD)/Library/LiRAYS-Scada/settings.yaml.default"
 	@install -m644 $(MAC_DIR)/launchd/com.lirays.scada.plist "$(MAC_PAYLOAD)/Library/LaunchDaemons/com.lirays.scada.plist"
+	@install -m644 $(MAC_DIR)/launchd/com.lirays.scada.root.plist "$(MAC_PAYLOAD)/Library/LaunchDaemons/com.lirays.scada.root.plist"
 	@install -m755 $(MAC_BUILD_DIR)/lirays-scada-gui-universal "$(MAC_BIN_DIR)/lirays-scada-gui"
 	@install -m644 $(MAC_ICNS) "$(MAC_RESOURCES)/app_icon.icns"
 	@sed 's/@VERSION@/$(VERSION)/g' $(MAC_DIR)/resources/Info.plist > "$(MAC_APP)/Contents/Info.plist"

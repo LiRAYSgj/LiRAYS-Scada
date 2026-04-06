@@ -1,0 +1,63 @@
+# ---------------------------------------------------------------------------
+# LiRAYS SCADA - Default Configuration (Debian)
+# ---------------------------------------------------------------------------
+# This file is installed under /etc/lirays-scada/settings.yaml by the Debian
+# package. Values can be overridden via environment variables (see comments).
+# ---------------------------------------------------------------------------
+
+server:
+  # Host interface for HTTP + WebSocket.
+  # Env: BIND_HOST
+  bind_host: 127.0.0.1
+
+  # Port for both HTTP and WebSocket on the unified server.
+  # Env: BIND_PORT
+  bind_port: 8245
+
+paths:
+  # Root data directory. Contains:
+  #   - Dynamic data
+  #   - Static data
+  #   - certificates/ (self-signed TLS when auto enabled)
+  # Env: DATA_DIRå
+  data_dir: /Library/LiRAYS-Scada/data_dir
+
+tls:
+  # Enable TLS for BOTH HTTP and WebSocket endpoints.
+  # Env: TLS_ENABLE
+  enabled: false
+
+  # Auto-generate a self-signed cert/key under ${data_dir}/certificates
+  # when enabled=true and cert/key not provided.
+  # Env: TLS_AUTO
+  auto: true
+
+  # Path to PEM certificate file (used when enabled=true and auto=false).
+  # Env: TLS_CERT_PATH
+  cert_path: null
+
+  # Path to PEM private key file (used when enabled=true and auto=false).
+  # Env: TLS_KEY_PATH
+  key_path: null
+
+metrics:
+  # Directory to write metrics_rt.txt (snapshot) and metrics_hist.csv (history).
+  # If null/empty, metrics logging is disabled.
+  # Env: METRICS_DIR
+  dir: null
+
+persistence:
+  # Interval in milliseconds to flush dirty values to sled.
+  # Env: PERSIST_FLUSH_MS
+  flush_ms: 15000
+
+auth:
+  # Enable session-protected UI/API. When enabled and no admin exists,
+  # first visit redirects to /auth/setup to create the admin password.
+  # Env: AUTH_ENABLED
+  enabled: false
+
+  # HMAC secret for the session cookie. If null/omitted, a random secret
+  # is generated on start (sessions invalidated on restart).
+  # Env: AUTH_SECRET
+  secret: null
