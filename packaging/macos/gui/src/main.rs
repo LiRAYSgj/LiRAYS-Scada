@@ -64,7 +64,14 @@ fn status() -> Status {
 }
 
 fn start_service() -> Status {
-    match run_osascript("launchctl kickstart -k system/com.lirays.scada") {
+    // Ensure the service is loaded before kickstart (load -w as fallback if bootstrap fails).
+    let script = r#"bash -lc 'set -e;
+launchctl bootstrap system "/Library/LaunchDaemons/com.lirays.scada.plist" 2>/dev/null || \
+launchctl load -w "/Library/LaunchDaemons/com.lirays.scada.plist";
+launchctl enable system/com.lirays.scada 2>/dev/null || true;
+launchctl kickstart -k system/com.lirays.scada
+'"#;
+    match run_osascript(script) {
         Ok(true) => status(),
         Ok(false) => Status {
             running: false,
@@ -78,7 +85,8 @@ fn start_service() -> Status {
 }
 
 fn stop_service() -> Status {
-    match run_osascript("launchctl bootout system/com.lirays.scada") {
+    let script = r#"bash -lc 'launchctl bootout system/com.lirays.scada 2>/dev/null || true; launchctl disable system/com.lirays.scada 2>/dev/null || true'"#;
+    match run_osascript(script) {
         Ok(true) => status(),
         Ok(false) => Status {
             running: false,
@@ -96,9 +104,12 @@ fn open_browser() {
 }
 
 fn open_settings() {
-    let _ = Command::new("open")
-        .args(["-a", "TextEdit", SETTINGS_PATH])
-        .status();
+    // Open settings with elevated privileges so edits can be saved in /Library.
+    let script = format!(
+        r#"bash -lc 'open -a TextEdit "{}"'"#,
+        SETTINGS_PATH
+    );
+    let _ = run_osascript(&script);
 }
 
 fn open_logs() {
@@ -109,7 +120,7 @@ fn uninstall(keep_data: bool) -> Status {
     let data_cmd = if keep_data {
         String::from("echo \"Keeping data & logs\";")
     } else {
-        String::from("rm -rf \"/Library/Application Support/LiRAYS-Scada\" \"/Library/Logs/LiRAYS-Scada\";")
+        String::from("rm -rf \"/Library/LiRAYS-Scada\" \"/Library/Application Support/LiRAYS-Scada\" \"/Library/Logs/LiRAYS-Scada\";")
     };
 
     let script = format!(
