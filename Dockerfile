@@ -44,6 +44,5 @@ WORKDIR /app
 COPY --from=backend-builder /app/target/release/lirays-scada ./lirays-scada
 
 EXPOSE 8245
-EXPOSE 8246
 
 CMD ["./lirays-scada"]

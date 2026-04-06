@@ -1,9 +1,0 @@
-#!/bin/bash
-set -euo pipefail
-
-LAUNCHD_PLIST="/Library/LaunchDaemons/com.lirays.scada.plist"
-
-# Reload after upgrade
-launchctl kickstart -k system/com.lirays.scada || true
-
-exit 0

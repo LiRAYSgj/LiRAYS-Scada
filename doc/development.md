@@ -46,5 +46,5 @@ cargo test
 
 ## Build/packaging notes
 - Debian packages: `make` on Linux → `.deb` in `distributions/`.
-- macOS: `make` on macOS → release binary and `.pkg` + `.dmg` in `distributions/`.
+- RPM packages: `make rpm` (or rpm-docker-*) → `.rpm` in `distributions/`.
 - Docker: `docker build --target production -t lirays:latest .`

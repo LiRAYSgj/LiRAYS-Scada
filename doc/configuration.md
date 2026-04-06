@@ -19,7 +19,7 @@
 - `${DATA_DIR}/rt_data/` – sled trees (`mainTree`, `valuesTree`).
 - `${DATA_DIR}/static.db` – SQLite for static resources and users.
 - `${DATA_DIR}/certificates/` – self-signed pair when `TLS_AUTO=1`.
-- Service logs (packages and macOS LaunchDaemon): `/var/log/lirays-scada*.log` or `/usr/local/var/log/lirays-scada*.log` on macOS.
+- Service logs (packages): `/var/log/lirays-scada*.log`.
 
 ## Authentication
 - First visit with `AUTH_ENABLED=true`: redirect to `/auth/setup` to create `admin` password.

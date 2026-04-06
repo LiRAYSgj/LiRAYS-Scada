@@ -47,7 +47,7 @@ Rust runtime
 ## Build & Packaging (overview)
 - Frontend: `npm install && npm run build` (Node 24 recommended).
 - Backend: `cargo build` (proto via `build.rs`).
-- Distribution: `.deb` packages, Docker image, macOS binary/DMG.
+- Distribution: `.deb` packages (Linux) and Docker image. macOS/Windows not supported yet.
 
 ## Data Flow (happy path)
 1) Client opens WS (`ws/wss`).  
