@@ -1,0 +1,26 @@
+#!/bin/bash
+set -euo pipefail
+
+APP_SUPPORT="/Library/Application Support/LiRAYS-Scada"
+CONFIG="$APP_SUPPORT/settings.yaml"
+DATA_DIR="$APP_SUPPORT/data_dir"
+LOG_DIR="/Library/Logs/LiRAYS-Scada"
+LAUNCHD_PLIST="/Library/LaunchDaemons/com.lirays.scada.plist"
+
+mkdir -p "$APP_SUPPORT" "$DATA_DIR" "$LOG_DIR"
+chmod 755 "$APP_SUPPORT" "$DATA_DIR" "$LOG_DIR"
+
+# Keep existing config if present; otherwise seed default from payload
+if [ ! -f "$CONFIG" ] && [ -f "$CONFIG.default" ]; then
+  mv "$CONFIG.default" "$CONFIG"
+fi
+
+# Ensure permissions
+chown -R root:wheel "$APP_SUPPORT" "$LOG_DIR"
+
+# Load & start the service
+launchctl bootstrap system "$LAUNCHD_PLIST" || launchctl bootstrap system "$LAUNCHD_PLIST"
+launchctl enable system/com.lirays.scada || true
+launchctl kickstart -k system/com.lirays.scada || true
+
+exit 0

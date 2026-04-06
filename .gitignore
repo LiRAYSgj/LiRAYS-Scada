@@ -205,6 +205,8 @@ packaging/rpm/BUILDROOT/
 packaging/rpm/RPMS/
 packaging/rpm/SRPMS/
 packaging/rpm/SOURCES/lirays-scada
+packaging/macos/build/
+packaging/macos/payload/
 
 # Build artifacts
 distributions/

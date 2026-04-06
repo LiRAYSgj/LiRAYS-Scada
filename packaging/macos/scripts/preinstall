@@ -1,0 +1,7 @@
+#!/bin/bash
+set -euo pipefail
+
+# Stop existing service if present (ignore errors)
+if launchctl print system/com.lirays.scada >/dev/null 2>&1; then
+  launchctl bootout system/com.lirays.scada >/dev/null 2>&1 || true
+fi
