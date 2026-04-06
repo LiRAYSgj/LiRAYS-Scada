@@ -8,6 +8,9 @@ PACKAGING_DIR := $(ROOT)/packaging
 DEB_ROOT_DIR  := $(PACKAGING_DIR)/debian
 DEBIAN_DIR    := $(DEB_ROOT_DIR)/debian
 DEBFILES_DIR  := $(DEB_ROOT_DIR)/deb-files
+RPM_DIR       := $(PACKAGING_DIR)/rpm
+RPM_SPECS_DIR := $(RPM_DIR)/SPECS
+RPM_SOURCES_DIR := $(RPM_DIR)/SOURCES
 NVM_DIR       ?= $(HOME)/.nvm
 NODE_VERSION  ?= 24
 VERSION       ?= $(shell sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
@@ -19,6 +22,7 @@ FRONTEND_STAMP := $(FRONTEND_DIR)/.frontend-built
 
 .PHONY: all help clean test \
         deb deb-docker-amd64 deb-docker-arm64 \
+        rpm rpm-docker-amd64 rpm-docker-arm64 rpm-package \
         mac win
 
 all: deb mac win
@@ -27,6 +31,7 @@ help:
 	@echo "Targets:"
 	@echo "  make           -> build deb (amd64+arm64 in Docker), mac placeholder, win placeholder"
 	@echo "  make deb       -> build Debian packages (Docker, amd64+arm64)"
+	@echo "  make rpm       -> build RPM packages (Docker, amd64+arm64)"
 	@echo "  make mac       -> placeholder (prints not supported)"
 	@echo "  make win       -> placeholder (prints not supported)"
 	@echo "  make test      -> frontend tests + cargo test"
@@ -76,7 +81,7 @@ test:
 	'
 	@$(CARGO) test
 
-# --- Debian/Ubuntu ----------------------------------------------------------
+# --- DEB (Debian/Ubuntu) ----------------------------------------------------------
 
 deb: deb-docker-amd64 deb-docker-arm64
 
@@ -96,8 +101,6 @@ deb-package: prepare-dist
 	  mv ../lirays-scada_*[0-9].deb "$$DIST"; \
 	'
 
-# cross-build .deb from macOS via Docker
-
 deb-docker-amd64: prepare-dist frontend
 	@echo "==> Building .deb (amd64) in Docker"
 	@$(DOCKER) run --rm --platform=linux/amd64 -v $(ROOT):/src -w /src rust:1.94-bullseye bash -lc 'set -e; \
@@ -113,7 +116,6 @@ deb-docker-amd64: prepare-dist frontend
 		VERSION=$(VERSION) CARGO=$$CARGO $$CARGO build --release; \
 		VERSION=$(VERSION) CARGO=$$CARGO make deb-package; \
 		rm -f ./debian ./deb-files'
-
 
 deb-docker-arm64: prepare-dist frontend
 	@echo "==> Building .deb (arm64) in Docker"
@@ -131,8 +133,64 @@ deb-docker-arm64: prepare-dist frontend
 		VERSION=$(VERSION) CARGO=$$CARGO make deb-package; \
 		rm -f ./debian ./deb-files'
 
+# --- RPM (RHEL/Rocky/Fedora) -----------------------------------------------------
+
+rpm: rpm-docker-amd64 rpm-docker-arm64
+
+rpm-package: prepare-dist
+	@echo "📦 Creating RPM package..."
+	@bash -lc 'set -euo pipefail; \
+	  ROOT="$(ROOT)"; \
+	  DIST="$(DIST_DIR)"; \
+	  RPM_TOP="$(RPM_DIR)"; \
+	  SOURCES="$(RPM_SOURCES_DIR)"; \
+	  mkdir -p "$$RPM_TOP/BUILD" "$$RPM_TOP/BUILDROOT" "$$RPM_TOP/RPMS" "$$RPM_TOP/SOURCES" "$$RPM_TOP/SPECS" "$$RPM_TOP/SRPMS"; \
+	  install -Dm755 "$(TARGET_DIR)/release/lirays-scada" "$$SOURCES/lirays-scada"; \
+	  rpmbuild -bb "$$RPM_TOP/SPECS/lirays-scada.spec" \
+	    --define "_topdir $$RPM_TOP" \
+	    --define "version $(VERSION)"; \
+	  find "$$RPM_TOP/RPMS" -maxdepth 2 -name "*.rpm" -print -exec mv {} "$$DIST" \; \
+	  rm -f "$$SOURCES/lirays-scada"; \
+	'
+
+rpm-docker-amd64: prepare-dist frontend
+	@echo "==> Building .rpm (amd64) in Docker"
+	@$(DOCKER) run --rm --platform=linux/amd64 -v $(ROOT):/src -w /src rockylinux:9 bash -lc 'set -e; \
+		dnf -y install dnf-plugins-core; \
+		dnf config-manager --set-enabled crb; \
+		dnf -y install epel-release; \
+		curl -fsSL https://rpm.nodesource.com/setup_$(NODE_VERSION).x | bash -; \
+		dnf -y install nodejs protobuf-compiler rpm-build rpmdevtools systemd-rpm-macros shadow-utils gcc gcc-c++ make pkgconfig openssl-devel git; \
+		curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.94.0; \
+		. "$$HOME/.cargo/env"; \
+		export PATH="$$HOME/.cargo/bin:$$PATH"; \
+		export CARGO=$$HOME/.cargo/bin/cargo; \
+		VERSION=$(VERSION) CARGO=$$CARGO $$CARGO build --release; \
+		VERSION=$(VERSION) CARGO=$$CARGO make rpm-package; \
+	'
+
+rpm-docker-arm64: prepare-dist frontend
+	@echo "==> Building .rpm (arm64) in Docker"
+	@$(DOCKER) run --rm --platform=linux/arm64 -v $(ROOT):/src -w /src rockylinux:9 bash -lc 'set -e; \
+		dnf -y install dnf-plugins-core; \
+		dnf config-manager --set-enabled crb; \
+		dnf -y install epel-release; \
+		curl -fsSL https://rpm.nodesource.com/setup_$(NODE_VERSION).x | bash -; \
+		dnf -y install nodejs protobuf-compiler rpm-build rpmdevtools systemd-rpm-macros shadow-utils gcc gcc-c++ make pkgconfig openssl-devel git; \
+		curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.94.0; \
+		. "$$HOME/.cargo/env"; \
+		export PATH="$$HOME/.cargo/bin:$$PATH"; \
+		export CARGO=$$HOME/.cargo/bin/cargo; \
+		VERSION=$(VERSION) CARGO=$$CARGO $$CARGO build --release; \
+		VERSION=$(VERSION) CARGO=$$CARGO make rpm-package; \
+	'
+
+# --- MAC OS -----------------------------------------------------
+
 mac:
 	@echo "Not supported yet (mac build placeholder)"
+
+# --- WINDOWS -----------------------------------------------------
 
 win:
 	@echo "Not supported yet (windows build placeholder)"

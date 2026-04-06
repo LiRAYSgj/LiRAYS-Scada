@@ -199,6 +199,13 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 
+# RPM build artifacts
+packaging/rpm/BUILD/
+packaging/rpm/BUILDROOT/
+packaging/rpm/RPMS/
+packaging/rpm/SRPMS/
+packaging/rpm/SOURCES/lirays-scada
+
 # Build artifacts
 distributions/
 .cursorindexingignore
