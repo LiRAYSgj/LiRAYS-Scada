@@ -1,0 +1,116 @@
+name: Publish Docker And Create Release
+
+on:
+  push:
+    branches:
+      - "**"
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to publish and release
+        required: true
+        type: string
+
+env:
+  IMAGE_NAME: lirays-scada
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  test:
+    name: Run Frontend And Backend Tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run tests
+        run: make test
+
+  publish-docker:
+    name: Build And Publish Multi-Arch Docker Image
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    needs:
+      - test
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Resolve image repository
+        run: |
+          set -euo pipefail
+          echo "DOCKER_REPOSITORY=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${IMAGE_NAME}" >> "$GITHUB_ENV"
+          echo "Using DOCKER_REPOSITORY=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${IMAGE_NAME}"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build amd64 and arm64 images
+        run: make docker DOCKER_REPOSITORY="$DOCKER_REPOSITORY"
+
+      - name: Publish version and latest multi-arch images
+        run: make publish DOCKER_REPOSITORY="$DOCKER_REPOSITORY"
+
+  release:
+    name: Generate Notes And Publish GitHub Release
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    needs:
+      - publish-docker
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout tag with full history
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+
+      - name: Generate release notes from conventional commits
+        run: ./scripts/generate-release-notes.sh "${RELEASE_TAG}" release-notes.md
+
+      - name: Show generated release notes
+        run: cat release-notes.md
+
+      - name: Create or update GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            gh release edit "${RELEASE_TAG}" --title "${RELEASE_TAG}" --notes-file release-notes.md
+          else
+            gh release create "${RELEASE_TAG}" --title "${RELEASE_TAG}" --notes-file release-notes.md
+          fi

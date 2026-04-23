@@ -1,0 +1,76 @@
+# ---------------------------------------------------------------------------
+# LiRAYS SCADA - Default Configuration (macOS package)
+# ---------------------------------------------------------------------------
+# Installed under:
+#   /Library/Application Support/LiRAYSScada/settings.default.yaml
+# On first install, postinstall copies it to settings.yaml only if that file
+# does not exist. Users should edit settings.yaml.
+# ---------------------------------------------------------------------------
+
+server:
+  # Host interface for HTTP + WebSocket.
+  # Env: BIND_HOST
+  bind_host: 127.0.0.1
+
+  # Port for both HTTP and WebSocket on the unified server.
+  # Env: BIND_PORT
+  bind_port: 8245
+
+paths:
+  # Root data directory for packaged macOS installs.
+  # Env: DATA_DIR
+  data_dir: /Library/Application Support/LiRAYSScada/data
+
+tls:
+  # Enable TLS for BOTH HTTP and WebSocket endpoints.
+  # Env: TLS_ENABLE
+  enabled: false
+
+  # Auto-generate a self-signed cert/key under ${data_dir}/certificates
+  # when enabled=true and cert/key not provided.
+  # Env: TLS_AUTO
+  auto: true
+
+  # Path to PEM certificate file (used when enabled=true and auto=false).
+  # Env: TLS_CERT_PATH
+  cert_path: null
+
+  # Path to PEM private key file (used when enabled=true and auto=false).
+  # Env: TLS_KEY_PATH
+  key_path: null
+
+metrics:
+  # Write rolling snapshot metrics to ${data_dir}/metrics/metrics_rt.txt.
+  # Env: METRICS_REAL_TIME
+  real_time: false
+
+  # Append history metrics to ${data_dir}/metrics/metrics_hist.csv.
+  # Env: METRICS_HISTORIC
+  historic: false
+
+persistence:
+  # Interval in milliseconds to flush dirty values to sled. Minimum value is 5000 (5 seconds).
+  # Any value less that 5000 will be trimmed to 5 seconds.
+  # Env: PERSIST_FLUSH_MS
+  flush_ms: 15000
+
+logger:
+  # Global log verbosity level.
+  # Env: LOGGER_LEVEL
+  # Values: off, error, warn, info, debug, trace
+  level: info
+
+auth:
+  # Enable session-protected UI/API.
+  # Env: AUTH_ENABLED
+  enabled: false
+
+  # HMAC secret for the session cookie. Required when auth.enabled=true.
+  # Env: AUTH_SECRET
+  secret: null
+
+  # Access token/session TTL in seconds.
+  access_ttl: 3600
+
+  # Refresh token/session TTL in seconds.
+  refresh_ttl: 86400

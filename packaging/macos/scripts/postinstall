@@ -1,0 +1,73 @@
+#!/bin/bash
+set -euo pipefail
+
+APP_SUPPORT="/Library/Application Support/LiRAYSScada"
+DATA_DIR="${APP_SUPPORT}/data"
+LOG_DIR="${APP_SUPPORT}/logs"
+CFG="${APP_SUPPORT}/settings.yaml"
+DEFAULT_CFG="${APP_SUPPORT}/settings.default.yaml"
+PLIST="/Library/LaunchDaemons/com.lirays.liraysscada.plist"
+BIN="/usr/local/libexec/liraysscada/lirays_scada"
+CLI_BIN="/usr/local/bin/lirays"
+LOGFILE="${LOG_DIR}/postinstall.log"
+LAUNCHCTL="/bin/launchctl"
+
+mkdir -p "${LOG_DIR}"
+chmod 755 "${LOG_DIR}"
+echo "Starting postinstall at $(date)" >> "${LOGFILE}"
+
+log() { echo "$@"; echo "$@" >> "${LOGFILE}"; }
+
+log "Creating application support directories..."
+mkdir -p "${APP_SUPPORT}" "${DATA_DIR}" "${LOG_DIR}"
+chmod 755 "${APP_SUPPORT}" "${DATA_DIR}" "${LOG_DIR}"
+chown root:wheel "${APP_SUPPORT}" "${DATA_DIR}" "${LOG_DIR}"
+
+# Seed user config from default on first install only
+if [ ! -f "${CFG}" ] && [ -f "${DEFAULT_CFG}" ]; then
+  log "Seeding settings.yaml from settings.default.yaml"
+  cp "${DEFAULT_CFG}" "${CFG}"
+  chown root:wheel "${CFG}"
+  chmod 640 "${CFG}"
+fi
+
+log "Ensuring directories for binaries..."
+mkdir -p /usr/local/libexec/liraysscada /usr/local/bin
+chmod 755 /usr/local/libexec/liraysscada /usr/local/bin
+chown root:wheel /usr/local/libexec/liraysscada /usr/local/bin
+
+log "Setting permissions on binaries and plist..."
+chmod 755 "${BIN}"
+chown root:wheel "${BIN}"
+if [ -f "${CLI_BIN}" ]; then
+  chmod 755 "${CLI_BIN}"
+  chown root:wheel "${CLI_BIN}"
+fi
+
+chmod 644 "${PLIST}"
+chown root:wheel "${PLIST}"
+
+log "Loading LaunchDaemon..."
+${LAUNCHCTL} bootout system/com.lirays.liraysscada 2>/dev/null || true
+
+if ! ${LAUNCHCTL} bootstrap system "${PLIST}" 2>>"${LOGFILE}"; then
+  log "Bootstrap failed, validating plist with plutil..."
+  if ! /usr/bin/plutil -lint "${PLIST}" >> "${LOGFILE}" 2>&1; then
+    log "plutil reported an error on the LaunchDaemon plist (see log). Aborting."
+    exit 1
+  fi
+  log "Trying legacy load -w as fallback..."
+  if ! ${LAUNCHCTL} load -w "${PLIST}" >> "${LOGFILE}" 2>&1; then
+    log "launchctl bootstrap and load both failed (see log). Aborting."
+    exit 1
+  else
+    log "Legacy launchctl load succeeded."
+  fi
+else
+  log "Bootstrap succeeded."
+fi
+
+${LAUNCHCTL} enable system/com.lirays.liraysscada || log "enable returned non-zero (continuing)"
+${LAUNCHCTL} kickstart -k system/com.lirays.liraysscada || log "kickstart returned non-zero (continuing)"
+
+log "Postinstall complete."

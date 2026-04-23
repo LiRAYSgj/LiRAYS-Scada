@@ -1,0 +1,226 @@
+{
+  "Area_[:20]": {
+    "Line_[:4]": {
+      "Motor_[:2]": {
+        "Power": {
+          "variable": {
+            "var_d_type": "Float",
+            "unit": "kW",
+            "min": 0,
+            "max": 5000,
+            "options": [],
+            "max_len": null
+          }
+        },
+        "Speed": {
+          "variable": {
+            "var_d_type": "Float",
+            "unit": "rpm",
+            "min": 0,
+            "max": 3600,
+            "options": [],
+            "max_len": null
+          }
+        },
+        "Direction": {
+          "variable": {
+            "var_d_type": "Text",
+            "unit": null,
+            "min": null,
+            "max": null,
+            "options": ["FWD", "REV"],
+            "max_len": 4
+          }
+        },
+        "Temperature": {
+          "variable": {
+            "var_d_type": "Float",
+            "unit": "C",
+            "min": -40,
+            "max": 150,
+            "options": [],
+            "max_len": null
+          }
+        },
+        "Current": {
+          "variable": {
+            "var_d_type": "Float",
+            "unit": "A",
+            "min": 0,
+            "max": 200,
+            "options": [],
+            "max_len": null
+          }
+        },
+        "Voltage": {
+          "variable": {
+            "var_d_type": "Float",
+            "unit": "V",
+            "min": 0,
+            "max": 690,
+            "options": [],
+            "max_len": null
+          }
+        }
+      },
+      "Valve_[:4]": {
+        "Position": {
+          "variable": {
+            "var_d_type": "Float",
+            "unit": "%",
+            "min": 0,
+            "max": 100,
+            "options": [],
+            "max_len": null
+          }
+        },
+        "Flow": {
+          "variable": {
+            "var_d_type": "Float",
+            "unit": "m3/h",
+            "min": 0,
+            "max": 1000,
+            "options": [],
+            "max_len": null
+          }
+        },
+        "Pressure": {
+          "variable": {
+            "var_d_type": "Float",
+            "unit": "bar",
+            "min": 0,
+            "max": 50,
+            "options": [],
+            "max_len": null
+          }
+        },
+        "Temperature": {
+          "variable": {
+            "var_d_type": "Float",
+            "unit": "C",
+            "min": -20,
+            "max": 120,
+            "options": [],
+            "max_len": null
+          }
+        },
+        "Current": {
+          "variable": {
+            "var_d_type": "Float",
+            "unit": "A",
+            "min": 0,
+            "max": 50,
+            "options": [],
+            "max_len": null
+          }
+        },
+        "Voltage": {
+          "variable": {
+            "var_d_type": "Float",
+            "unit": "V",
+            "min": 0,
+            "max": 480,
+            "options": [],
+            "max_len": null
+          }
+        }
+      },
+      "Sensor_[temp, press, level]": {
+        "Value": {
+          "variable": {
+            "var_d_type": "Float",
+            "unit": "unit",
+            "min": null,
+            "max": null,
+            "options": [],
+            "max_len": null
+          }
+        },
+        "Status": {
+          "variable": {
+            "var_d_type": "Text",
+            "unit": null,
+            "min": null,
+            "max": null,
+            "options": ["OK", "WARN", "FAIL"],
+            "max_len": 8
+          }
+        }
+      },
+      "Pump_[:2]": {
+        "Power": {
+          "variable": {
+            "var_d_type": "Float",
+            "unit": "kW",
+            "min": 0,
+            "max": 2000,
+            "options": [],
+            "max_len": null
+          }
+        },
+        "Speed": {
+          "variable": {
+            "var_d_type": "Float",
+            "unit": "rpm",
+            "min": 0,
+            "max": 3600,
+            "options": [],
+            "max_len": null
+          }
+        },
+        "Direction": {
+          "variable": {
+            "var_d_type": "Text",
+            "unit": null,
+            "min": null,
+            "max": null,
+            "options": ["FWD", "REV"],
+            "max_len": 4
+          }
+        },
+        "Temperature": {
+          "variable": {
+            "var_d_type": "Float",
+            "unit": "C",
+            "min": -10,
+            "max": 120,
+            "options": [],
+            "max_len": null
+          }
+        },
+        "Current": {
+          "variable": {
+            "var_d_type": "Float",
+            "unit": "A",
+            "min": 0,
+            "max": 150,
+            "options": [],
+            "max_len": null
+          }
+        },
+        "Voltage": {
+          "variable": {
+            "var_d_type": "Float",
+            "unit": "V",
+            "min": 0,
+            "max": 690,
+            "options": [],
+            "max_len": null
+          }
+        }
+      },
+      "PGA": {
+        "Var_[0:100]": {
+          "variable": {
+            "var_d_type": "Float",
+            "unit": "units",
+            "min": 0,
+            "max": 1000,
+            "options": [],
+            "max_len": null
+          }
+        }
+      }
+    }
+  }
+}

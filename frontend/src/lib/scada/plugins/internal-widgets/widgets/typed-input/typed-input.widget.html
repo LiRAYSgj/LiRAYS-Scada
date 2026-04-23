@@ -1,0 +1,41 @@
+<div class="panel typed-input-panel">
+  <div class="typed-number {{number_hidden_class}}">
+    <input
+      data-widget-input="typed-number"
+      type="number"
+      step="{{input_step}}"
+      value="{{number_value}}"
+      class="typed-field typed-number-input"
+    />
+    <div class="typed-number-controls">
+      <button
+        type="button"
+        data-widget-number-decrease
+        class="typed-stepper-btn"
+        aria-label="Decrease value"
+      >
+        -
+      </button>
+      <button
+        type="button"
+        data-widget-number-increase
+        class="typed-stepper-btn"
+        aria-label="Increase value"
+      >
+        +
+      </button>
+    </div>
+  </div>
+  <input
+    data-widget-input="typed-text"
+    type="text"
+    value="{{text_value}}"
+    class="typed-field {{text_hidden_class}}"
+  />
+  <select
+    data-widget-input="typed-select"
+    class="typed-field typed-select {{select_hidden_class}}"
+  >
+    {{{options_html}}}
+  </select>
+</div>

@@ -1,0 +1,61 @@
+# Separator
+
+Visually or semantically separates content.
+
+[Docs](https://bits-ui.com/docs/components/separator)
+
+[API Reference](https://bits-ui.com/docs/components/separator#api-reference)
+
+### [Epicenter](https://github.com/EpicenterHQ/epicenter)
+
+[Open source, local first apps](https://github.com/EpicenterHQ/epicenter)
+
+[Special Sponsor](https://github.com/EpicenterHQ/epicenter)
+
+```svelte
+<script lang="ts">
+  import { Separator } from "$lib/components/ui/separator/index.js";
+</script>
+<div>
+  <div class="space-y-1">
+    <h4 class="text-sm leading-none font-medium">Bits UI Primitives</h4>
+    <p class="text-muted-foreground text-sm">
+      An open-source UI component library.
+    </p>
+  </div>
+  <Separator class="my-4" />
+  <div class="flex h-5 items-center space-x-4 text-sm">
+    <div>Blog</div>
+    <Separator orientation="vertical" />
+    <div>Docs</div>
+    <Separator orientation="vertical" />
+    <div>Source</div>
+  </div>
+</div>
+```
+
+## Installation
+
+```bash
+pnpm dlx shadcn-svelte@latest add separator
+```
+
+```bash
+npx shadcn-svelte@latest add separator
+```
+
+```bash
+bun x shadcn-svelte@latest add separator
+```
+
+## Usage
+
+```svelte
+<script lang="ts">
+  import { Separator } from "$lib/components/ui/separator/index.js";
+</script>
+```
+
+```svelte
+<Separator />
+```

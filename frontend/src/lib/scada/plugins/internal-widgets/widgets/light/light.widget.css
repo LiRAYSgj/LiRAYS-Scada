@@ -1,0 +1,54 @@
+.light-panel {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.light-svg {
+  width: clamp(78px, calc(var(--widget-min-size, 180px) * 0.62), 280px);
+  height: auto;
+  aspect-ratio: 28 / 32;
+}
+
+.light-svg.glow {
+  filter: drop-shadow(
+    0 0 clamp(4px, calc(var(--widget-min-size, 180px) * 0.07), 14px)
+      var(--light-glow)
+  );
+}
+
+.light-base-plinth {
+  fill: url(#light-metal-gradient);
+}
+
+.light-dome-main {
+  fill: var(--light-shadow);
+}
+
+.light-base-plate {
+  fill: url(#light-metal-gradient);
+}
+
+.light-dome-highlight {
+  fill: var(--light-base);
+}
+
+.light-specular {
+  fill: var(--light-highlight);
+}
+
+.light-label {
+  font-size: clamp(10px, calc(var(--widget-min-size, 160px) * 0.075), 20px);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  text-align: center;
+}
+
+.light-label.hidden {
+  display: none;
+}

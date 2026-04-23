@@ -1,0 +1,8 @@
+version: v1
+lint:
+  use:
+    - DEFAULT
+  check:
+    - rule: ENUM_ZERO_VALUE_SUFFIX
+      config:
+        suffix: _INVALID

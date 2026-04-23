@@ -1,0 +1,51 @@
+.alarm-panel {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.alarm-svg {
+  width: clamp(78px, calc(var(--widget-min-size, 180px) * 0.62), 280px);
+  height: auto;
+  aspect-ratio: 28 / 32;
+  filter: drop-shadow(
+    0 0 clamp(4px, calc(var(--widget-min-size, 180px) * 0.07), 14px)
+      var(--alarm-glow)
+  );
+}
+
+.alarm-base-plinth {
+  fill: url(#alarm-metal-gradient);
+}
+
+.alarm-dome-main {
+  fill: var(--alarm-shadow);
+}
+
+.alarm-base-plate {
+  fill: url(#alarm-metal-gradient);
+}
+
+.alarm-dome-highlight {
+  fill: var(--alarm-base);
+}
+
+.alarm-specular {
+  fill: var(--alarm-highlight);
+}
+
+.alarm-label {
+  font-size: clamp(10px, calc(var(--widget-min-size, 160px) * 0.075), 20px);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  text-align: center;
+}
+
+.alarm-label.hidden {
+  display: none;
+}

@@ -1,0 +1,44 @@
+.base-widget-panel {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.base-widget-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.fan-rotor {
+  transform-box: view-box;
+  transform-origin: center;
+}
+
+.fan-rotor.spin-ccw {
+  animation: fan-rotate-ccw var(--fan-spin-duration, 1s) linear infinite;
+}
+
+.fan-rotor.spin-cw {
+  animation: fan-rotate-cw var(--fan-spin-duration, 1s) linear infinite;
+}
+
+@keyframes fan-rotate-ccw {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(-360deg);
+  }
+}
+
+@keyframes fan-rotate-cw {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}

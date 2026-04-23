@@ -1,0 +1,1053 @@
+<script lang="ts">
+	/**
+	 * Namespace builder: two modes — visual tree (CRUD + DnD) and code YAML (Monaco).
+	 * YAML format: "name: Type" (variable) or "name:" (folder).
+	 * Validation runs on a debounce; editor content is never auto-mutated while typing.
+	 */
+	import { browser } from '$app/environment';
+	import { onDestroy, onMount, tick } from 'svelte';
+	import type { editor as MonacoEditorNamespace } from 'monaco-editor';
+	import type { EditorMode, NamespaceNode } from '../types.js';
+	import * as nsYaml from '../namespace-yaml.js';
+	import { Button } from '$lib/components/Button';
+	import { sanitizeText } from '$lib/forms/sanitize';
+	import NamespaceBuilderHeader from './NamespaceBuilderHeader.svelte';
+	import NamespaceBuilderTreeRow from './NamespaceBuilderTreeRow.svelte';
+	import NamespaceBuilderYamlPanel from './NamespaceBuilderYamlPanel.svelte';
+	import {
+		ROW_HEIGHT,
+		OVERSCAN,
+		flatten,
+		findRowById,
+		findParentContainer,
+		findNodeLocation,
+		isDescendant,
+		isDropAllowed,
+		resolveDropPositionForPointer,
+		getGhostParent
+	} from './namespace-tree-helpers.js';
+	import {
+		UNS_YAML_LANGUAGE_ID,
+		UNS_YAML_THEME_DARK_ID,
+		UNS_YAML_THEME_LIGHT_ID,
+		getYamlLiteTokenizer,
+		getUnsYamlDarkTheme,
+		getUnsYamlLightTheme,
+		getMonacoThemeId,
+		getYamlCompletionProvider,
+		removeEditorContextMenuItems
+	} from '../monaco-yaml-config.js';
+
+	let {
+		initialMode = 'visual-tree',
+		initialText = '',
+		allowedDataTypes = ['Float', 'Integer', 'Text', 'Boolean'],
+		colorMode = 'dark',
+		createLoading = false,
+		onValidityChange = undefined,
+		onChange = undefined
+	}: {
+		initialMode?: EditorMode;
+		initialText?: string;
+		allowedDataTypes?: string[];
+		/** App theme so the YAML editor matches dark/light mode. */
+		colorMode?: 'light' | 'dark';
+		/** True while Create is in progress (disables header + tree actions, hides Cancel in parent). */
+		createLoading?: boolean;
+		/** Called whenever YAML validity changes (so parent can disable Create button). */
+		onValidityChange?: ((valid: boolean) => void) | undefined;
+		/** Called when ast or yamlText change (e.g. after parse or edit). */
+		onChange?: ((detail: { ast: NamespaceNode[]; yamlText: string }) => void) | undefined;
+	} = $props();
+
+	let mode = $state<EditorMode>('visual-tree');
+	let ast = $state<NamespaceNode[]>([]);
+	let yamlText = $state('');
+	let parseError = $state('');
+
+	function applyInitialProps(): void {
+		mode = initialMode;
+		yamlText = initialText || '';
+	}
+	applyInitialProps();
+
+	let editingNodeId = $state<string | null>(null);
+	let editingName = $state('');
+
+	let editorHost = $state<HTMLDivElement | null>(null);
+	/** Increment when opening YAML tab so {#key} gives Monaco a fresh DOM node (avoids context attribute reuse). */
+	let yamlEditorMountId = $state(0);
+	/** Prevents concurrent setupMonaco (reactive block can fire twice before editor is set → double create on same host). */
+	let monacoCreating = $state(false);
+
+	async function openYamlTab(): Promise<void> {
+		mode = 'code-yaml';
+		await tick();
+		// Keep Monaco mounted between tab switches — only layout; recreate only if missing
+		if (editor && typeof editor.layout === 'function') {
+			editor.layout();
+			if (model && model.getValue() !== yamlText) {
+				suppressEditorSync = true;
+				model.setValue(yamlText);
+				suppressEditorSync = false;
+			}
+		} else {
+			await ensureYamlEditorReady();
+		}
+	}
+	let monaco: any = $state(null);
+	let editor: any = $state(null);
+	let model: any = $state(null);
+	let suppressEditorSync = $state(false);
+	let parseTimer: ReturnType<typeof setTimeout> | null = null;
+	let monacoInitError = $state('');
+	let monacoCssLoaded = false;
+	let monacoWorkerCtor: any = null;
+	const yamlValid = $derived(!parseError && !monacoInitError && yamlText.trim() !== '');
+	$effect(() => {
+		onValidityChange?.(yamlValid);
+	});
+
+	let importInput = $state<HTMLInputElement | null>(null);
+	let editingInputEl = $state<HTMLInputElement | null>(null);
+	let draggedNodeId = $state<string | null>(null);
+	/** before = sibling above target; child = drop on bottom half → nest under target */
+	let dropTarget = $state<{ rowId: string; position: 'before' | 'child'; allowed: boolean } | null>(
+		null
+	);
+	let dragGhostEl: HTMLElement | null = null;
+	let isPointerDragging = $state(false);
+
+	/** Virtual scroll (same pattern as VariableTree.svelte) */
+	let treeViewportEl = $state<HTMLDivElement | null>(null);
+	let scrollTop = $state(0);
+	let viewportHeight = $state(0);
+	/** Measured row height used by virtual scroll math; keeps scrolling correct after style changes. */
+	let virtualRowHeight = $state(ROW_HEIGHT);
+	/** Kept for teardown; also satisfies stale HMR bundles that still call detachTreeViewportResizeObserver. */
+	let treeViewportResizeObserver: ResizeObserver | null = null;
+
+	function detachTreeViewportResizeObserver(): void {
+		treeViewportResizeObserver?.disconnect();
+		treeViewportResizeObserver = null;
+	}
+
+	/** Attach ResizeObserver when viewport mounts (VariableTree pattern). */
+	function viewportObserver(node: HTMLDivElement): { destroy: () => void } {
+		detachTreeViewportResizeObserver();
+		viewportHeight = node.clientHeight;
+		const ro = new ResizeObserver(() => {
+			viewportHeight = node.clientHeight;
+			measureVirtualRowHeight();
+		});
+		ro.observe(node);
+		treeViewportResizeObserver = ro;
+		return {
+			destroy() {
+				detachTreeViewportResizeObserver();
+			}
+		};
+	}
+
+	function measureVirtualRowHeight(): void {
+		if (!treeViewportEl) return;
+		const rowEl = treeViewportEl.querySelector('[data-node-row-id]') as HTMLElement | null;
+		if (!rowEl) return;
+		const nextHeight = Math.round(rowEl.getBoundingClientRect().height);
+		if (nextHeight > 0 && nextHeight !== virtualRowHeight) {
+			virtualRowHeight = nextHeight;
+		}
+	}
+
+	function nextId(): string {
+		return `node-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+	}
+
+	function createNode(): NamespaceNode {
+		return {
+			id: nextId(),
+			name: '<New Node>',
+			nameSuffix: '',
+			seriesMode: 'none',
+			seriesValues: '',
+			kind: 'variable',
+			dataType: allowedDataTypes[0] ?? 'Float',
+			unit: '',
+			min: '',
+			max: '',
+			maxLength: '',
+			options: [],
+			rangeStart: '',
+			rangeEnd: '',
+			rangeStep: '',
+			children: []
+		};
+	}
+
+	/**
+	 * Serializes ast → yamlText and syncs Monaco. Always clears parseError because
+	 * serializeYamlLike only emits valid structure — visual tree is source of truth
+	 * when editing from the tree (needed before virtual scroll + DnD so state stays consistent).
+	 */
+	function updateYamlFromAst(): void {
+		yamlText = nsYaml.serializeYamlLike(ast, 0, allowedDataTypes);
+		parseError = '';
+		if (model) {
+			const current = model.getValue();
+			if (current !== yamlText) {
+				suppressEditorSync = true;
+				model.setValue(yamlText);
+				suppressEditorSync = false;
+			}
+		}
+		onChange?.({ ast, yamlText });
+	}
+
+	// ---------- YAML parse / serialize (see namespace-yaml.ts) ----------
+
+	/** Parse current YAML and return nested JSON; throws if invalid. */
+	export function buildNamespaceJsonFromYaml(): Record<string, unknown> {
+		const roots = nsYaml.parseYamlLike(yamlText, {}, allowedDataTypes, nextId);
+		return nsYaml.astToNamespaceJson(roots, allowedDataTypes);
+	}
+
+	/** Current YAML validity (no parse error, no Monaco init error, non-empty code). Used by parent to disable Create. */
+	export function getValidity(): boolean {
+		return !parseError && !monacoInitError && yamlText.trim() !== '';
+	}
+
+	/** Clear the tree and YAML content (e.g. when dialog is closed). */
+	export function reset(): void {
+		ast = [];
+		yamlText = '';
+		parseError = '';
+		editingNodeId = null;
+		editingName = '';
+		if (model) {
+			suppressEditorSync = true;
+			model.setValue('');
+			suppressEditorSync = false;
+		}
+		onChange?.({ ast, yamlText });
+	}
+
+	// ---------- Parse schedule ----------
+	// Validate YAML only after debounce; no auto-fill mutations while typing.
+
+	function parseAndApplyYaml(): void {
+		try {
+			const next = nsYaml.parseYamlLike(yamlText, {}, allowedDataTypes, nextId);
+			ast = next;
+			parseError = '';
+			onChange?.({ ast, yamlText });
+		} catch (error) {
+			parseError = error instanceof Error ? error.message : 'Invalid YAML';
+		}
+	}
+
+	function scheduleParseYaml(): void {
+		if (parseTimer) clearTimeout(parseTimer);
+		parseTimer = setTimeout(() => {
+			parseAndApplyYaml();
+		}, 250);
+	}
+
+	function addRootNode(): void {
+		ast = [createNode(), ...ast];
+		updateYamlFromAst();
+	}
+
+	function addChildNode(nodeId: string): void {
+		const row = findRowById(ast, nodeId);
+		if (!row) return;
+		row.node.children.push(createNode());
+		nsYaml.setKindFromChildren(row.node);
+		ast = [...ast];
+		updateYamlFromAst();
+	}
+
+	function removeNode(nodeId: string): void {
+		const row = findRowById(ast, nodeId);
+		if (!row) return;
+		row.parentChildren.splice(row.index, 1);
+		ast = [...ast];
+		updateYamlFromAst();
+	}
+
+	function indentNode(nodeId: string): void {
+		const rows = flatten(ast);
+		const idx = rows.findIndex((row) => row.id === nodeId);
+		if (idx <= 0) return;
+		const row = rows[idx];
+		const prevRow = rows[idx - 1];
+		row.parentChildren.splice(row.index, 1);
+		prevRow.node.children.push(row.node);
+		nsYaml.setKindFromChildren(prevRow.node);
+		ast = [...ast];
+		updateYamlFromAst();
+	}
+
+	function outdentNode(nodeId: string): void {
+		const row = findRowById(ast, nodeId);
+		if (!row || !row.parentId) return;
+		const parentRow = findRowById(ast, row.parentId);
+		if (!parentRow) return;
+		row.parentChildren.splice(row.index, 1);
+		const parentContainer = findParentContainer(ast, parentRow.parentId);
+		const parentIndex = parentContainer.findIndex((item) => item.id === parentRow.id);
+		parentContainer.splice(parentIndex + 1, 0, row.node);
+		ast = [...ast];
+		updateYamlFromAst();
+	}
+
+	function startEditName(nodeId: string): void {
+		const row = findRowById(ast, nodeId);
+		if (!row) return;
+		editingNodeId = nodeId;
+		editingName = row.node.name === '<New Node>' ? '' : row.node.name;
+		setTimeout(() => {
+			editingInputEl?.focus();
+			editingInputEl?.select();
+		}, 0);
+	}
+
+	function nodeHasGeneratedSeries(node: NamespaceNode): boolean {
+		if (node.seriesMode === 'numeric') {
+			return node.rangeEnd.trim() !== '';
+		}
+		if (node.seriesMode === 'enum') {
+			return node.seriesValues
+				.split(',')
+				.map((value) => value.trim())
+				.filter((value) => value.length > 0).length > 0;
+		}
+		return false;
+	}
+
+	function enforceNodeNameFallback(node: NamespaceNode): void {
+		if (node.name.trim() !== '') return;
+		if (!nodeHasGeneratedSeries(node)) {
+			node.name = '<New Node>';
+		}
+	}
+
+	function commitEditName(nodeId: string): void {
+		// Enter commits then blur fires — ignore second call so name isn't reset to '<New Node>'
+		if (editingNodeId !== nodeId) return;
+		const row = findRowById(ast, nodeId);
+		if (!row) return;
+		const cleanedName = sanitizeText(editingName, 128).trim();
+		if (cleanedName === '') {
+			row.node.name = '';
+			enforceNodeNameFallback(row.node);
+		} else {
+			row.node.name = cleanedName;
+		}
+		editingNodeId = null;
+		editingName = '';
+		ast = [...ast];
+		updateYamlFromAst();
+	}
+
+	function updateNodeRange(
+		nodeId: string,
+		key: 'rangeStart' | 'rangeEnd' | 'rangeStep' | 'nameSuffix' | 'seriesValues',
+		value: string
+	): void {
+		const row = findRowById(ast, nodeId);
+		if (!row) return;
+		row.node[key] = sanitizeText(value, key === 'nameSuffix' ? 64 : 256);
+		if (key === 'rangeEnd' || key === 'seriesValues') {
+			enforceNodeNameFallback(row.node);
+		}
+		ast = [...ast];
+		updateYamlFromAst();
+	}
+
+	function updateNodeSeriesMode(nodeId: string, value: string): void {
+		const row = findRowById(ast, nodeId);
+		if (!row) return;
+		const mode =
+			value === 'range'
+				? 'numeric'
+				: value === 'set'
+					? 'enum'
+					: 'none';
+		row.node.seriesMode = mode;
+		if (mode !== 'numeric') {
+			row.node.rangeStart = '';
+			row.node.rangeEnd = '';
+			row.node.rangeStep = '';
+		}
+		if (mode !== 'enum') {
+			row.node.seriesValues = '';
+		}
+		enforceNodeNameFallback(row.node);
+		ast = [...ast];
+		updateYamlFromAst();
+	}
+
+	function updateNodeType(nodeId: string, value: string): void {
+		const row = findRowById(ast, nodeId);
+		if (!row || row.node.children.length > 0) return;
+		const nextType = sanitizeText(value, 32);
+		row.node.kind = 'variable';
+		row.node.dataType = nextType;
+		const lowered = nextType.toLowerCase();
+		if (lowered === 'text') {
+			row.node.min = '';
+			row.node.max = '';
+		} else if (lowered === 'boolean' || lowered === 'bool') {
+			row.node.unit = '';
+			row.node.min = '';
+			row.node.max = '';
+			row.node.maxLength = '';
+			row.node.options = [];
+		} else {
+			row.node.maxLength = '';
+			row.node.options = [];
+		}
+		ast = [...ast];
+		updateYamlFromAst();
+	}
+
+	function updateNodeVariableMeta(
+		nodeId: string,
+		key: 'unit' | 'min' | 'max' | 'maxLength' | 'options',
+		value: string | string[]
+	): void {
+		const parseOptionalFiniteNumber = (raw: string): number | undefined => {
+			const trimmed = raw.trim();
+			if (!trimmed) return undefined;
+			const parsed = Number(trimmed);
+			return Number.isFinite(parsed) ? parsed : undefined;
+		};
+
+		const row = findRowById(ast, nodeId);
+		if (!row || row.node.children.length > 0) return;
+		if (key === 'options') {
+			const list = Array.isArray(value)
+				? value
+						.map((item) => sanitizeText(item, 128).trim())
+						.filter((item) => item.length > 0)
+				: [];
+			if (row.node.options.length === list.length && row.node.options.every((item, i) => item === list[i])) {
+				return;
+			}
+			row.node.options = list;
+		} else {
+			const text = sanitizeText(String(value), 64);
+			if (row.node[key] === text) return;
+			row.node[key] = text;
+			if (key === 'min' || key === 'max') {
+				const minValue = parseOptionalFiniteNumber(row.node.min);
+				const maxValue = parseOptionalFiniteNumber(row.node.max);
+				if (minValue !== undefined && maxValue !== undefined && maxValue < minValue) {
+					if (key === 'min') {
+						row.node.max = row.node.min;
+					} else {
+						row.node.min = row.node.max;
+					}
+				}
+			}
+		}
+		ast = [...ast];
+		updateYamlFromAst();
+	}
+
+	function buildDragGhost(rowId: string): HTMLElement | null {
+		const source = document.querySelector(`[data-node-row-id="${rowId}"]`) as HTMLElement | null;
+		const parent = getGhostParent(source);
+		if (!source) {
+			const row = findRowById(ast, rowId);
+			if (!row) return null;
+			const ghost = document.createElement('div');
+			ghost.className =
+				'fixed z-[2147483647] cursor-default whitespace-nowrap rounded-md border border-primary/60 bg-card px-2.5 py-1.5 text-xs text-foreground opacity-85 shadow-lg pointer-events-none';
+			ghost.textContent = row.node.name || '<New Node>';
+			parent.appendChild(ghost);
+			return ghost;
+		}
+		const clone = source.cloneNode(true) as HTMLElement;
+		clone.classList.add('drag-ghost-clone');
+		// Ghost is in DOM with source row — remove all ids first so nothing duplicates the source row.
+		clone.querySelectorAll('[id]').forEach((el) => el.removeAttribute('id'));
+		clone.querySelectorAll('[name]').forEach((el) => el.removeAttribute('name'));
+		// Ghost form controls must still have id or name (audit) — assign unique, non-colliding ids
+		const ghostUid = `drag-ghost-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+		clone.querySelectorAll('input, select, textarea').forEach((el, i) => {
+			const id = `${ghostUid}-f${i}`;
+			el.setAttribute('id', id);
+			el.setAttribute('name', id);
+			if (el instanceof HTMLInputElement) el.disabled = true;
+			else if (el instanceof HTMLSelectElement) el.disabled = true;
+			else if (el instanceof HTMLTextAreaElement) el.disabled = true;
+		});
+		// Preserve original row dimensions so flex layout doesn't collapse when detached
+		const rect = source.getBoundingClientRect();
+		if (rect.width > 0) {
+			clone.style.setProperty('width', `${Math.ceil(rect.width)}px`, 'important');
+			clone.style.setProperty('min-height', `${Math.ceil(rect.height)}px`, 'important');
+			clone.style.setProperty('box-sizing', 'border-box', 'important');
+		}
+		parent.appendChild(clone);
+		return clone;
+	}
+
+	function positionDragGhost(clientX: number, clientY: number): void {
+		if (!dragGhostEl) return;
+		// Clone is full-width; offset so cursor isn't covered.
+		// Use setProperty(..., 'important') so we win over any cloned inline styles.
+		const w = dragGhostEl.offsetWidth || 320;
+		const left = clientX + 12;
+		const maxLeft = browser ? window.innerWidth - w - 8 : left;
+		const top = clientY + 12;
+		dragGhostEl.style.setProperty('left', `${Math.min(left, maxLeft)}px`, 'important');
+		dragGhostEl.style.setProperty('top', `${top}px`, 'important');
+	}
+
+	function startPointerDrag(event: PointerEvent, rowId: string): void {
+		if (createLoading) return;
+		event.preventDefault();
+		event.stopPropagation();
+		draggedNodeId = rowId;
+		isPointerDragging = true;
+		dropTarget = null;
+		dragGhostEl = buildDragGhost(rowId);
+		positionDragGhost(event.clientX, event.clientY);
+		window.addEventListener('pointermove', handlePointerDragMove);
+		window.addEventListener('pointerup', handlePointerDragEnd, { once: true });
+		window.addEventListener('pointercancel', handlePointerDragEnd, { once: true });
+	}
+
+	function handlePointerDragMove(event: PointerEvent): void {
+		if (!isPointerDragging || !draggedNodeId) return;
+		positionDragGhost(event.clientX, event.clientY);
+		const element = document.elementFromPoint(event.clientX, event.clientY) as HTMLElement | null;
+		if (!element) {
+			dropTarget = null;
+			return;
+		}
+
+		const rowEl = element.closest('[data-node-row-id]') as HTMLElement | null;
+		if (!rowEl) {
+			dropTarget = null;
+			return;
+		}
+		const rowId = rowEl.dataset.nodeRowId;
+		if (!rowId || rowId === draggedNodeId) {
+			dropTarget = null;
+			return;
+		}
+		const position = resolveDropPositionForPointer(rowEl, event.clientY);
+		const allowed = isDropAllowed(ast, draggedNodeId, rowId);
+		dropTarget = { rowId, position, allowed };
+	}
+
+	function handlePointerDragEnd(): void {
+		if (!isPointerDragging || !draggedNodeId) {
+			clearDragState();
+			return;
+		}
+		if (dropTarget?.allowed) {
+			moveNode(draggedNodeId, dropTarget.rowId, dropTarget.position);
+		}
+		clearDragState();
+	}
+
+	function clearDragState(): void {
+		draggedNodeId = null;
+		dropTarget = null;
+		isPointerDragging = false;
+		if (browser) {
+			window.removeEventListener('pointermove', handlePointerDragMove);
+			window.removeEventListener('pointerup', handlePointerDragEnd);
+			window.removeEventListener('pointercancel', handlePointerDragEnd);
+		}
+		if (dragGhostEl) {
+			dragGhostEl.remove();
+			dragGhostEl = null;
+		}
+	}
+
+	function moveNode(draggedId: string, targetRowId: string, position: 'before' | 'child'): void {
+		if (draggedId === targetRowId) return;
+
+		const draggedLoc = findNodeLocation(ast, draggedId);
+		const targetLoc = findNodeLocation(ast, targetRowId);
+		if (!draggedLoc || !targetLoc) return;
+		if (isDescendant(draggedLoc.node, targetLoc.node.id)) return;
+
+		draggedLoc.parentChildren.splice(draggedLoc.index, 1);
+
+		if (position === 'child') {
+			targetLoc.node.children = [...targetLoc.node.children, draggedLoc.node];
+			nsYaml.setKindFromChildren(targetLoc.node);
+			ast = [...ast];
+			updateYamlFromAst();
+			return;
+		}
+
+		// before: insert as sibling before target in same parent list
+		const targetContainer = targetLoc.parentChildren;
+		let insertIndex = targetLoc.index;
+		if (targetContainer === draggedLoc.parentChildren && draggedLoc.index < insertIndex) {
+			insertIndex -= 1;
+		}
+		targetContainer.splice(insertIndex, 0, draggedLoc.node);
+		ast = [...ast];
+		updateYamlFromAst();
+	}
+
+	function importYamlClick(): void {
+		importInput?.click();
+	}
+
+	function handleImportYaml(event: Event): void {
+		const target = event.currentTarget as HTMLInputElement;
+		const file = target.files?.[0];
+		if (!file) return;
+		const reader = new FileReader();
+		reader.onload = () => {
+			yamlText = String(reader.result ?? '');
+			if (model) {
+				suppressEditorSync = true;
+				model.setValue(yamlText);
+				suppressEditorSync = false;
+			}
+			parseAndApplyYaml();
+		};
+		reader.readAsText(file);
+		target.value = '';
+	}
+
+	function formatYaml(): void {
+		try {
+			const parsed = nsYaml.parseYamlLike(yamlText, {}, allowedDataTypes, nextId);
+			ast = parsed;
+			parseError = '';
+			updateYamlFromAst();
+		} catch (e1) {
+			parseError = e1 instanceof Error ? e1.message : 'Invalid YAML';
+		}
+	}
+
+	function disposeYamlEditor(): void {
+		if (!browser) return;
+		try {
+			editor?.dispose();
+		} catch {
+			/* ignore */
+		}
+		editor = null;
+		try {
+			model?.dispose();
+		} catch {
+			/* ignore */
+		}
+		model = null;
+		// Host may be detached; if still in DOM, strip Monaco context so recreate doesn't throw
+		if (editorHost && editorHost.isConnected) {
+			editorHost.replaceChildren();
+			editorHost.removeAttribute('data-keybinding-context');
+			editorHost.classList.remove('monaco-editor');
+		}
+	}
+
+	async function setupMonaco(): Promise<void> {
+		if (!browser || !editorHost || editor || monacoCreating) return;
+		monacoCreating = true;
+		const host = editorHost;
+		try {
+			// Load Monaco heavy assets only when the YAML tab is actually opened.
+			if (!monacoCssLoaded) {
+				await import('monaco-editor/min/vs/editor/editor.main.css');
+				monacoCssLoaded = true;
+			}
+			if (!monacoWorkerCtor) {
+				const workerMod: any = await import(
+					'monaco-editor/esm/vs/editor/editor.worker?worker'
+				);
+				monacoWorkerCtor = workerMod.default ?? workerMod;
+			}
+			(globalThis as any).MonacoEnvironment = {
+				getWorker() {
+					return new monacoWorkerCtor();
+				}
+			};
+			monaco = await import('monaco-editor');
+			await removeEditorContextMenuItems(monaco);
+			if (editorHost !== host || editor) return;
+			monaco.languages.register({ id: UNS_YAML_LANGUAGE_ID });
+			monaco.languages.setMonarchTokensProvider(UNS_YAML_LANGUAGE_ID, getYamlLiteTokenizer());
+			monaco.editor.defineTheme(UNS_YAML_THEME_DARK_ID, getUnsYamlDarkTheme());
+			monaco.editor.defineTheme(UNS_YAML_THEME_LIGHT_ID, getUnsYamlLightTheme());
+			monaco.languages.registerCompletionItemProvider(
+				UNS_YAML_LANGUAGE_ID,
+				getYamlCompletionProvider(monaco, allowedDataTypes)
+			);
+			if (editorHost !== host || editor) return;
+			model = monaco.editor.createModel(yamlText, UNS_YAML_LANGUAGE_ID);
+			if (editorHost !== host) {
+				model.dispose();
+				model = null;
+				return;
+			}
+			editor = monaco.editor.create(host, {
+				model,
+				automaticLayout: true,
+				minimap: { enabled: false },
+				wordWrap: 'on',
+				tabSize: 2,
+				insertSpaces: true,
+				scrollBeyondLastLine: false,
+				theme: getMonacoThemeId(colorMode)
+			});
+			// Cut with ⌘X so shortcut shows in context menu (browser default has no keybinding in menu)
+			editor.addAction({
+				id: 'yaml-editor-cut',
+				label: 'Cut',
+				keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyX],
+				contextMenuGroupId: '9_cutcopypaste',
+				run: (ed: MonacoEditorNamespace.ICodeEditor) => {
+					ed.trigger('keyboard', 'editor.action.clipboardCutAction', null);
+				}
+			});
+			// Copy with ⌘C so shortcut shows in context menu
+			editor.addAction({
+				id: 'yaml-editor-copy',
+				label: 'Copy',
+				keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyC],
+				contextMenuGroupId: '9_cutcopypaste',
+				run: (ed: MonacoEditorNamespace.ICodeEditor) => {
+					ed.trigger('keyboard', 'editor.action.clipboardCopyAction', null);
+				}
+			});
+			// Paste via Clipboard API so context-menu Paste and Ctrl+V work (default often blocked)
+			editor.addAction({
+				id: 'yaml-editor-paste',
+				label: 'Paste',
+				keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyV],
+				contextMenuGroupId: '9_cutcopypaste',
+				run: (ed: MonacoEditorNamespace.ICodeEditor) => {
+					if (!navigator.clipboard?.readText) return;
+					navigator.clipboard.readText().then((text) => {
+						const selection = ed.getSelection();
+						const range = selection ?? {
+							startLineNumber: ed.getPosition()?.lineNumber ?? 1,
+							startColumn: ed.getPosition()?.column ?? 1,
+							endLineNumber: ed.getPosition()?.lineNumber ?? 1,
+							endColumn: ed.getPosition()?.column ?? 1
+						};
+						ed.executeEdits('paste', [{ range, text }]);
+					}).catch(() => {});
+				}
+			});
+			// After our editor's context menu opens, hide Command Palette and the broken second Paste (keep the first = ours with ⌘V)
+			function pruneContextMenu(): void {
+				// Find any visible context-menu-like container (Monaco often uses different class names)
+				const menus = document.querySelectorAll('[role="menu"], .monaco-menu, [class*="monaco-menu"], [class*="contextview"]');
+				const pasteRows: HTMLElement[] = [];
+				menus.forEach((menu) => {
+					// Only consider menus that are likely visible (have position or are in view)
+					const menuEl = menu as HTMLElement;
+					const rect = menuEl.getBoundingClientRect();
+					if (rect.width < 10 || rect.height < 10) return;
+					// Walk all descendants that might be a menu row (has click handler / is focusable / contains label text)
+					menu.querySelectorAll('[role="menuitem"], .action-item, [class*="action-item"], [class*="menuitem"]').forEach((item) => {
+						const el = item as HTMLElement;
+						const raw = (el.textContent ?? '').trim();
+						if (raw === 'Command Palette' || raw.startsWith('Command Palette')) {
+							el.style.setProperty('display', 'none', 'important');
+						}
+						const firstWord = raw.split(/\s+/)[0];
+						if (firstWord === 'Paste') pasteRows.push(el);
+					});
+				});
+				// Hide the second Paste row (index 1); keep the first (ours with ⌘V)
+				if (pasteRows.length >= 2) pasteRows[1].style.setProperty('display', 'none', 'important');
+			}
+			host.addEventListener('contextmenu', () => {
+				[60, 120, 200, 350].forEach((ms) => setTimeout(pruneContextMenu, ms));
+			});
+			// Parse trigger: content changes only; debounced validation.
+			editor.onDidChangeModelContent(() => {
+				if (suppressEditorSync) return;
+				yamlText = editor.getValue();
+				scheduleParseYaml();
+			});
+			// Monaco injects textarea(s) without name/id — DevTools Issues flags them; satisfy audit once DOM is ready
+			const patchMonacoFormFields = (container: HTMLElement) => {
+				container.querySelectorAll('textarea').forEach((el, i) => {
+					if (!el.getAttribute('name')) el.setAttribute('name', 'monaco-yaml-textarea');
+					if (!el.id) el.id = `monaco-yaml-textarea-${yamlEditorMountId}-${i}`;
+				});
+				container.querySelectorAll('input').forEach((el, i) => {
+					if (el.type === 'hidden') return;
+					if (!el.getAttribute('name')) el.setAttribute('name', 'monaco-yaml-input');
+					if (!el.id) el.id = `monaco-yaml-input-${yamlEditorMountId}-${i}`;
+				});
+			};
+			requestAnimationFrame(() => patchMonacoFormFields(host));
+			monacoInitError = '';
+		} catch (error) {
+			monacoInitError = error instanceof Error ? error.message : 'Failed to initialize Monaco';
+		} finally {
+			monacoCreating = false;
+		}
+	}
+
+	async function ensureYamlEditorReady(): Promise<void> {
+		if (mode !== 'code-yaml') return;
+		await tick();
+		// Tab switch unmounts host; editor still references dead instance — always dispose if host mismatch
+		if (
+			editor &&
+			editorHost &&
+			typeof editor.getContainerDomNode === 'function' &&
+			editor.getContainerDomNode() !== editorHost
+		) {
+			disposeYamlEditor();
+		}
+		if (!editor && !monacoCreating && editorHost) {
+			await setupMonaco();
+		}
+		if (editor && model) {
+			const current = model.getValue();
+			if (current !== yamlText) {
+				suppressEditorSync = true;
+				model.setValue(yamlText);
+				suppressEditorSync = false;
+			}
+			editor.layout();
+		}
+	}
+
+	// Keep Monaco theme in sync with app color mode (e.g. after user toggles dark/light).
+	$effect(() => {
+		if (monaco && editor && typeof monaco.editor.setTheme === 'function') {
+			monaco.editor.setTheme(getMonacoThemeId(colorMode));
+		}
+	});
+
+	// Readonly only while waiting for Create response; editable again as soon as response arrives (success or error).
+	$effect(() => {
+		if (editor && typeof editor.updateOptions === 'function') {
+			editor.updateOptions({ readOnly: !!createLoading });
+		}
+	});
+
+	const rows = $derived(flatten(ast));
+	const totalRows = $derived(rows.length);
+	// While dragging, render full list so elementFromPoint can hit any row's data-node-row-id
+	const startIndex = $derived(
+		isPointerDragging || totalRows === 0
+			? 0
+			: Math.max(0, Math.floor(scrollTop / virtualRowHeight) - OVERSCAN)
+	);
+	const visibleCount = $derived(
+		Math.max(1, Math.ceil(viewportHeight / virtualRowHeight) + OVERSCAN * 2)
+	);
+	const endIndex = $derived(
+		isPointerDragging || totalRows === 0
+			? totalRows
+			: Math.min(totalRows, startIndex + visibleCount)
+	);
+	const windowRows = $derived(rows.slice(startIndex, endIndex));
+	const topPadding = $derived(
+		isPointerDragging || totalRows === 0 ? 0 : startIndex * virtualRowHeight
+	);
+	const bottomPadding = $derived(
+		isPointerDragging || totalRows === 0
+			? 0
+			: Math.max(0, (totalRows - endIndex) * virtualRowHeight)
+	);
+	$effect(() => {
+		if (mode === 'visual-tree' && windowRows.length > 0) {
+			void tick().then(() => {
+				measureVirtualRowHeight();
+			});
+		}
+	});
+
+	function onTreeViewportScroll(): void {
+		if (treeViewportEl) scrollTop = treeViewportEl.scrollTop;
+	}
+
+	async function openVisualTreeTab(): Promise<void> {
+		mode = 'visual-tree';
+		scrollTop = 0;
+		await tick();
+		if (treeViewportEl) {
+			treeViewportEl.scrollTop = 0;
+		}
+	}
+
+	// Do NOT call ensureYamlEditorReady from a reactive block — it runs too often and races async setupMonaco.
+
+	onMount(async () => {
+		if (yamlText.trim()) {
+			parseAndApplyYaml();
+		}
+		// First open on YAML tab needs a stable host; if initialMode is yaml, mountId 0 is enough
+		if (initialMode === 'code-yaml') {
+			await tick();
+			await ensureYamlEditorReady();
+		}
+	});
+
+	// When on YAML tab, ensure Monaco is ready (replaces deprecated afterUpdate)
+	$effect(() => {
+		if (mode === 'code-yaml') {
+			void ensureYamlEditorReady();
+		}
+	});
+
+	onDestroy(() => {
+		if (parseTimer) clearTimeout(parseTimer);
+		clearDragState();
+		detachTreeViewportResizeObserver();
+		disposeYamlEditor();
+	});
+</script>
+
+<div class="flex h-full min-h-0 min-w-0 flex-col gap-2">
+	<NamespaceBuilderHeader
+		{mode}
+		disabled={createLoading}
+		onOpenVisualTree={() => void openVisualTreeTab()}
+		onOpenYaml={() => void openYamlTab()}
+		onAddRoot={addRootNode}
+		onImportYamlClick={importYamlClick}
+		onFormatYaml={formatYaml}
+		bind:importInput
+		onImportFileChange={handleImportYaml}
+	/>
+
+	<section
+		class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-border"
+	>
+		<!-- Tree + YAML both stay mounted; visibility toggled so Monaco isn't recreated (highlight stays instant). -->
+		<div
+			class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+			class:min-h-0={mode === 'visual-tree' && rows.length > 0}
+			class:flex-1={mode === 'visual-tree'}
+			hidden={mode !== 'visual-tree'}
+		>
+			{#if parseError && yamlText.trim() !== ''}
+				<div
+					class="mb-2 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-red-700 px-2 py-1.5 text-xs text-red-200"
+					style="background: color-mix(in srgb, #7f1d1d 50%, transparent)"
+					role="alert"
+				>
+					<strong>YAML invalid</strong> — tree may be stale until fixed.
+					<span class="min-w-0 flex-1 basis-full opacity-95">{parseError}</span>
+					<Button
+						variant="outline-accent"
+						label="Open YAML"
+						title="Open YAML"
+						class="ml-auto rounded-md border border-red-200 px-2 py-0.5 text-[11px] text-red-200"
+						style="background: color-mix(in srgb, #450a0a 60%, transparent)"
+						onclick={openYamlTab}
+					/>
+				</div>
+			{/if}
+				<div class="flex min-h-0 w-full flex-1 flex-col overflow-hidden">
+				{#if rows.length === 0}
+					<div
+						class="row-empty flex min-h-9 items-center border-b text-xs text-muted-foreground"
+						style="border-color: color-mix(in srgb, var(--border) 95%, transparent)"
+					>
+						<div class="inline-flex items-center gap-0.5 px-1.5 opacity-100">
+							<Button
+								variant="icon"
+								label="+"
+								title="Add root node"
+								disabled={createLoading}
+								onclick={addRootNode}
+							/>
+						</div>
+						<div class="relative flex w-full items-center gap-2.5 py-1 pr-2 pl-0">
+							No nodes yet. Add your first root node.
+						</div>
+					</div>
+				{:else}
+					<div
+						class="min-h-0 w-full flex-1 overflow-y-auto overflow-x-auto"
+						bind:this={treeViewportEl}
+						onscroll={onTreeViewportScroll}
+						use:viewportObserver
+					>
+						<div class="min-w-full w-max">
+							<div class="pointer-events-none shrink-0" style="height: {topPadding}px" aria-hidden="true"></div>
+							{#each windowRows as row (row.id)}
+								<NamespaceBuilderTreeRow
+									{row}
+									{allowedDataTypes}
+									rowHeight={virtualRowHeight}
+									actionsDisabled={createLoading}
+									{draggedNodeId}
+									{dropTarget}
+									{editingNodeId}
+									bind:editingName
+									bind:editingInputEl
+									onPointerDownDrag={startPointerDrag}
+									onRemove={removeNode}
+									onAddChild={addChildNode}
+									onIndent={indentNode}
+									onOutdent={outdentNode}
+									onStartEditName={startEditName}
+									onCommitEditName={commitEditName}
+									onUpdateRange={updateNodeRange}
+									onUpdateSeriesMode={updateNodeSeriesMode}
+									onUpdateType={updateNodeType}
+									onUpdateVariableMeta={updateNodeVariableMeta}
+								/>
+							{/each}
+							<div
+								class="pointer-events-none shrink-0"
+								style="height: {bottomPadding}px"
+								aria-hidden="true"
+							></div>
+						</div>
+					</div>
+				{/if}
+			</div>
+		</div>
+		<div class="flex min-h-0 flex-1 flex-col overflow-hidden" hidden={mode !== 'code-yaml'}>
+			<NamespaceBuilderYamlPanel bind:editorHost {monacoInitError} parseError={yamlText.trim() !== '' ? parseError : ''} />
+		</div>
+	</section>
+</div>
+
+<style>
+	/* Hide Command Palette in Monaco context menus — multiple selectors (Monaco varies by version) */
+	:global([data-command-id="editor.action.quickCommand"]),
+	:global([data-command-id="workbench.action.showCommands"]),
+	:global([aria-label="Command Palette"]),
+	:global([aria-label*="Command Palette"]),
+	:global([title="Command Palette"]) {
+		display: none !important;
+	}
+	/* Parent row when the label is on a child (e.g. .action-label) */
+	:global(.action-item:has([aria-label="Command Palette"])),
+	:global(.action-item:has([aria-label*="Command Palette"])),
+	:global([role="menuitem"]:has([aria-label="Command Palette"])),
+	:global([role="menuitem"]:has([aria-label*="Command Palette"])) {
+		display: none !important;
+	}
+
+	/* Cloned row ghost — !important so it wins over inline flex from source */
+	:global(.drag-ghost-clone) {
+		position: fixed !important;
+		pointer-events: none !important;
+		margin: 0 !important;
+		background: var(--card) !important;
+		opacity: 0.92 !important;
+		filter: drop-shadow(0 10px 24px rgb(0 0 0 / 30%));
+		outline: 1px solid color-mix(in srgb, var(--primary) 45%, transparent);
+		outline-offset: 0;
+		border-radius: 0.25rem;
+		z-index: 2147483647;
+	}
+</style>

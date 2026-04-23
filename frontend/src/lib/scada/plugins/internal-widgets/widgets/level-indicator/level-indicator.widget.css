@@ -1,0 +1,311 @@
+.level-indicator-panel {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.level-wrap {
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(72px, 26%);
+  align-items: center;
+  gap: clamp(8px, 4%, 20px);
+  overflow: visible;
+}
+
+.cylinder {
+  position: relative;
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  justify-self: stretch;
+  --cap-height: clamp(12px, 14%, 30px);
+}
+
+.shell-side,
+.fluid-side {
+  position: absolute;
+  left: 14%;
+  width: 72%;
+  border-radius: 999px / 56px;
+}
+
+.shell-side {
+  top: 11%;
+  bottom: 11%;
+  background: linear-gradient(
+    90deg,
+    rgba(22, 26, 32, 0.92) 0%,
+    rgba(44, 50, 58, 0.88) 25%,
+    rgba(58, 66, 77, 0.96) 50%,
+    rgba(44, 50, 58, 0.88) 75%,
+    rgba(22, 26, 32, 0.92) 100%
+  );
+}
+
+.fluid {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 11%;
+  min-height: 0;
+  transition: height 320ms ease;
+  z-index: 2;
+}
+
+.fluid-side {
+  top: 0;
+  bottom: 0;
+  z-index: 2;
+}
+
+.shell-top,
+.shell-top-back,
+.shell-bottom,
+.fluid-top,
+.fluid-bottom {
+  position: absolute;
+  left: 14%;
+  width: 72%;
+  height: var(--cap-height);
+  border-radius: 50%;
+}
+
+.shell-top,
+.shell-bottom {
+  z-index: 4;
+}
+
+.shell-top-back {
+  z-index: 3;
+}
+
+.fluid-top,
+.fluid-bottom {
+  z-index: 3;
+}
+
+.shell-top {
+  top: calc(11% - (var(--cap-height) / 2));
+  background: radial-gradient(
+    ellipse at 36% 34%,
+    rgba(136, 149, 167, 0.34),
+    rgba(61, 69, 81, 0.42) 48%,
+    rgba(29, 33, 40, 0.9) 100%
+  );
+}
+
+.shell-top-back {
+  top: calc(11% - (var(--cap-height) / 2));
+  clip-path: inset(0 0 50% 0);
+  background: radial-gradient(
+    ellipse at 50% 12%,
+    rgba(118, 131, 150, 0.28),
+    rgba(44, 52, 63, 0.72) 56%,
+    rgba(21, 26, 33, 0.9) 100%
+  );
+}
+
+.shell-bottom {
+  bottom: calc(11% - (var(--cap-height) / 2));
+  background: radial-gradient(
+    ellipse at 48% 58%,
+    rgba(63, 72, 86, 0.32),
+    rgba(30, 35, 43, 0.74) 56%,
+    rgba(15, 18, 23, 0.9) 100%
+  );
+}
+
+.fluid-top {
+  bottom: calc(
+    11% + (((var(--level-percent) * 78) / 100) * 1%) - (var(--cap-height) / 2)
+  );
+  transition: bottom 320ms ease;
+}
+
+.fluid-bottom {
+  bottom: calc(11% - (var(--cap-height) / 2));
+}
+
+.mode-3d .fluid-side {
+  background: linear-gradient(
+    90deg,
+    var(--level-shadow) 0%,
+    var(--level-color) 26%,
+    var(--level-highlight) 50%,
+    var(--level-color) 74%,
+    var(--level-shadow) 100%
+  );
+}
+
+.mode-3d .fluid-top {
+  background: radial-gradient(
+    ellipse at 38% 34%,
+    color-mix(in srgb, var(--level-top) 72%, white),
+    var(--level-top) 56%,
+    var(--level-shadow) 100%
+  );
+}
+
+.mode-3d .fluid-bottom {
+  background: radial-gradient(
+    ellipse at 50% 58%,
+    var(--level-bottom),
+    color-mix(in srgb, var(--level-shadow) 85%, black) 100%
+  );
+}
+
+.mode-2d .fluid-side,
+.mode-2d .fluid-top,
+.mode-2d .fluid-bottom {
+  background: var(--level-color);
+}
+
+.mode-2d .shell-top,
+.mode-2d .shell-top-back,
+.mode-2d .shell-bottom,
+.mode-2d .fluid-top,
+.mode-2d .fluid-bottom {
+  display: none;
+}
+
+.mode-2d .shell-side,
+.mode-2d .fluid-side {
+  left: 14%;
+  right: 14%;
+  width: auto;
+  border-radius: 0;
+  box-sizing: border-box;
+}
+
+.mode-2d .shell-side {
+  background: rgba(35, 43, 54, 0.82);
+}
+
+.mode-2d .fluid {
+  left: 14%;
+  right: 14%;
+  box-sizing: border-box;
+}
+
+.mode-2d .fluid-side {
+  left: 0;
+  right: 0;
+  width: auto;
+  background: var(--level-color);
+}
+
+.show-borders .shell-side,
+.show-borders .shell-top,
+.show-borders .shell-bottom,
+.show-borders .fluid-top,
+.show-borders .fluid-bottom {
+  border: 2px solid var(--face-border-color);
+}
+
+.show-borders .shell-side {
+  border-top: 0;
+}
+
+.mode-2d.show-borders .shell-side {
+  border-top: 2px solid var(--face-border-color);
+}
+
+.mode-2d.show-borders .fluid-side {
+  border: 0;
+}
+
+.show-borders .fluid-side {
+  border-right: 2px solid var(--face-border-color);
+  border-bottom: 2px solid var(--face-border-color);
+  border-left: 2px solid var(--face-border-color);
+  border-top: 0;
+}
+
+.hide-borders .shell-side,
+.hide-borders .shell-top,
+.hide-borders .shell-bottom,
+.hide-borders .fluid-side,
+.hide-borders .fluid-top,
+.hide-borders .fluid-bottom {
+  border: 0;
+}
+
+.value-missing .fluid {
+  opacity: 0.45;
+}
+
+.value-missing .fluid-top,
+.value-missing .fluid-bottom {
+  opacity: 0.45;
+}
+
+.level-side {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.level-max-box,
+.level-value-box,
+.level-min-box {
+  position: absolute;
+  left: 0;
+  right: 0;
+  transform: translateY(-50%);
+}
+
+.level-max-box {
+  top: 11%;
+  height: clamp(14px, 9%, 30px);
+}
+
+.level-value-box {
+  top: 50%;
+  height: clamp(28px, 24%, 120px);
+}
+
+.level-min-box {
+  top: 89%;
+  height: clamp(14px, 9%, 30px);
+}
+
+.level-max,
+.level-value,
+.level-min {
+  display: block;
+  width: 100%;
+  white-space: nowrap;
+  line-height: 1.1;
+}
+
+.level-max {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.level-value {
+  color: var(--text-primary);
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.level-min {
+  color: var(--text-muted);
+  font-size: 13px;
+}

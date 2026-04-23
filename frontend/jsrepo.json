@@ -1,0 +1,6 @@
+{
+  "$schema": "https://jsrepo.dev/schema.json",
+  "paths": {
+    "ui": "src/lib/components/ui"
+  }
+}

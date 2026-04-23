@@ -1,0 +1,82 @@
+:host([data-input-widget="true"]) .panel.typed-input-panel {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.typed-input-panel {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+}
+
+.typed-field {
+  flex: 1 1 auto;
+  height: 36px;
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--input);
+  background: var(--bg-panel);
+  border-radius: 8px;
+  padding: 7px 10px;
+  color: var(--text-primary);
+  outline: none;
+}
+
+.typed-field:focus {
+  border-color: color-mix(in srgb, var(--accent) 65%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.typed-select {
+  appearance: none;
+}
+
+.typed-number {
+  position: relative;
+  width: 100%;
+}
+
+.typed-number-input {
+  padding-right: 78px;
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+.typed-number-input::-webkit-outer-spin-button,
+.typed-number-input::-webkit-inner-spin-button {
+  margin: 0;
+  -webkit-appearance: none;
+}
+
+.typed-number-controls {
+  position: absolute;
+  top: 0;
+  right: 6px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.typed-stepper-btn {
+  width: 28px;
+  height: 28px;
+  border: 1px solid color-mix(in srgb, var(--text-muted) 24%, transparent);
+  border-radius: 6px;
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.typed-stepper-btn:hover {
+  background: var(--accent);
+}
+
+.hidden {
+  display: none;
+}

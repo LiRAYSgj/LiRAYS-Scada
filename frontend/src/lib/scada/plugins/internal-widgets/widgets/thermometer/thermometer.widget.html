@@ -1,0 +1,67 @@
+<div class="panel thermometer-panel">
+  <div class="thermometer-wrap">
+    <div class="thermo-visual">
+      <svg
+        viewBox="82 74 10 32"
+        class="thermo-svg"
+        aria-hidden="true"
+        focusable="false"
+      >
+        <defs>
+          <linearGradient
+            id="thermo-gradient"
+            x1="86.352329"
+            y1="101.519606"
+            x2="86.352329"
+            y2="77.816071"
+            gradientUnits="userSpaceOnUse"
+          >
+            <stop offset="0%" stop-color="#22d3ee" />
+            <stop offset="50%" stop-color="#facc15" />
+            <stop offset="100%" stop-color="#ef4444" />
+          </linearGradient>
+        </defs>
+        <path
+          class="thermo-bg-shape"
+          d="M 84.584891,76.023254 H 88.119772 A 1.0583333,1.0583333 0 0 1 89.178105,77.081587 V 101.120000 H 83.526558 V 77.081587 A 1.0583333,1.0583333 0 0 1 84.584891,76.023254 Z"
+        />
+        <circle
+          class="thermo-bg-shape"
+          cx="86.352329"
+          cy="102.401721"
+          r="3.04"
+        />
+        <path
+          class="thermo-slot-shape"
+          d="M 86.352329,77.816071 A 0.9258605,0.9258605 0 0 1 87.278190,78.741932 V 100.550000 H 85.426468 V 78.741932 A 0.9258605,0.9258605 0 0 1 86.352329,77.816071 Z"
+        />
+        <circle
+          class="thermo-slot-shape"
+          cx="86.352329"
+          cy="102.401721"
+          r="1.851721"
+        />
+        <rect
+          class="thermo-fill {{fill_state_class}}"
+          x="85.426468"
+          y="{{fill_y}}"
+          width="1.851721"
+          height="{{fill_height}}"
+          rx="0"
+          ry="0"
+        />
+        <circle
+          class="thermo-fill {{fill_state_class}}"
+          cx="86.352329"
+          cy="102.401721"
+          r="1.62"
+        />
+      </svg>
+    </div>
+    <div class="thermo-side">
+      <span class="thermo-max">{{max_label}}{{unit}}</span>
+      <span class="thermo-value">{{value_label}}{{unit}}</span>
+      <span class="thermo-min">{{min_label}}{{unit}}</span>
+    </div>
+  </div>
+</div>

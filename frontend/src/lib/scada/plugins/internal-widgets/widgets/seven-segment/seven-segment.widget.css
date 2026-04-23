@@ -1,0 +1,56 @@
+.seven-segment-panel {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+}
+
+.seven-screen {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.digits {
+  display: grid;
+  grid-template-columns: repeat(var(--digit-count, 4), minmax(0, 1fr));
+  width: 96%;
+  height: 86%;
+  min-height: 0;
+  align-items: stretch;
+  gap: clamp(2px, 1%, 10px);
+}
+
+.digit {
+  width: 100%;
+  height: 100%;
+}
+
+.seg,
+.dot {
+  fill: #3b4124;
+}
+
+.seg.on,
+.dot.on {
+  fill: var(--primary);
+  filter: drop-shadow(0 0 1.6px var(--primary));
+}
+
+.seg.off,
+.dot.off {
+  fill: #313624;
+  opacity: 0.34;
+}
+
+.digits {
+  overflow: hidden;
+}

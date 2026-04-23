@@ -1,0 +1,110 @@
+:host {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  color: var(--text-primary);
+  font-family:
+    system-ui,
+    -apple-system,
+    Segoe UI,
+    Roboto,
+    sans-serif;
+}
+
+.wrap {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.wrap.no-head {
+  gap: 0;
+}
+
+.wrap.overlay-head {
+  position: relative;
+  padding: 0;
+  gap: 0;
+}
+
+:host([data-selected="true"]) .wrap {
+  border-color: rgba(14, 165, 233, 0.55);
+}
+
+.head {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+}
+
+.wrap.overlay-head .head {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.wrap.overlay-head .title {
+  max-width: 100%;
+  width: fit-content;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--surface-1, #111) 65%, transparent);
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.wrap.overlay-head .body {
+  width: 100%;
+  height: 100%;
+}
+
+.panel {
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:host([data-input-widget="true"]) .panel {
+  border: 1px solid color-mix(in srgb, var(--text-muted) 24%, transparent);
+  border-radius: 6px;
+  background: var(--bg-muted);
+  padding: 8px;
+}
+
+input[type="text"],
+input[type="number"],
+input[type="range"],
+button {
+  font: inherit;
+}

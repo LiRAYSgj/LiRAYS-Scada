@@ -1,0 +1,82 @@
+.onoff-panel {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.toggle-button {
+  --btn-size: clamp(42px, calc(var(--widget-min-size, 140px) * 0.56), 180px);
+  width: var(--btn-size);
+  height: var(--btn-size);
+  border: 1px solid color-mix(in srgb, var(--text-muted) 34%, transparent);
+  border-radius: 9999px;
+  background:
+    radial-gradient(
+      circle at 30% 24%,
+      color-mix(in srgb, #fff 12%, transparent) 0%,
+      transparent 52%
+    ),
+    color-mix(in srgb, var(--bg-muted) 90%, transparent);
+  color: color-mix(in srgb, var(--text-muted) 88%, transparent);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    border-color 180ms ease,
+    color 180ms ease,
+    background-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 120ms ease;
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, #ffffff 5%, transparent),
+    0 8px 22px color-mix(in srgb, #000 30%, transparent);
+}
+
+.toggle-button.active {
+  border-color: color-mix(in srgb, var(--primary) 58%, transparent);
+  color: color-mix(in srgb, var(--primary) 90%, white 10%);
+  background:
+    radial-gradient(
+      circle at 32% 24%,
+      color-mix(in srgb, #fff 16%, transparent) 0%,
+      transparent 52%
+    ),
+    color-mix(in srgb, var(--bg-muted) 78%, var(--primary) 22%);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--primary) 28%, transparent),
+    0 0 0 2px color-mix(in srgb, var(--primary) 12%, transparent),
+    0 4px 8px color-mix(in srgb, var(--primary) 14%, transparent);
+}
+
+.toggle-button:hover {
+  border-color: color-mix(in srgb, var(--primary) 42%, transparent);
+}
+
+.toggle-button:active {
+  transform: scale(0.98);
+}
+
+.power-icon {
+  width: 54%;
+  height: 54%;
+  stroke: currentColor;
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  overflow: visible;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

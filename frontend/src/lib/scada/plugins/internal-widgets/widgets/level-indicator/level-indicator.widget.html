@@ -1,0 +1,47 @@
+<div
+  class="panel level-indicator-panel {{mode_class}} {{borders_class}} {{value_state_class}}"
+  style="
+    --level-percent: {{level_percent}};
+    --level-color: {{level_color}};
+    --level-highlight: {{level_highlight}};
+    --level-shadow: {{level_shadow}};
+    --level-top: {{level_top}};
+    --level-bottom: {{level_bottom}};
+    --face-border-color: {{face_border}};
+  "
+>
+  <div class="level-wrap">
+    <div class="cylinder">
+      <div class="shell-side"></div>
+      <div class="shell-top-back"></div>
+      <div class="shell-top"></div>
+      <div class="shell-bottom"></div>
+
+      <div
+        class="fluid"
+        style="height: calc(((var(--level-percent) * 78) / 100) * 1%)"
+      >
+        <div class="fluid-side"></div>
+      </div>
+      <div class="fluid-top"></div>
+      <div class="fluid-bottom"></div>
+    </div>
+    <div class="level-side">
+      <div class="level-max-box">
+        <span class="level-max" data-autoscale-text="true"
+          >{{max_label}}{{unit}}</span
+        >
+      </div>
+      <div class="level-value-box">
+        <span class="level-value" data-autoscale-text="true"
+          >{{value_label}}{{unit}}</span
+        >
+      </div>
+      <div class="level-min-box">
+        <span class="level-min" data-autoscale-text="true"
+          >{{min_label}}{{unit}}</span
+        >
+      </div>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,92 @@
+.gauge-panel {
+  width: 100%;
+  height: 100%;
+}
+
+.gauge-wrap {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+}
+
+.gauge-svg {
+  width: 100%;
+  height: 100%;
+}
+
+.gauge-face-fill {
+  fill: #1f1f23;
+}
+
+.gauge-face-border {
+  fill: none;
+  stroke: var(--primary);
+  stroke-width: 0.9;
+}
+
+.gauge-lower {
+  fill: #000;
+}
+
+.gauge-tick {
+  stroke: #f9f9f9;
+}
+
+.gauge-tick.major {
+  stroke-width: 0.7;
+}
+
+.gauge-tick.minor {
+  stroke-width: 0.38;
+}
+
+.gauge-needle {
+  stroke: #f9f9f9;
+  stroke-width: 1.1;
+  stroke-linecap: round;
+  transform: rotate(var(--gauge-angle, 0deg));
+  transform-origin: 50px 50px;
+  transition: transform 320ms ease;
+}
+
+.gauge-hub {
+  fill: #f9f9f9;
+}
+
+.gauge-value {
+  text-anchor: middle;
+  font-size: 10px;
+  color: #f3f4f6;
+  fill: #f3f4f6;
+  font-weight: 600;
+}
+
+.gauge-scale {
+  position: absolute;
+  left: var(--gauge-label-x, 0%);
+  top: var(--gauge-label-y, 0%);
+  transform: translateY(-50%);
+  font-size: 12px;
+  line-height: 1;
+  color: var(--text-muted);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.gauge-scale.left {
+  text-align: left;
+}
+
+.gauge-scale.right {
+  text-align: right;
+  transform: translate(-100%, -50%);
+}
+
+.gauge-panel.no-value .gauge-needle {
+  opacity: 0.25;
+}

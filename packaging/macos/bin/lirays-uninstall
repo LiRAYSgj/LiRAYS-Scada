@@ -1,0 +1,39 @@
+#!/bin/bash
+set -euo pipefail
+
+PLIST="/Library/LaunchDaemons/com.lirays.liraysscada.plist"
+SERVICE_ID="system/com.lirays.liraysscada"
+LIBEXEC_DIR="/usr/local/libexec/liraysscada"
+BIN_UNINSTALL="/usr/local/bin/lirays-uninstall"
+BIN_CLI="/usr/local/bin/lirays"
+APP_SUPPORT="/Library/Application Support/LiRAYSScada"
+
+echo "Stopping LiRAYSScada service..."
+if command -v launchctl >/dev/null 2>&1; then
+  sudo launchctl bootout "${SERVICE_ID}" 2>/dev/null || true
+  sudo launchctl disable "${SERVICE_ID}" 2>/dev/null || true
+fi
+
+echo "Removing LaunchDaemon plist (if present)..."
+if [ -f "${PLIST}" ]; then
+  sudo rm -f "${PLIST}"
+  sudo launchctl unload "${PLIST}" 2>/dev/null || true
+fi
+
+echo "Removing binaries..."
+sudo rm -f "${BIN_CLI}" "${BIN_UNINSTALL}"
+sudo rm -rf "${LIBEXEC_DIR}"
+
+echo
+read -r -p "Delete configuration and data under '${APP_SUPPORT}'? (y/N): " reply
+case "$reply" in
+  [yY][eE][sS]|[yY])
+    sudo rm -rf "${APP_SUPPORT}"
+    echo "Data and configuration removed."
+    ;;
+  *)
+    echo "Data preserved at ${APP_SUPPORT}"
+    ;;
+esac
+
+echo "LiRAYSScada uninstalled."

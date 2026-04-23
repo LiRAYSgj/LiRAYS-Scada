@@ -1,0 +1,113 @@
+.markdown-panel {
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  text-align: left;
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.4;
+  padding: 2px;
+}
+
+.markdown-panel h1,
+.markdown-panel h2,
+.markdown-panel h3,
+.markdown-panel h4,
+.markdown-panel h5,
+.markdown-panel h6 {
+  margin: 0 0 8px;
+  line-height: 1.2;
+  font-weight: 700;
+}
+
+.markdown-panel h1 {
+  font-size: 1.4em;
+}
+
+.markdown-panel h2 {
+  font-size: 1.25em;
+}
+
+.markdown-panel h3 {
+  font-size: 1.12em;
+}
+
+.markdown-panel p,
+.markdown-panel ul,
+.markdown-panel pre,
+.markdown-panel table {
+  margin: 0 0 8px;
+}
+
+.markdown-panel ul {
+  padding-left: 16px;
+}
+
+.markdown-panel code {
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    "Courier New", monospace;
+  font-size: 0.92em;
+  background: color-mix(in srgb, var(--bg-muted) 65%, transparent);
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+
+.markdown-panel pre {
+  overflow: auto;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--text-muted) 22%, transparent);
+  background: color-mix(in srgb, var(--bg-muted) 75%, transparent);
+  padding: 8px;
+}
+
+.markdown-panel pre code {
+  background: transparent;
+  padding: 0;
+}
+
+.markdown-panel a {
+  color: var(--primary);
+  text-decoration: underline;
+}
+
+.markdown-panel table {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1px solid color-mix(in srgb, var(--text-muted) 26%, transparent);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.markdown-panel th,
+.markdown-panel td {
+  border: 1px solid color-mix(in srgb, var(--text-muted) 20%, transparent);
+  padding: 5px 7px;
+  vertical-align: top;
+}
+
+.markdown-panel th {
+  font-weight: 700;
+  background: color-mix(in srgb, var(--bg-muted) 66%, transparent);
+}
+
+.markdown-panel td {
+  background: color-mix(in srgb, var(--bg-panel) 90%, transparent);
+}
+
+.markdown-panel .align-left {
+  text-align: left;
+}
+
+.markdown-panel .align-center {
+  text-align: center;
+}
+
+.markdown-panel .align-right {
+  text-align: right;
+}
+
+.markdown-empty {
+  color: var(--text-muted);
+  font-style: italic;
+}

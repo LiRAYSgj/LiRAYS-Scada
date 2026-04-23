@@ -1,0 +1,53 @@
+[package]
+name = "rustmod"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "lirays-scada"
+path = "src/main.rs"
+
+[[bin]]
+name = "lirays"
+path = "src/bin/liraysctl.rs"
+
+[dependencies]
+bytes = "1.11.1"
+futures-util = "0.3.32"
+sled = "0.34.7"
+log = "0.4.29"
+prost = "0.14.3"
+lirays-scada-proto = "0.1.3"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
+serde_yaml = "0.9"
+tokio = { version = "1.50.0", features = ["full"]}
+tokio-tungstenite = "0.28.0"
+tokio-rustls = { version = "0.26.4", default-features = false, features = ["ring", "logging", "tls12"] }
+rustls-pemfile = "2.1.2"
+rustls = { version = "0.23.37", default-features = false, features = ["ring"] }
+rcgen = "0.13.1"
+uuid = { version = "1.21.0", features = ["v4"]}
+winnow = "0.7.15"
+env_logger = "0.11.6"
+tokio-util = "0.7.13"
+include_dir = "0.7.4"
+axum = { version = "0.8.8", features = ["ws"] }
+tower-http = { version = "0.6.8", features = ["fs", "cors", "compression-gzip", "trace"]}
+mime_guess = "2.0.5"
+sea-orm = { version = "0.12.15", features = ["macros", "runtime-tokio-rustls", "sqlx-sqlite"] }
+utoipa = { version = "4.2.3", features = ["chrono"] }
+once_cell = "1.19.0"
+argon2 = "0.5"
+rand_core = "0.6"
+rand = "0.8"
+base64 = "0.22"
+sha2 = "0.10"
+hmac = "0.12"
+axum-extra = { version = "0.10", features = ["cookie"] }
+chrono = { version = "0.4", features = ["clock"] }
+constant_time_eq = "0.3"
+time = "0.3"
+dashmap = "5.5"
+jsonwebtoken = "9.3"
+rpassword = "7.3"

@@ -1,0 +1,2 @@
+deb-files/usr/bin/* usr/bin/
+deb-files/etc/* etc/
