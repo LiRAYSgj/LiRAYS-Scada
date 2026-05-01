@@ -179,6 +179,11 @@ export default defineConfig({
   },
   test: {
     expect: { requireAssertions: true },
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "lcov", "html"],
+      reportsDirectory: "coverage",
+    },
     projects: [
       {
         extends: "./vite.config.ts",
