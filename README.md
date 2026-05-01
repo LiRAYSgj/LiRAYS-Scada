@@ -8,8 +8,8 @@
 [![Docker image](https://img.shields.io/badge/ghcr.io-lirays--scada-2496ED?logo=docker&logoColor=white)](https://ghcr.io/liraysgj/lirays-scada)
 [![PyPI SDK](https://img.shields.io/pypi/v/lirays?logo=pypi&logoColor=white)](https://pypi.org/project/lirays)
 [![crates.io SDK](https://img.shields.io/crates/v/lirays?logo=rust&logoColor=white)](https://crates.io/crates/lirays)
-[![Frontend coverage](https://img.shields.io/codecov/c/github/LiRAYSgj/LiRAYS-Scada/main?flag=frontend&label=frontend%20coverage)](https://app.codecov.io/gh/LiRAYSgj/LiRAYS-Scada)
-[![Backend coverage](https://img.shields.io/codecov/c/github/LiRAYSgj/LiRAYS-Scada/main?flag=backend&label=backend%20coverage)](https://app.codecov.io/gh/LiRAYSgj/LiRAYS-Scada)
+[![Frontend coverage](https://codecov.io/gh/LiRAYSgj/LiRAYS-Scada/graph/badge.svg?flag=frontend&branch=main)](https://codecov.io/gh/LiRAYSgj/LiRAYS-Scada)
+[![Backend coverage](https://codecov.io/gh/LiRAYSgj/LiRAYS-Scada/graph/badge.svg?flag=backend&branch=main)](https://codecov.io/gh/LiRAYSgj/LiRAYS-Scada)
 
 LiRAYS-SCADA is a compact SCADA platform built to run on low-resource hardware while providing a friendly interface to model, visualize, and control industrial processes.
 
