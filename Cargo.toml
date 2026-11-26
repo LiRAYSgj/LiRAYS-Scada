@@ -11,6 +11,10 @@ path = "src/main.rs"
 name = "lirays"
 path = "src/bin/liraysctl.rs"
 
+[features]
+default = ["simulator"]
+simulator = []
+
 [dependencies]
 bytes = "1.11.1"
 futures-util = "0.3.32"
@@ -51,3 +55,6 @@ time = "0.3"
 dashmap = "5.5"
 jsonwebtoken = "9.3"
 rpassword = "7.3"
+
+[dev-dependencies]
+tokio = { version = "1.50.0", features = ["test-util"] }

@@ -32,6 +32,8 @@ and **Axum** for HTTP and WebSocket. The Cargo package is named `scada`.
 | `src/http/resources/` | HTTP resources for authentication, views, WebSocket, documentation, and static files; also user and personal access token models and services. |
 | `src/rtdata/variable.rs` | `VariableManager`: namespace tree, metadata, values, commands, cache, persistence, and event distribution. |
 | `src/rtdata/{parser,utils,events,metrics}.rs` | Name parsing, namespace utilities, event construction, and metrics. |
+| `src/ingestion/` | Compile-time ingestor traits, registry, and the optional waveform simulator. |
+| `src/http/resources/ingestors/` | SQLite instances, admin CRUD, worker lifecycle, and runtime status. |
 | `src/settings/` | YAML configuration and environment variables; precedence: environment, file, defaults. |
 | `src/tls/` | TLS configuration and certificates. |
 | `src/bin/liraysctl.rs`, `src/liraysctl/` | The `lirays` administration binary: users, tokens, configuration, service management, and metrics. |
@@ -50,7 +52,7 @@ and **Axum** for HTTP and WebSocket. The Cargo package is named `scada`.
 - **sled** stores the namespace and values in `data_dir/rt_data`. Values are
   cached in memory, and pending changes are persisted periodically. Graceful
   shutdown also requests a flush.
-- **SQLite + SeaORM** stores users, personal access tokens, and views in
+- **SQLite + SeaORM** stores users, personal access tokens, views, and ingestors in
   `data_dir/static.db`. Schema initialization lives in the corresponding
   resources through `ensure_schema`.
 - Sessions have separate storage in `data_dir/sessions`. Optional metrics are
@@ -60,6 +62,12 @@ and **Axum** for HTTP and WebSocket. The Cargo package is named `scada`.
   routes and namespace commands.
 - The backend embeds `frontend/build` at compile time through `include_dir!`
   and serves those files. This is a build dependency even for backend-only work.
+
+- Ingestors yield typed values at canonical namespace paths. `VariableManager::ingest`
+  validates a whole batch, creates missing folders/variables, and uses existing
+  persistence and events. Stop ingestors before the shutdown flush.
+- Swagger UI at `/swagger` documents ingestion CRUD. The simulator is selected
+  by the default `simulator` Cargo feature; no frontend changes are needed.
 
 ## Programming Style
 

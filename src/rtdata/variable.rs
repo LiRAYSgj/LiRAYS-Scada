@@ -576,6 +576,142 @@ impl VariableManager {
     // Values are stored in a cache HashMap
     // /folder/path/var1: (varDataType, Option<Typed>)
 
+    /// Apply an ingestion batch atomically in memory: infer missing variable types,
+    /// create their folders, validate existing constraints, and publish normal SCADA events.
+    /// Paths must be canonical, absolute, and free of NUL characters.
+    pub async fn ingest(&self, batch: crate::ingestion::IngestionBatch) -> Result<(), String> {
+        if batch.values.is_empty() {
+            return Ok(());
+        }
+        let _namespace = self.namespace_write.lock().await;
+        let mut cache = self.values_cache.write().await;
+        let mut pending_cache = HashMap::new();
+        let mut created = std::collections::BTreeMap::<String, ItemMeta>::new();
+        let mut storage = Batch::default();
+        let mut updates = Vec::with_capacity(batch.values.len());
+        for entry in batch.values {
+            let path = entry.var_id;
+            if !path.starts_with('/') || path.contains('\0') || path != normalize_path(&path) {
+                return Err(format!("Invalid namespace path: {path:?}"));
+            }
+            let value = entry
+                .value
+                .ok_or_else(|| format!("Missing value for {path}"))?;
+            let typed = value
+                .typed
+                .as_ref()
+                .ok_or_else(|| format!("Missing typed value for {path}"))?;
+            if matches!(typed, Typed::FloatValue(v) if !v.is_finite()) {
+                return Err(format!("Non-finite value for {path}"));
+            }
+            if !cache.contains_key(&path) && !pending_cache.contains_key(&path) {
+                let (parent, name) = path.rsplit_once('/').unwrap();
+                let mut folder = String::new();
+                for part in parent.split('/').filter(|part| !part.is_empty()) {
+                    let key = format!("{folder}/\0{part}");
+                    folder.push('/');
+                    folder.push_str(part);
+                    if pending_cache.contains_key(&folder) || cache.contains_key(&folder) {
+                        return Err(format!("Variable cannot be a parent folder: {folder}"));
+                    }
+                    if let Some(bytes) = self
+                        .items_tree
+                        .get(key.as_bytes())
+                        .map_err(|e| e.to_string())?
+                    {
+                        let meta = ItemMeta::decode(bytes.as_ref()).map_err(|e| e.to_string())?;
+                        if meta.i_type() != ItemType::Folder {
+                            return Err(format!("Path is not a folder: {folder}"));
+                        }
+                    } else if !created.contains_key(&folder) {
+                        let meta = ItemMeta {
+                            name: part.into(),
+                            i_type: ItemType::Folder as i32,
+                            ..Default::default()
+                        };
+                        storage.insert(key.as_bytes(), meta.encode_to_vec());
+                        created.insert(folder.clone(), meta);
+                    }
+                }
+                let key = format!("{parent}/\0{name}");
+                if created.contains_key(&path)
+                    || self
+                        .items_tree
+                        .contains_key(key.as_bytes())
+                        .map_err(|e| e.to_string())?
+                {
+                    return Err(format!(
+                        "Path already exists without a variable cache entry: {path}"
+                    ));
+                }
+                let dtype = match typed {
+                    Typed::FloatValue(_) => VarDataType::Float,
+                    Typed::IntegerValue(_) => VarDataType::Integer,
+                    Typed::TextValue(_) => VarDataType::Text,
+                    Typed::BooleanValue(_) => VarDataType::Boolean,
+                };
+                let meta = ItemMeta {
+                    name: name.into(),
+                    i_type: ItemType::Variable as i32,
+                    var_d_type: Some(dtype as i32),
+                    ..Default::default()
+                };
+                storage.insert(key.as_bytes(), meta.encode_to_vec());
+                created.insert(path.clone(), meta);
+                pending_cache.insert(
+                    path.clone(),
+                    CachedValue {
+                        val: None,
+                        dtype,
+                        min: None,
+                        max: None,
+                        options: vec![],
+                        max_len: None,
+                    },
+                );
+            }
+            let cached = cache
+                .get(&path)
+                .or_else(|| pending_cache.get(&path))
+                .unwrap();
+            let typed = self.validate_constraints(cached, &value)?;
+            updates.push(VarIdValue {
+                var_id: path,
+                value: Some(Value { typed: Some(typed) }),
+            });
+        }
+        let mut events = Vec::with_capacity(created.len() + updates.len());
+        for (path, meta) in created {
+            let (parent, _) = path.rsplit_once('/').unwrap();
+            let parent = if parent.is_empty() { "/" } else { parent };
+            let (folders, variables) = if meta.i_type() == ItemType::Folder {
+                (vec![meta], vec![])
+            } else {
+                (vec![], vec![meta])
+            };
+            events.push(extract_add_event(parent, false, folders, variables)?);
+        }
+        let mut dirty = self.dirty_values.lock().await;
+        if !pending_cache.is_empty() {
+            self.items_tree
+                .apply_batch(storage)
+                .map_err(|e| e.to_string())?;
+            cache.extend(pending_cache);
+        }
+        for update in updates {
+            let typed = update.value.as_ref().and_then(|v| v.typed.clone());
+            cache.get_mut(&update.var_id).unwrap().val = typed.clone();
+            dirty.insert(update.var_id.clone(), typed);
+            events.push(Event {
+                ev: Some(Ev::VarValueEv(update)),
+            });
+        }
+        drop(dirty);
+        drop(cache);
+        self.broadcast_batch(Arc::new(EventBatch { events })).await;
+        Ok(())
+    }
+
     /// Apply values to `values_cache` (no persistence), validate against cached metadata,
     /// and build an `EventBatch` for broadcast. Errors if a var is missing in cache.
     async fn set_vals(&self, var_id_vals: Vec<VarIdValue>) -> Result<EventBatch, String> {
@@ -1081,6 +1217,139 @@ mod tests {
             &Role::Admin,
         )
         .await
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn ingestion_creates_canonical_hierarchy_and_publishes_persisted_values() {
+        let dir = temp_vm_dir("vm_ingestion");
+        let vm = build_vm(&dir);
+        let mut events = vm.register_listener().await;
+        vm.ingest(crate::ingestion::IngestionBatch {
+            values: vec![
+                VarIdValue {
+                    var_id: "/plant/line/temperature".into(),
+                    value: Some(Value {
+                        typed: Some(Typed::FloatValue(23.5)),
+                    }),
+                },
+                VarIdValue {
+                    var_id: "/plant/line/count".into(),
+                    value: Some(Value {
+                        typed: Some(Typed::IntegerValue(2)),
+                    }),
+                },
+            ],
+        })
+        .await
+        .unwrap();
+        assert_eq!(vm.list_path("/").await.unwrap().0[0].id, "/plant");
+        assert_eq!(vm.list_path("/plant").await.unwrap().0[0].id, "/plant/line");
+        assert_eq!(vm.list_path("/plant/line").await.unwrap().1.len(), 2);
+        let batch = events.try_recv().unwrap();
+        assert_eq!(
+            batch
+                .events
+                .iter()
+                .filter(|e| matches!(e.ev, Some(Ev::VarValueEv(_))))
+                .count(),
+            2
+        );
+        assert!(
+            batch
+                .events
+                .iter()
+                .any(|e| matches!(e.ev, Some(Ev::TreeChangedEv(_))))
+        );
+        let cache = vm.values_cache.read().await;
+        let temperature = &cache["/plant/line/temperature"];
+        assert_eq!(temperature.dtype, VarDataType::Float);
+        assert_eq!(temperature.min, None);
+        assert_eq!(temperature.max, None);
+        drop(cache);
+        vm.flush_dirty_now().await;
+        drop(vm);
+        let vm = build_vm(&dir);
+        assert_eq!(
+            vm.values_cache.read().await["/plant/line/temperature"].val,
+            Some(Typed::FloatValue(23.5))
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn ingestion_rejects_conflicts_and_invalid_batches_without_partial_creation() {
+        let dir = temp_vm_dir("vm_ingestion_invalid");
+        let vm = build_vm(&dir);
+        for path in ["/a/b", "relative", "/", "/a//b", "/bad\0name"] {
+            let result = vm
+                .ingest(crate::ingestion::IngestionBatch {
+                    values: vec![
+                        VarIdValue {
+                            var_id: "/a".into(),
+                            value: Some(Value {
+                                typed: Some(Typed::IntegerValue(1)),
+                            }),
+                        },
+                        VarIdValue {
+                            var_id: path.into(),
+                            value: Some(Value {
+                                typed: Some(Typed::IntegerValue(2)),
+                            }),
+                        },
+                    ],
+                })
+                .await;
+            assert!(result.is_err());
+            assert!(vm.items_tree.is_empty());
+            assert!(vm.values_cache.read().await.is_empty());
+        }
+        assert_eq!(
+            add_test_items(
+                &vm,
+                "/",
+                vec![integer_item("bounded", Some(0.0), Some(10.0))]
+            )
+            .await
+            .status,
+            OperationStatus::Ok as i32
+        );
+        vm.ingest(crate::ingestion::IngestionBatch {
+            values: vec![VarIdValue {
+                var_id: "/bounded".into(),
+                value: Some(Value {
+                    typed: Some(Typed::FloatValue(4.9)),
+                }),
+            }],
+        })
+        .await
+        .unwrap();
+        assert_eq!(
+            vm.values_cache.read().await["/bounded"].val,
+            Some(Typed::IntegerValue(4))
+        );
+        let result = vm
+            .ingest(crate::ingestion::IngestionBatch {
+                values: vec![
+                    VarIdValue {
+                        var_id: "/new".into(),
+                        value: Some(Value {
+                            typed: Some(Typed::BooleanValue(true)),
+                        }),
+                    },
+                    VarIdValue {
+                        var_id: "/bounded".into(),
+                        value: Some(Value {
+                            typed: Some(Typed::IntegerValue(99)),
+                        }),
+                    },
+                ],
+            })
+            .await;
+        assert!(result.is_err());
+        assert!(!vm.values_cache.read().await.contains_key("/new"));
+        assert_eq!(
+            vm.values_cache.read().await["/bounded"].val,
+            Some(Typed::IntegerValue(4))
+        );
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]

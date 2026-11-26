@@ -3,11 +3,13 @@ use log::warn;
 use once_cell::sync::Lazy;
 use utoipa::OpenApi;
 
+use crate::http::resources::ingestors::service as ingestors;
 use crate::http::resources::views::service as views;
 
 #[derive(OpenApi)]
 #[openapi(
     paths(
+        ingestors::plugins, ingestors::list, ingestors::get, ingestors::create, ingestors::update, ingestors::delete,
         views::get_all_views,
         views::get_view,
         views::create_view,
@@ -21,16 +23,35 @@ use crate::http::resources::views::service as views;
             crate::http::resources::views::service::View,
             crate::http::resources::views::service::ViewPage,
             crate::http::resources::views::service::ViewInput,
+            views::ViewSortBy, views::SortDirection,
             crate::http::ApiResponseView,
             crate::http::ApiResponseViewPage,
+            ingestors::IngestorInput, ingestors::IngestorUpdate, ingestors::IngestorInfo, ingestors::IngestorStatus, ingestors::IngestorState,
+            crate::http::response::ApiResponseIngestor, crate::http::response::ApiResponseIngestors,
             crate::http::ApiResponseEmpty
         )
     ),
+    modifiers(&Security),
     tags(
+        (name = "Ingestors", description = "Admin-only ingestion instances and compiled plugins"),
         (name = "Views", description = "Canvas views CRUD")
     )
 )]
 pub struct ApiDoc;
+
+struct Security;
+
+impl utoipa::Modify for Security {
+    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        use utoipa::openapi::security::{Http, HttpAuthScheme, SecurityScheme};
+        if let Some(components) = openapi.components.as_mut() {
+            components.add_security_scheme(
+                "bearerAuth",
+                SecurityScheme::Http(Http::new(HttpAuthScheme::Bearer)),
+            );
+        }
+    }
+}
 
 pub static OPENAPI: Lazy<utoipa::openapi::OpenApi> = Lazy::new(|| ApiDoc::openapi());
 
@@ -65,4 +86,34 @@ pub async fn swagger_ui() -> Response {
             warn!("Failed building swagger UI response: {e}");
             Response::new(axum::body::Body::from("Swagger UI unavailable"))
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn openapi_references_resolve_and_include_ingestor_endpoints() {
+        let document = serde_json::to_value(ApiDoc::openapi()).unwrap();
+        let mut pending = vec![&document];
+        while let Some(value) = pending.pop() {
+            match value {
+                serde_json::Value::Object(fields) => {
+                    if let Some(reference) = fields.get("$ref").and_then(|v| v.as_str()) {
+                        if let Some(pointer) = reference.strip_prefix('#') {
+                            assert!(
+                                document.pointer(pointer).is_some(),
+                                "Unresolved schema: {reference}"
+                            );
+                        }
+                    }
+                    pending.extend(fields.values());
+                }
+                serde_json::Value::Array(values) => pending.extend(values),
+                _ => {}
+            }
+        }
+        assert!(document["paths"]["/api/ingestors"]["post"].is_object());
+        assert!(document["components"]["securitySchemes"]["bearerAuth"].is_object());
+    }
 }

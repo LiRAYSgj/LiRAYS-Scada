@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod docs;
+pub mod ingestors;
 pub mod patoken;
 pub mod static_files;
 pub mod user;

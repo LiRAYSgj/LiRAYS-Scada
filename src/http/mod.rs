@@ -17,7 +17,7 @@ use log::{error, info};
 use rand::{RngCore, rngs::OsRng};
 use resources::{
     auth::{self, session::SessionManager},
-    docs, patoken, static_files, user, views, ws,
+    docs, ingestors, patoken, static_files, user, views, ws,
 };
 pub use response::{ApiResponse, ApiResponseEmpty, ApiResponseView, ApiResponseViewPage};
 use sea_orm::{Database, DatabaseConnection};
@@ -153,7 +153,14 @@ pub async fn run_http_server(
     );
     let _session_purge_handle = session_manager.clone().start_purge_loop();
 
+    let ingestor_manager = Arc::new(ingestors::service::IngestorManager::new(
+        db.clone(),
+        var_manager.clone(),
+        crate::ingestion::builtin_plugins(),
+    )?);
+
     let app_state = Arc::new(AppState {
+        ingestors: ingestor_manager.clone(),
         views: view_manager,
         users: user_manager,
         patoken_manager,
@@ -165,6 +172,7 @@ pub async fn run_http_server(
     let app = Router::new();
     let app = ws::mount(app, app_state.clone());
     let app = views::mount(app, app_state.clone());
+    let app = ingestors::mount(app, app_state.clone());
     let app = auth::mount(app);
     let app = docs::mount(app);
     let app = static_files::with_fallback(app).with_state(app_state.clone());
@@ -178,8 +186,15 @@ pub async fn run_http_server(
         Err(err) => return Err(format!("Failed to bind {addr}: {err}")),
     };
 
+    ingestor_manager
+        .restore()
+        .await
+        .map_err(|e| format!("Failed to restore ingestors: {e}"))?;
     let shutdown_vm = var_manager.clone();
-    async fn shutdown_signal(vm: Arc<VariableManager>) {
+    async fn shutdown_signal(
+        vm: Arc<VariableManager>,
+        ingestors: Arc<ingestors::service::IngestorManager>,
+    ) {
         #[cfg(unix)]
         {
             use tokio::signal::unix::{SignalKind, signal};
@@ -203,7 +218,8 @@ pub async fn run_http_server(
         {
             let _ = tokio::signal::ctrl_c().await;
         }
-        info!("Shutdown signal received; flushing dirty cache");
+        info!("Shutdown signal received; stopping ingestors and flushing dirty cache");
+        ingestors.shutdown().await;
         vm.flush_dirty_now().await;
         info!("Cache flush complete; exiting");
     }
@@ -213,20 +229,25 @@ pub async fn run_http_server(
             .map_err(|e| format!("Failed to build TLS acceptor for HTTP: {e}"))?;
         let incoming = TlsIncoming::new(listener, acceptor);
         axum::serve(incoming, app)
-            .with_graceful_shutdown(shutdown_signal(shutdown_vm))
+            .with_graceful_shutdown(shutdown_signal(shutdown_vm, ingestor_manager.clone()))
             .await
             .map_err(|e| format!("HTTPS server error: {e}"))?;
     } else {
         axum::serve(listener, app)
-            .with_graceful_shutdown(shutdown_signal(shutdown_vm))
+            .with_graceful_shutdown(shutdown_signal(shutdown_vm, ingestor_manager.clone()))
             .await
             .map_err(|e| format!("HTTP server error: {e}"))?;
     }
 
+    ingestor_manager.shutdown().await;
+    var_manager.flush_dirty_now().await;
     Ok(())
 }
 
 async fn ensure_schema(db: &DatabaseConnection) -> Result<(), String> {
+    ingestors::ensure_schema(db)
+        .await
+        .map_err(|e| format!("Failed to ensure ingestors schema: {e}"))?;
     user::ensure_schema(db)
         .await
         .map_err(|e| format!("Failed to ensure users schema: {e}"))?;
