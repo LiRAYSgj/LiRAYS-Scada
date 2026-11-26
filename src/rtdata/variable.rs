@@ -12,6 +12,7 @@ use lirays_scada_proto::namespace::v1::{
 };
 use log::{debug, info, warn};
 use prost::Message;
+use sled::transaction::Transactional;
 use sled::{Batch, Tree};
 use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::{Mutex, RwLock, mpsc};
@@ -32,6 +33,8 @@ pub struct VariableManager {
     next_listener_id: AtomicU64,
     metrics: Arc<Metrics>,
     dirty_values: Mutex<HashMap<String, Option<Typed>>>,
+    namespace_write: Mutex<()>,
+    persistence_write: Mutex<()>,
 }
 
 impl VariableManager {
@@ -54,6 +57,8 @@ impl VariableManager {
             next_listener_id: AtomicU64::new(0),
             metrics,
             dirty_values: Mutex::new(HashMap::new()),
+            namespace_write: Mutex::new(()),
+            persistence_write: Mutex::new(()),
         };
         vm.load_cache_from_storage();
         Ok(vm)
@@ -139,27 +144,45 @@ impl VariableManager {
 
     /// Flush dirty variable values to `values_tree` (coalesced last write wins).
     pub async fn flush_dirty_now(&self) {
-        let mut dirty_guard = self.dirty_values.lock().await;
-        if dirty_guard.is_empty() {
+        // Serialize flushes and deletions without holding the cache or dirty-value locks.
+        let _persistence = self.persistence_write.lock().await;
+        let pending = std::mem::take(&mut *self.dirty_values.lock().await);
+        if pending.is_empty() {
             return;
         }
         let mut batch = Batch::default();
-        for (var_id, val_opt) in dirty_guard.drain() {
+        for (var_id, val_opt) in &pending {
             match val_opt {
                 Some(typed) => {
-                    let val = Value { typed: Some(typed) };
+                    let val = Value {
+                        typed: Some(typed.clone()),
+                    };
                     batch.insert(var_id.as_bytes(), val.encode_to_vec());
                 }
-                None => {
-                    batch.remove(var_id.as_bytes());
-                }
+                None => batch.remove(var_id.as_bytes()),
             }
         }
-        if let Err(e) = self.values_tree.apply_batch(batch) {
-            warn!("flush_dirty_now: apply_batch error {e}");
+        let tree = self.values_tree.clone();
+        let result = match tokio::task::spawn_blocking(move || tree.apply_batch(batch)).await {
+            Ok(Ok(())) => self
+                .values_tree
+                .flush_async()
+                .await
+                .map(|_| ())
+                .map_err(|e| e.to_string()),
+            Ok(Err(e)) => Err(e.to_string()),
+            Err(e) => Err(e.to_string()),
+        };
+        if let Err(e) = result {
+            warn!("flush_dirty_now: {e}");
+            self.restore_dirty_values(pending).await;
         }
-        if let Err(e) = self.values_tree.flush_async().await {
-            warn!("flush_dirty_now: flush_async error {e}");
+    }
+
+    async fn restore_dirty_values(&self, pending: HashMap<String, Option<Typed>>) {
+        let mut dirty = self.dirty_values.lock().await;
+        for (id, value) in pending {
+            dirty.entry(id).or_insert(value);
         }
     }
 
@@ -181,13 +204,15 @@ impl VariableManager {
     // deep variables example: "/folder1/\0sub-var1": <meta>, "/folder1/sub-folder/\0sub-var2": <meta>
 
     /// Create folders/variables under `parent_id`, auto-creating missing ancestors,
-    /// and seed `values_cache` with metadata for each new variable.
+    /// staging cache metadata until the entire command has been validated.
     /// Uses key `parent/\0name` in `items_tree`; `values_cache` keyed by full path without `\0`.
     async fn add_items(
         &self,
         parent_id: &str,
         items_meta: Vec<ItemMeta>,
         batch: &mut Batch,
+        pending_cache: &mut HashMap<String, CachedValue>,
+        pending_names: &mut HashSet<String>,
     ) -> Result<(bool, Vec<ItemMeta>, Vec<ItemMeta>), String> {
         let parent_path = normalize_path(parent_id);
         let ancestors = get_ancestors(&parent_path);
@@ -214,50 +239,58 @@ impl VariableManager {
                 batch.insert(h_key.as_bytes(), item.encode_to_vec());
             }
         }
-        // Create a context to force guard to be drop.
-        {
-            let mut val_cache_guard = self.values_cache.write().await;
-            for i_meta in items_meta {
-                // Reject names with reserved characters
-                if i_meta.name.contains('/') || i_meta.name.contains('\0') {
-                    return Err("Item name cannot contain '/' or NUL".to_string());
-                }
-                let h_key = format!("{}/\0{}", parent_path, i_meta.name);
-                if self
+        for i_meta in items_meta {
+            // Reject names with reserved characters
+            if i_meta.name.contains('/') || i_meta.name.contains('\0') {
+                return Err("Item name cannot contain '/' or NUL".to_string());
+            }
+            let h_key = format!("{}/\0{}", parent_path, i_meta.name);
+            if !pending_names.insert(h_key.clone())
+                || self
                     .items_tree
                     .contains_key(&h_key)
                     .map_err(|e| format!("Reading error: {e}"))?
-                {
-                    return Err(format!("Can't create existing item {}", h_key));
+            {
+                return Err(format!("Can't create existing item {}", h_key));
+            }
+            match i_meta.i_type() {
+                ItemType::Folder => {
+                    batch.insert(h_key.as_bytes(), i_meta.encode_to_vec());
+                    new_folders.push(i_meta)
                 }
-                match i_meta.i_type() {
-                    ItemType::Folder => {
-                        batch.insert(h_key.as_bytes(), i_meta.encode_to_vec());
-                        new_folders.push(i_meta)
-                    }
-                    ItemType::Variable => {
-                        let d_key = format!("{}/{}", parent_path, i_meta.name);
-                        batch.insert(h_key.as_bytes(), i_meta.encode_to_vec());
-                        val_cache_guard.insert(
-                            d_key,
-                            CachedValue {
-                                val: None,
-                                dtype: i_meta.var_d_type(),
-                                min: i_meta.min,
-                                max: i_meta.max,
-                                options: i_meta.options.clone(),
-                                max_len: i_meta.max_len,
-                            },
-                        );
-                        new_variables.push(i_meta)
-                    }
-                    ItemType::Unspecified => {
-                        return Err("Invalid item type in create".to_string());
-                    }
+                ItemType::Variable => {
+                    let d_key = format!("{}/{}", parent_path, i_meta.name);
+                    batch.insert(h_key.as_bytes(), i_meta.encode_to_vec());
+                    pending_cache.insert(
+                        d_key,
+                        CachedValue {
+                            val: None,
+                            dtype: i_meta.var_d_type(),
+                            min: i_meta.min,
+                            max: i_meta.max,
+                            options: i_meta.options.clone(),
+                            max_len: i_meta.max_len,
+                        },
+                    );
+                    new_variables.push(i_meta)
+                }
+                ItemType::Unspecified => {
+                    return Err("Invalid item type in create".to_string());
                 }
             }
         }
         Ok((false, new_folders, new_variables))
+    }
+
+    async fn commit_add(
+        &self,
+        batch: Batch,
+        pending_cache: HashMap<String, CachedValue>,
+    ) -> Result<(), sled::Error> {
+        let mut cache = self.values_cache.write().await;
+        self.items_tree.apply_batch(batch)?;
+        cache.extend(pending_cache);
+        Ok(())
     }
 
     /// Update variable metadata (unit/min/max/options/max_len) and mirror changes in cache.
@@ -271,6 +304,7 @@ impl VariableManager {
         patch_options: Vec<String>,
         patch_max_len: Option<u64>,
     ) -> Result<(), String> {
+        let _namespace = self.namespace_write.lock().await;
         let normalized = normalize_path(var_id);
         let (parent, name) = normalized
             .rsplit_once('/')
@@ -363,54 +397,63 @@ impl VariableManager {
         Ok((children_folders, children_vars))
     }
 
-    /// Remove items (folders or vars) and descendants from `items_tree`,
-    /// and purge `values_cache` for those paths. Does not touch `values_tree` yet.
+    /// Remove namespace entries, persisted values, and pending writes together.
     async fn del_items(&self, item_ids: Vec<String>) -> Result<(), String> {
-        let mut batch = Batch::default();
+        let _namespace = self.namespace_write.lock().await;
+        let _persistence = self.persistence_write.lock().await;
+        let mut cache = self.values_cache.write().await;
+        let mut dirty = self.dirty_values.lock().await;
+        let mut items_batch = Batch::default();
+        let mut values_batch = Batch::default();
+        let mut removed = HashSet::new();
         for id in item_ids {
-            let item_path = normalize_path(&id);
-            let (parent, name) = item_path
-                .rsplit_once('/')
-                .ok_or("Invalid normalized path".to_string())?;
-            let h_key = format!("{}/\0{}", parent, name);
-            let prefix = format!("{}/", item_path);
-
-            // Remove var value and children variable values
-            let mut vars_to_remove: Vec<String> = self
-                .values_cache
-                .read()
-                .await
-                .keys()
-                .filter(|k| k.starts_with(&prefix))
-                .cloned()
-                .collect();
-            vars_to_remove.push(item_path);
-            {
-                let mut val_cache_guard = self.values_cache.write().await;
-                for key in vars_to_remove {
-                    val_cache_guard.remove(&key);
-                }
-            }
-
-            batch.remove(h_key.as_bytes()); // Remove current reference
-
-            // Remove All potential children references
-            for result in self.items_tree.scan_prefix(prefix) {
+            let path = normalize_path(&id);
+            let (parent, name) = path.rsplit_once('/').ok_or("Invalid normalized path")?;
+            let prefix = format!("{path}/");
+            items_batch.remove(format!("{parent}/\0{name}").as_bytes());
+            for result in self.items_tree.scan_prefix(&prefix) {
                 let (key, _) = result.map_err(|e| format!("Error reading tree: {e}"))?;
-                batch.remove(key);
+                items_batch.remove(key);
             }
+            for result in self.values_tree.scan_prefix(&prefix) {
+                let (key, _) = result.map_err(|e| format!("Error reading values: {e}"))?;
+                values_batch.remove(key);
+            }
+            removed.extend(
+                cache
+                    .keys()
+                    .chain(dirty.keys())
+                    .filter(|key| **key == path || key.starts_with(&prefix))
+                    .cloned(),
+            );
+            values_batch.remove(path.as_bytes());
+            removed.insert(path);
         }
-        self.items_tree
-            .apply_batch(batch)
-            .map_err(|e| format!("Error removing items: {e}"))
+        for id in &removed {
+            values_batch.remove(id.as_bytes());
+        }
+        let result: Result<(), sled::transaction::TransactionError<()>> =
+            (&self.items_tree, &self.values_tree).transaction(|(items, values)| {
+                items.apply_batch(&items_batch)?;
+                values.apply_batch(&values_batch)?;
+                Ok(())
+            });
+        result.map_err(|e| format!("Error removing items: {e:?}"))?;
+        for id in removed {
+            cache.remove(&id);
+            dirty.remove(&id);
+        }
+        Ok(())
     }
 
-    /// (Unused) Recursively insert hierarchy from `NamespaceNode`, collecting first-level nodes.
+    /// Stage a hierarchy from `NamespaceNode`, collecting first-level nodes.
     async fn add_bulk(
         &self,
         root_parent_id: &str,
         root_nodes: HashMap<String, NamespaceNode>,
         batch: &mut Batch,
+        pending_cache: &mut HashMap<String, CachedValue>,
+        pending_names: &mut HashSet<String>,
     ) -> Result<(Vec<ItemMeta>, Vec<ItemMeta>), String> {
         let mut stack = vec![(root_parent_id.to_string(), root_nodes)];
         let mut total_count = 0usize;
@@ -482,8 +525,15 @@ impl VariableManager {
 
                 if !vars_to_create.is_empty() {
                     let prev_m = total_count / 1_000_000;
-                    let (_, _, new_vars) =
-                        self.add_items(&parent_id, vars_to_create, batch).await?;
+                    let (_, _, new_vars) = self
+                        .add_items(
+                            &parent_id,
+                            vars_to_create,
+                            batch,
+                            pending_cache,
+                            pending_names,
+                        )
+                        .await?;
                     total_count += new_vars.len();
                     let curr_m = total_count / 1_000_000;
                     if curr_m > prev_m {
@@ -496,8 +546,15 @@ impl VariableManager {
                 }
                 if !folders_to_create.is_empty() {
                     let prev_m = total_count / 1_000_000;
-                    let (_, new_folders, _) =
-                        self.add_items(&parent_id, folders_to_create, batch).await?;
+                    let (_, new_folders, _) = self
+                        .add_items(
+                            &parent_id,
+                            folders_to_create,
+                            batch,
+                            pending_cache,
+                            pending_names,
+                        )
+                        .await?;
                     total_count += new_folders.len();
                     let curr_m = total_count / 1_000_000;
                     if curr_m > prev_m {
@@ -527,26 +584,27 @@ impl VariableManager {
         };
         let mut var_cache_guard = self.values_cache.write().await;
         for var_id_val in var_id_vals {
-            let cached_val = match var_cache_guard.get_mut(&var_id_val.var_id) {
-                Some(x) => x,
-                None => return Err(format!("Variable {} not found", var_id_val.var_id)),
-            };
+            let cached_val = var_cache_guard
+                .get(&var_id_val.var_id)
+                .ok_or_else(|| format!("Variable {} not found", var_id_val.var_id))?;
             let new_value = match var_id_val.value {
                 Some(value) => Some(self.validate_constraints(cached_val, &value)?),
                 None => None,
             };
-            cached_val.val = new_value.clone();
-            // Mark dirty for persistence
-            self.dirty_values
-                .lock()
-                .await
-                .insert(var_id_val.var_id.clone(), new_value.clone());
             ev_batch.events.push(Event {
                 ev: Some(Ev::VarValueEv(VarIdValue {
                     var_id: var_id_val.var_id,
                     value: Some(Value { typed: new_value }),
                 })),
             });
+        }
+        let mut dirty = self.dirty_values.lock().await;
+        for event in &ev_batch.events {
+            if let Some(Ev::VarValueEv(value)) = &event.ev {
+                let typed = value.value.as_ref().and_then(|v| v.typed.clone());
+                var_cache_guard.get_mut(&value.var_id).unwrap().val = typed.clone();
+                dirty.insert(value.var_id.clone(), typed);
+            }
         }
         Ok(ev_batch)
     }
@@ -588,14 +646,23 @@ impl VariableManager {
                     Role::Admin => {
                         let parent_id =
                             add_cmd.parent_id.clone().unwrap_or_else(|| "/".to_string());
+                        let _namespace = self.namespace_write.lock().await;
+                        let mut pending_cache = HashMap::new();
+                        let mut pending_names = HashSet::new();
                         let mut batch = Batch::default();
                         let t0 = std::time::Instant::now();
                         let (status, error_msg) = match self
-                            .add_items(&parent_id, add_cmd.items_meta.clone(), &mut batch)
+                            .add_items(
+                                &parent_id,
+                                add_cmd.items_meta.clone(),
+                                &mut batch,
+                                &mut pending_cache,
+                                &mut pending_names,
+                            )
                             .await
                         {
                             Ok((reload, new_folders, new_variables)) => {
-                                match self.items_tree.apply_batch(batch) {
+                                match self.commit_add(batch, pending_cache).await {
                                     Ok(_) => {
                                         let folder_id =
                                             add_cmd.parent_id.unwrap_or("/".to_string());
@@ -680,13 +747,25 @@ impl VariableManager {
                     },
                     Role::Admin => {
                         let parent_id = normalize_path(&addb_cmd.parent_id);
+                        let _namespace = self.namespace_write.lock().await;
+                        let mut pending_cache = HashMap::new();
+                        let mut pending_names = HashSet::new();
                         let mut batch = sled::Batch::default();
                         let t0 = std::time::Instant::now();
                         let (status, error_msg) = match addb_cmd.schema {
                             Some(schema) => {
-                                match self.add_bulk(&parent_id, schema.roots, &mut batch).await {
+                                match self
+                                    .add_bulk(
+                                        &parent_id,
+                                        schema.roots,
+                                        &mut batch,
+                                        &mut pending_cache,
+                                        &mut pending_names,
+                                    )
+                                    .await
+                                {
                                     Ok((new_folders, new_variables)) => {
-                                        match self.items_tree.apply_batch(batch) {
+                                        match self.commit_add(batch, pending_cache).await {
                                             Ok(_) => {
                                                 if let Ok(event) = extract_add_event(
                                                     &parent_id,
@@ -957,7 +1036,9 @@ impl VariableManager {
 mod tests {
     use std::{fs, path::PathBuf};
 
-    use lirays_scada_proto::namespace::v1::{AddCommand, SetCommand};
+    use lirays_scada_proto::namespace::v1::{
+        AddBulkCommand, AddCommand, NamespaceFolder, NamespaceSchema, NamespaceVariable, SetCommand,
+    };
 
     use super::*;
 
@@ -983,6 +1064,318 @@ mod tests {
             max,
             options: Vec::new(),
             max_len: None,
+        }
+    }
+
+    async fn add_test_items(vm: &VariableManager, parent: &str, items: Vec<ItemMeta>) -> Response {
+        vm.exec_cmd(
+            Command {
+                command_type: Some(CommandType::Add(AddCommand {
+                    cmd_id: "test-add".into(),
+                    parent_id: Some(parent.into()),
+                    items_meta: items,
+                })),
+            },
+            &mut HashSet::new(),
+            &mut false,
+            &Role::Admin,
+        )
+        .await
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn bulk_add_commits_only_after_the_whole_schema_is_valid() {
+        let dir = temp_vm_dir("vm_bulk_atomic");
+        let vm = build_vm(&dir);
+        for name in ["invalid/name", "valid"] {
+            let mut schema = NamespaceSchema {
+                roots: HashMap::from([(
+                    "plant".into(),
+                    NamespaceNode {
+                        node: Some(Node::Folder(NamespaceFolder {
+                            children: HashMap::from([(
+                                name.into(),
+                                NamespaceNode {
+                                    node: Some(Node::Variable(NamespaceVariable {
+                                        var_d_type: VarDataType::Integer as i32,
+                                        ..Default::default()
+                                    })),
+                                },
+                            )]),
+                        })),
+                    },
+                )]),
+            };
+            schema.roots.insert(
+                "staged".into(),
+                NamespaceNode {
+                    node: Some(Node::Variable(NamespaceVariable {
+                        var_d_type: VarDataType::Integer as i32,
+                        ..Default::default()
+                    })),
+                },
+            );
+            let response = vm
+                .exec_cmd(
+                    Command {
+                        command_type: Some(CommandType::AddBulk(AddBulkCommand {
+                            cmd_id: "bulk".into(),
+                            parent_id: "/".into(),
+                            schema: Some(schema),
+                        })),
+                    },
+                    &mut HashSet::new(),
+                    &mut false,
+                    &Role::Admin,
+                )
+                .await;
+            if name == "invalid/name" {
+                assert_eq!(response.status, OperationStatus::Err as i32);
+                assert!(vm.items_tree.is_empty());
+                assert!(vm.values_cache.read().await.is_empty());
+            } else {
+                assert_eq!(response.status, OperationStatus::Ok as i32);
+                assert!(vm.values_cache.read().await.contains_key("/plant/valid"));
+                assert_eq!(vm.list_path("/plant").await.unwrap().1.len(), 1);
+            }
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn deletion_waits_for_flush_without_blocking_reads_and_writes() {
+        let dir = temp_vm_dir("vm_flush_delete");
+        let vm = build_vm(&dir);
+        assert_eq!(
+            add_test_items(&vm, "/", vec![integer_item("value", None, None)])
+                .await
+                .status,
+            OperationStatus::Ok as i32
+        );
+        let persistence = vm.persistence_write.lock().await;
+        let flush = vm.flush_dirty_now();
+        tokio::pin!(flush);
+        assert!(futures_util::poll!(&mut flush).is_pending());
+        let delete = vm.del_items(vec!["/value".into()]);
+        tokio::pin!(delete);
+        assert!(futures_util::poll!(&mut delete).is_pending());
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            vm.set_vals(vec![VarIdValue {
+                var_id: "/value".into(),
+                value: Some(Value {
+                    typed: Some(Typed::IntegerValue(7)),
+                }),
+            }])
+            .await
+            .unwrap();
+            assert_eq!(
+                vm.get_vals(vec!["/value".into()]).await.unwrap()[0]
+                    .value
+                    .as_ref()
+                    .unwrap()
+                    .typed,
+                Some(Typed::IntegerValue(7))
+            );
+        })
+        .await
+        .expect("reads and writes should not wait for persistence");
+        drop(persistence);
+        let (_, deleted) = tokio::join!(flush, delete);
+        deleted.unwrap();
+        vm.flush_dirty_now().await;
+        assert!(!vm.values_tree.contains_key("/value").unwrap());
+        assert!(!vm.dirty_values.lock().await.contains_key("/value"));
+        assert!(!vm.values_cache.read().await.contains_key("/value"));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn failed_add_leaves_no_namespace_cache_or_events() {
+        let dir = temp_vm_dir("vm_failed_add");
+        let vm = build_vm(&dir);
+        let mut events = vm.register_listener().await;
+        for invalid_name in ["invalid/name", "valid"] {
+            let response = add_test_items(
+                &vm,
+                "/new-parent",
+                vec![
+                    integer_item("valid", None, None),
+                    integer_item(invalid_name, None, None),
+                ],
+            )
+            .await;
+            assert_eq!(response.status, OperationStatus::Err as i32);
+            assert!(vm.items_tree.is_empty());
+            assert!(vm.values_cache.read().await.is_empty());
+            assert!(vm.dirty_values.lock().await.is_empty());
+            assert!(events.try_recv().is_err());
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn failed_set_preserves_all_values_and_emits_no_events() {
+        let dir = temp_vm_dir("vm_failed_set");
+        let vm = build_vm(&dir);
+        assert_eq!(
+            add_test_items(
+                &vm,
+                "/",
+                vec![
+                    integer_item("first", None, None),
+                    integer_item("bounded", Some(0.0), Some(10.0)),
+                ]
+            )
+            .await
+            .status,
+            OperationStatus::Ok as i32
+        );
+        let mut events = vm.register_listener().await;
+        for invalid_id in ["/bounded", "/missing"] {
+            let response = vm
+                .exec_cmd(
+                    Command {
+                        command_type: Some(CommandType::Set(SetCommand {
+                            cmd_id: "failed-set".into(),
+                            var_ids_values: vec![
+                                VarIdValue {
+                                    var_id: "/first".into(),
+                                    value: Some(Value {
+                                        typed: Some(Typed::IntegerValue(7)),
+                                    }),
+                                },
+                                VarIdValue {
+                                    var_id: invalid_id.into(),
+                                    value: Some(Value {
+                                        typed: Some(Typed::IntegerValue(99)),
+                                    }),
+                                },
+                            ],
+                        })),
+                    },
+                    &mut HashSet::new(),
+                    &mut false,
+                    &Role::Operator,
+                )
+                .await;
+            assert_eq!(response.status, OperationStatus::Err as i32);
+            assert!(
+                vm.values_cache
+                    .read()
+                    .await
+                    .values()
+                    .all(|value| value.val.is_none())
+            );
+            assert!(vm.dirty_values.lock().await.is_empty());
+            assert!(events.try_recv().is_err());
+        }
+        vm.flush_dirty_now().await;
+        assert!(vm.values_tree.is_empty());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn delete_and_recreate_does_not_restore_old_values() {
+        let dir = temp_vm_dir("vm_delete_recreate");
+        let vm = build_vm(&dir);
+        for parent in ["/plant", "/plant-other"] {
+            assert_eq!(
+                add_test_items(&vm, parent, vec![integer_item("value", None, None)])
+                    .await
+                    .status,
+                OperationStatus::Ok as i32
+            );
+        }
+        vm.set_vals(vec![
+            VarIdValue {
+                var_id: "/plant/value".into(),
+                value: Some(Value {
+                    typed: Some(Typed::IntegerValue(7)),
+                }),
+            },
+            VarIdValue {
+                var_id: "/plant-other/value".into(),
+                value: Some(Value {
+                    typed: Some(Typed::IntegerValue(5)),
+                }),
+            },
+        ])
+        .await
+        .unwrap();
+        vm.flush_dirty_now().await;
+        vm.set_vals(vec![VarIdValue {
+            var_id: "/plant/value".into(),
+            value: Some(Value {
+                typed: Some(Typed::IntegerValue(9)),
+            }),
+        }])
+        .await
+        .unwrap();
+        vm.del_items(vec!["/plant".into()]).await.unwrap();
+        assert!(!vm.values_tree.contains_key("/plant/value").unwrap());
+        assert!(!vm.dirty_values.lock().await.contains_key("/plant/value"));
+        assert_eq!(
+            add_test_items(&vm, "/plant", vec![integer_item("value", None, None)])
+                .await
+                .status,
+            OperationStatus::Ok as i32
+        );
+        vm.flush_dirty_now().await;
+        drop(vm);
+        let vm = build_vm(&dir);
+        let cache = vm.values_cache.read().await;
+        assert!(cache["/plant/value"].val.is_none());
+        assert_eq!(
+            cache["/plant-other/value"].val,
+            Some(Typed::IntegerValue(5))
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn failed_flush_retains_pending_values_for_retry() {
+        let dir = temp_vm_dir("vm_flush_failure");
+        let mut vm = build_vm(&dir);
+        let failure_db = sled::open(dir.join("failure")).unwrap();
+        let dropped_tree = failure_db.open_tree("dropped").unwrap();
+        failure_db.drop_tree("dropped").unwrap();
+        let healthy_tree = std::mem::replace(&mut vm.values_tree, dropped_tree);
+        vm.dirty_values
+            .lock()
+            .await
+            .insert("/value".into(), Some(Typed::IntegerValue(7)));
+        vm.flush_dirty_now().await;
+        assert_eq!(
+            vm.dirty_values.lock().await["/value"],
+            Some(Typed::IntegerValue(7))
+        );
+        vm.values_tree = healthy_tree;
+        vm.flush_dirty_now().await;
+        assert!(vm.dirty_values.lock().await.is_empty());
+        let stored = vm.values_tree.get("/value").unwrap().unwrap();
+        assert_eq!(
+            Value::decode(stored.as_ref()).unwrap().typed,
+            Some(Typed::IntegerValue(7))
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn flush_retry_preserves_newer_writes_and_clears() {
+        let dir = temp_vm_dir("vm_flush_merge");
+        let vm = build_vm(&dir);
+        vm.dirty_values.lock().await.extend([
+            ("/updated".into(), Some(Typed::IntegerValue(9))),
+            ("/cleared".into(), None),
+        ]);
+        vm.restore_dirty_values(HashMap::from([
+            ("/updated".into(), Some(Typed::IntegerValue(7))),
+            ("/cleared".into(), Some(Typed::IntegerValue(7))),
+            ("/retry".into(), Some(Typed::IntegerValue(7))),
+        ]))
+        .await;
+        vm.flush_dirty_now().await;
+        assert!(!vm.values_tree.contains_key("/cleared").unwrap());
+        for (id, expected) in [("/updated", 9), ("/retry", 7)] {
+            let stored = vm.values_tree.get(id).unwrap().unwrap();
+            assert_eq!(
+                Value::decode(stored.as_ref()).unwrap().typed,
+                Some(Typed::IntegerValue(expected))
+            );
         }
     }
 
