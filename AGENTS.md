@@ -31,7 +31,7 @@ and **Axum** for HTTP and WebSocket. The Cargo package is named `scada`.
 | `src/http/mod.rs`, `src/http/state.rs` | Storage and service initialization, shared state, route mounting, TLS, and graceful shutdown. |
 | `src/http/resources/` | HTTP resources for authentication, views, WebSocket, documentation, and static files; also user and personal access token models and services. |
 | `src/rtdata/variable.rs` | `VariableManager`: namespace tree, metadata, values, commands, cache, persistence, and event distribution. |
-| `src/rtdata/store.rs` | `VariableStore` trait for namespace items and values, `WriteBatch`, and the sled implementation (`SledStore`, one instance per directory). |
+| `src/rtdata/store.rs` | `VariableStore` trait for namespace items and values, `WriteBatch`, the fjall implementation (`FjallStore`, one instance per directory), and `open_database`, shared with sessions. |
 | `src/rtdata/{parser,utils,events,metrics}.rs` | Name parsing, namespace utilities, event construction, and metrics. |
 | `src/ingestion/` | Compile-time ingestor traits, registry, and the optional waveform simulator. |
 | `src/http/resources/plugin_instances.rs` | Generic `PluginManager<K: PluginKind>`: SQLite instances, partial updates, validation, worker lifecycle, and runtime status shared by every plugin kind. |
@@ -55,9 +55,9 @@ and **Axum** for HTTP and WebSocket. The Cargo package is named `scada`.
 - Messages use types from `lirays-scada-proto` and Protobuf encoding through
   `prost`. SDKs, proto definitions, and full documentation are maintained in
   separate repositories.
-- **sled** stores the namespace and values in `data_dir/rt_data`, accessed only
-  through `VariableStore` (`src/rtdata/store.rs`); keep sled types out of
-  `VariableManager`. Values are cached in memory, and pending changes are
+- **fjall** stores the namespace and values in `data_dir/rt_data`, accessed only
+  through `VariableStore` (`src/rtdata/store.rs`); keep fjall types out of
+  `VariableManager`. Namespace changes are fsynced on commit. Values are cached in memory, and pending changes are
   persisted periodically. Graceful shutdown also requests a flush.
 - **SeaORM** stores users, personal access tokens, views, ingestors, and egressors
   in SQLite (`data_dir/static.db`, default), PostgreSQL, or MySQL/MariaDB,

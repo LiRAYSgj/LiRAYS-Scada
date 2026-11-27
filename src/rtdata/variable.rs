@@ -21,11 +21,11 @@ use super::events::{extract_add_event, extract_del_event, extract_edit_event};
 use super::metrics::Metrics;
 use super::parser::{clone_name, parse_repeated_name};
 use super::pattern::PathPattern;
-use super::store::{SledStore, VariableStore, WriteBatch};
+use super::store::{FjallStore, VariableStore, WriteBatch};
 use super::utils::{CachedValue, get_ancestors, normalize_path};
 use crate::http::resources::user::model::Role;
 
-pub struct VariableManager<S: VariableStore = SledStore> {
+pub struct VariableManager<S: VariableStore = FjallStore> {
     store: S,
     pub values_cache: RwLock<HashMap<String, CachedValue>>,
     event_senders: DashMap<u64, mpsc::Sender<Arc<EventBatch>>>,
@@ -36,9 +36,9 @@ pub struct VariableManager<S: VariableStore = SledStore> {
     persistence_write: Mutex<()>,
 }
 
-impl VariableManager<SledStore> {
+impl VariableManager<FjallStore> {
     pub fn new(files_dir: &str, metrics: Arc<Metrics>) -> Result<Self, String> {
-        Self::with_store(SledStore::open(files_dir)?, metrics)
+        Self::with_store(FjallStore::open(files_dir)?, metrics)
     }
 }
 
@@ -1362,7 +1362,7 @@ mod tests {
                 })
                 .await;
             assert!(result.is_err());
-            assert!(vm.store.items.is_empty());
+            assert!(vm.store.items.is_empty().unwrap());
             assert!(vm.values_cache.read().await.is_empty());
         }
         assert_eq!(
@@ -1463,7 +1463,7 @@ mod tests {
                 .await;
             if name == "invalid/name" {
                 assert_eq!(response.status, OperationStatus::Err as i32);
-                assert!(vm.store.items.is_empty());
+                assert!(vm.store.items.is_empty().unwrap());
                 assert!(vm.values_cache.read().await.is_empty());
             } else {
                 assert_eq!(response.status, OperationStatus::Ok as i32);
@@ -1535,7 +1535,7 @@ mod tests {
             )
             .await;
             assert_eq!(response.status, OperationStatus::Err as i32);
-            assert!(vm.store.items.is_empty());
+            assert!(vm.store.items.is_empty().unwrap());
             assert!(vm.values_cache.read().await.is_empty());
             assert!(vm.dirty_values.lock().await.is_empty());
             assert!(events.try_recv().is_err());
@@ -1599,7 +1599,7 @@ mod tests {
             assert!(events.try_recv().is_err());
         }
         vm.flush_dirty_now().await;
-        assert!(vm.store.values.is_empty());
+        assert!(vm.store.values.is_empty().unwrap());
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
@@ -1659,14 +1659,70 @@ mod tests {
         );
     }
 
+    /// Delegates to a real store but fails value writes while `fail_writes` is set.
+    struct FailingValueWrites {
+        inner: FjallStore,
+        fail_writes: std::sync::atomic::AtomicBool,
+    }
+
+    impl VariableStore for FailingValueWrites {
+        type Bytes = fjall::Slice;
+
+        fn items(&self) -> impl Iterator<Item = Result<(Self::Bytes, Self::Bytes), String>> + '_ {
+            self.inner.items()
+        }
+
+        fn scan_items(
+            &self,
+            prefix: &[u8],
+        ) -> impl Iterator<Item = Result<(Self::Bytes, Self::Bytes), String>> + '_ {
+            self.inner.scan_items(prefix)
+        }
+
+        fn get_item(&self, key: &[u8]) -> Result<Option<Self::Bytes>, String> {
+            self.inner.get_item(key)
+        }
+
+        fn contains_item(&self, key: &[u8]) -> Result<bool, String> {
+            self.inner.contains_item(key)
+        }
+
+        fn apply_items(&self, batch: WriteBatch) -> Result<(), String> {
+            self.inner.apply_items(batch)
+        }
+
+        fn scan_value_keys(
+            &self,
+            prefix: &[u8],
+        ) -> impl Iterator<Item = Result<Self::Bytes, String>> + '_ {
+            self.inner.scan_value_keys(prefix)
+        }
+
+        fn get_value(&self, key: &[u8]) -> Result<Option<Self::Bytes>, String> {
+            self.inner.get_value(key)
+        }
+
+        async fn write_values(&self, batch: WriteBatch) -> Result<(), String> {
+            if self.fail_writes.load(Ordering::Relaxed) {
+                return Err("injected write failure".into());
+            }
+            self.inner.write_values(batch).await
+        }
+
+        fn apply_atomic(&self, items: WriteBatch, values: WriteBatch) -> Result<(), String> {
+            self.inner.apply_atomic(items, values)
+        }
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn failed_flush_retains_pending_values_for_retry() {
         let dir = temp_vm_dir("vm_flush_failure");
-        let mut vm = build_vm(&dir);
-        let failure_db = sled::open(dir.join("failure")).unwrap();
-        let dropped_tree = failure_db.open_tree("dropped").unwrap();
-        failure_db.drop_tree("dropped").unwrap();
-        let healthy_tree = std::mem::replace(&mut vm.store.values, dropped_tree);
+        let store = FailingValueWrites {
+            inner: FjallStore::open(dir.to_str().unwrap()).unwrap(),
+            fail_writes: true.into(),
+        };
+        let metrics = Arc::new(Metrics::new(dir.join("metrics"), false, false));
+        let vm = VariableManager::with_store(store, metrics).unwrap();
         vm.dirty_values
             .lock()
             .await
@@ -1676,10 +1732,10 @@ mod tests {
             vm.dirty_values.lock().await["/value"],
             Some(Typed::IntegerValue(7))
         );
-        vm.store.values = healthy_tree;
+        vm.store.fail_writes.store(false, Ordering::Relaxed);
         vm.flush_dirty_now().await;
         assert!(vm.dirty_values.lock().await.is_empty());
-        let stored = vm.store.values.get("/value").unwrap().unwrap();
+        let stored = vm.store.inner.values.get("/value").unwrap().unwrap();
         assert_eq!(
             Value::decode(stored.as_ref()).unwrap().typed,
             Some(Typed::IntegerValue(7))

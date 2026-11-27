@@ -5,20 +5,21 @@ use std::{sync::Arc, time::Duration};
 
 use log::{info, warn};
 use session::{Session, decode_token_claims, is_expired_error};
-use sled::Tree;
 use token::TokenClaims;
 use tokio::{task, time};
 use uuid::Uuid;
 
 use crate::http::resources::user::model::Role;
+use crate::rtdata::store::open_database;
 
 const SESSION_KEY_PREFIX: &str = "user_session";
 const SESSION_ACCESS_KEY_PREFIX: &str = "user_session_access";
 const PURGE_INTERVAL_SECS: u64 = 60 * 60 * 12;
 
-/// Persists login sessions in a sled tree and manages refresh/revocation lifecycle.
+/// Persists login sessions in a fjall keyspace and manages refresh/revocation lifecycle.
 pub struct SessionManager {
-    pub sessions_tree: Tree,
+    db: fjall::Database,
+    sessions: fjall::Keyspace,
     access_secret: String,
     refresh_secret: String,
     access_ttl_secs: u64,
@@ -36,14 +37,14 @@ impl SessionManager {
         access_ttl_secs: u64,
         refresh_ttl_secs: u64,
     ) -> Result<Self, String> {
-        let db = sled::open(files_dir)
-            .map_err(|e| format!("Failed to open session DB store at '{files_dir}': {e}"))?;
-        let sessions_tree = db
-            .open_tree("sessionTree")
-            .map_err(|e| format!("Failed to open session tree: {e}"))?;
+        let db = open_database(files_dir)?;
+        let sessions = db
+            .keyspace("sessions", fjall::KeyspaceCreateOptions::default)
+            .map_err(|e| format!("Failed to open sessions keyspace: {e}"))?;
 
         Ok(Self {
-            sessions_tree,
+            db,
+            sessions,
             access_secret: access_secret.to_string(),
             refresh_secret: refresh_secret.to_string(),
             access_ttl_secs,
@@ -58,15 +59,13 @@ impl SessionManager {
         let session_data_key = format!("{SESSION_KEY_PREFIX}:{session_id}");
         let session_uname_key = format!("{SESSION_ACCESS_KEY_PREFIX}:{user_name}:{session_id}");
 
-        self.sessions_tree
-            .insert(
-                session_data_key,
-                serde_json::to_vec(&session)
-                    .map_err(|e| format!("Error serializing session: {e}"))?,
-            )
-            .map_err(|e| format!("Error inserting session: {e}"))?;
-        self.sessions_tree
-            .insert(session_uname_key, "")
+        let data =
+            serde_json::to_vec(&session).map_err(|e| format!("Error serializing session: {e}"))?;
+        let mut batch = self.db.batch();
+        batch.insert(&self.sessions, session_data_key, data);
+        batch.insert(&self.sessions, session_uname_key, "");
+        batch
+            .commit()
             .map_err(|e| format!("Error inserting session: {e}"))?;
 
         Ok(session_id)
@@ -75,7 +74,7 @@ impl SessionManager {
     /// Load a session by id. Returns `None` for missing/corrupt entries.
     pub fn load_session(&self, session_id: &str) -> Option<Session> {
         let session_data_key = format!("{SESSION_KEY_PREFIX}:{session_id}");
-        match self.sessions_tree.get(session_data_key) {
+        match self.sessions.get(session_data_key) {
             Ok(Some(data)) => serde_json::from_slice::<Session>(&data).ok(),
             _ => None,
         }
@@ -85,10 +84,10 @@ impl SessionManager {
     pub fn get_user_sessions(&self, user_name: &str) -> Vec<String> {
         let prefix = format!("{SESSION_ACCESS_KEY_PREFIX}:{user_name}:");
 
-        self.sessions_tree
-            .scan_prefix(prefix.as_bytes())
-            .filter_map(|res| {
-                res.ok().and_then(|(key, _)| {
+        self.sessions
+            .prefix(prefix.as_bytes())
+            .filter_map(|guard| {
+                guard.key().ok().and_then(|key| {
                     std::str::from_utf8(&key)
                         .ok()
                         .and_then(|k| k.rsplit(':').next())
@@ -102,13 +101,11 @@ impl SessionManager {
         let session_data_key = format!("{SESSION_KEY_PREFIX}:{session_id}");
         let session_uname_key = format!("{SESSION_ACCESS_KEY_PREFIX}:{username}:{session_id}");
 
-        match self.sessions_tree.remove(session_data_key) {
-            Err(e) => warn!("Error removing session: {}", e),
-            _ => (),
-        }
-        match self.sessions_tree.remove(session_uname_key) {
-            Err(e) => warn!("Error removing session: {}", e),
-            _ => (),
+        let mut batch = self.db.batch();
+        batch.remove(&self.sessions, session_data_key);
+        batch.remove(&self.sessions, session_uname_key);
+        if let Err(e) = batch.commit() {
+            warn!("Error removing session: {}", e);
         }
     }
 
@@ -183,11 +180,8 @@ impl SessionManager {
     /// Scan stored sessions and revoke entries with expired refresh tokens.
     pub fn purge_expired_sessions(&self) {
         // Iterate over all session data keys.
-        for entry in self
-            .sessions_tree
-            .scan_prefix(SESSION_KEY_PREFIX.as_bytes())
-        {
-            let Ok((key, value)) = entry else {
+        for entry in self.sessions.prefix(SESSION_KEY_PREFIX.as_bytes()) {
+            let Ok((key, value)) = entry.into_inner() else {
                 continue;
             };
 
@@ -218,7 +212,7 @@ impl SessionManager {
 
     /// Spawn a background loop that purges expired sessions every 12 hours.
     /// The purge itself runs in `spawn_blocking` to avoid blocking async executors
-    /// while sled performs disk I/O.
+    /// while the store performs disk I/O.
     pub fn start_purge_loop(self: Arc<Self>) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
             let mut interval = time::interval(Duration::from_secs(PURGE_INTERVAL_SECS));
@@ -243,7 +237,7 @@ mod tests {
 
     use super::*;
 
-    fn temp_sled_dir(prefix: &str) -> PathBuf {
+    fn temp_store_dir(prefix: &str) -> PathBuf {
         let mut dir = std::env::temp_dir();
         dir.push(format!("{}_{}", prefix, uuid::Uuid::new_v4()));
         fs::create_dir_all(&dir).expect("create temp dir");
@@ -252,7 +246,7 @@ mod tests {
 
     #[test]
     fn create_and_verify_session_roundtrip() {
-        let dir = temp_sled_dir("session_test_roundtrip");
+        let dir = temp_store_dir("session_test_roundtrip");
         let manager =
             SessionManager::new(dir.to_str().expect("utf8 path"), "acc", "ref", 60, 60).unwrap();
 
@@ -269,7 +263,7 @@ mod tests {
 
     #[test]
     fn refresh_session_rotates_and_revokes_old_session() {
-        let dir = temp_sled_dir("session_test_refresh");
+        let dir = temp_store_dir("session_test_refresh");
         let manager =
             SessionManager::new(dir.to_str().expect("utf8 path"), "acc", "ref", 60, 60).unwrap();
 
@@ -287,7 +281,7 @@ mod tests {
 
     #[test]
     fn revoke_full_removes_all_user_sessions() {
-        let dir = temp_sled_dir("session_test_revoke_full");
+        let dir = temp_store_dir("session_test_revoke_full");
         let manager =
             SessionManager::new(dir.to_str().expect("utf8 path"), "acc", "ref", 60, 60).unwrap();
 
@@ -304,7 +298,7 @@ mod tests {
 
     #[test]
     fn purge_expired_sessions_removes_entries_with_expired_refresh_token() {
-        let dir = temp_sled_dir("session_test_purge");
+        let dir = temp_store_dir("session_test_purge");
         let access_secret = "access_secret";
         let refresh_secret = "refresh_secret";
         let manager = SessionManager::new(

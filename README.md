@@ -45,8 +45,9 @@ for PostgreSQL or `ssl-mode=VERIFY_IDENTITY&ssl-ca=/path/ca.pem` for MySQL/Maria
 
 The database must exist before startup and the user needs permission to create
 tables; LiRAYS creates its tables when they are missing. Real-time values,
-the namespace (sled), and sessions always stay in `data_dir`. Existing SQLite data
-is not migrated automatically when switching to an external server.
+the namespace, and sessions always stay in `data_dir`, stored with the embedded
+fjall engine. Existing SQLite data is not migrated automatically when switching
+to an external server.
 
 ## Ingestion plugins
 
@@ -194,7 +195,7 @@ includes a compile-time `udp` plugin as an example. Use `POST /api/egressors` wi
 `variables` lists canonical paths or patterns. `*` matches any characters within
 one path segment (`/plant/*/temp`, `/line*/temp`) and a whole `**` segment matches
 any depth (`/plant/**`, or `/**` for the entire namespace). Patterns resolve to
-existing variables by scanning only the sled subtree below their literal prefix,
+existing variables by scanning only the stored subtree below their literal prefix,
 and they are resolved again when folders under that prefix change, so new
 variables are picked up automatically.
 

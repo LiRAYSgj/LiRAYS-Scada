@@ -49,7 +49,7 @@ metrics:
   historic: false
 
 persistence:
-  # Interval in milliseconds to flush dirty values to sled. Minimum value is 5000 (5 seconds).
+  # Interval in milliseconds to flush dirty values to disk. Minimum value is 5000 (5 seconds).
   # Any value less that 5000 will be trimmed to 5 seconds.
   # Env: PERSIST_FLUSH_MS
   flush_ms: 15000

@@ -14,7 +14,8 @@ pub async fn run() {
         .filter_level(config.log_level)
         .filter_module("sqlx::query", log::LevelFilter::Warn)
         .filter_module("sqlx", log::LevelFilter::Warn)
-        .filter_module("sled", log::LevelFilter::Warn)
+        .filter_module("fjall", log::LevelFilter::Warn)
+        .filter_module("lsm_tree", log::LevelFilter::Warn)
         .target(env_logger::Target::Stdout)
         .init();
     if let Err(e) = fs::create_dir_all(&rt_db_dir) {
