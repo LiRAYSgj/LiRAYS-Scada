@@ -10,20 +10,26 @@ use tokio_util::sync::CancellationToken;
 use super::plugin_instances::{InstanceState, InstanceStatus, PluginKind};
 use crate::{
     http::{AppState, resources::auth::middleware::admin_only},
-    ingestion::{Ingestor, IngestorPlugin},
+    inbound::{InboundConnection, InboundPlugin},
+    plugin_form::PluginDescriptor,
     rtdata::variable::VariableManager,
 };
 
-pub struct Ingestors;
+pub struct InboundConnections;
 
-impl PluginKind for Ingestors {
-    type Plugin = dyn IngestorPlugin;
-    type Prepared = Box<dyn Ingestor>;
+impl PluginKind for InboundConnections {
+    type Plugin = dyn InboundPlugin;
+    type Prepared = Box<dyn InboundConnection>;
 
-    const TABLE: &'static str = "ingestors";
+    const TABLE: &'static str = "inbound";
+    const LABEL: &'static str = "Inbound";
 
     fn plugin_type(plugin: &Self::Plugin) -> &'static str {
         plugin.kind()
+    }
+
+    fn descriptor(plugin: &Self::Plugin) -> PluginDescriptor {
+        plugin.descriptor()
     }
 
     fn prepare(
@@ -48,11 +54,16 @@ impl PluginKind for Ingestors {
                 next = source.next_batch() => next,
             };
             let result = match next {
-                Ok(batch) => variables.ingest(batch).await,
+                Ok(batch) => {
+                    let source = &mut source;
+                    variables
+                        .apply_inbound_with_params(batch, move |path| source.variable_params(path))
+                        .await
+                }
                 Err(error) => Err(error),
             };
             if let Err(error) = result {
-                log::warn!("Ingestor stopped: {error}");
+                log::warn!("Inbound connection stopped: {error}");
                 status.send_replace(InstanceStatus {
                     state: InstanceState::Error,
                     last_error: Some(error),
@@ -70,10 +81,10 @@ impl PluginKind for Ingestors {
 pub fn mount(router: Router<Arc<AppState>>, state: Arc<AppState>) -> Router<Arc<AppState>> {
     router.merge(
         Router::new()
-            .route("/api/ingestors", get(service::list).post(service::create))
-            .route("/api/ingestors/plugins", get(service::plugins))
+            .route("/api/inbound", get(service::list).post(service::create))
+            .route("/api/inbound/plugins", get(service::plugins))
             .route(
-                "/api/ingestors/{id}",
+                "/api/inbound/{id}",
                 get(service::get)
                     .put(service::update)
                     .delete(service::delete),

@@ -17,7 +17,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::http::resources::plugin_instances::{InstanceState, InstanceStatus};
 use crate::{
-    egress::{EgressBatch, EgressPlugin, Egressor},
+    outbound::{OutboundBatch, OutboundConnection, OutboundPlugin},
     rtdata::{pattern::PathPattern, variable::VariableManager},
 };
 
@@ -27,33 +27,34 @@ const STOP_GRACE: Duration = Duration::from_secs(1);
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct EgressConfig {
+struct OutboundConfig {
     variables: Vec<String>,
-    mode: EgressMode,
+    mode: OutboundMode,
     target: Value,
 }
 
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
-enum EgressMode {
+enum OutboundMode {
     Subscription,
     Polling { interval_ms: u64 },
 }
 
 /// A validated instance, ready to run.
 pub struct Instance {
-    egressor: Box<dyn Egressor>,
+    connection: Box<dyn OutboundConnection>,
     patterns: Vec<PathPattern>,
     poll_period: Option<Duration>,
 }
 
 /// Validates the engine configuration and lets the plugin validate `target`.
 pub(super) fn prepare(
-    plugin: &dyn EgressPlugin,
+    plugin: &dyn OutboundPlugin,
     instance_id: &str,
     config: &Value,
 ) -> Result<Instance, String> {
-    let config: EgressConfig = serde_json::from_value(config.clone()).map_err(|e| e.to_string())?;
+    let config: OutboundConfig =
+        serde_json::from_value(config.clone()).map_err(|e| e.to_string())?;
     if config.variables.is_empty() {
         return Err("variables must contain at least one path or pattern".into());
     }
@@ -63,8 +64,8 @@ pub(super) fn prepare(
         .map(|pattern| PathPattern::parse(pattern))
         .collect::<Result<Vec<_>, _>>()?;
     let poll_period = match config.mode {
-        EgressMode::Subscription => None,
-        EgressMode::Polling { interval_ms } => {
+        OutboundMode::Subscription => None,
+        OutboundMode::Polling { interval_ms } => {
             let period = Duration::from_millis(interval_ms);
             if period.is_zero() || Instant::now().checked_add(period).is_none() {
                 return Err(
@@ -75,14 +76,23 @@ pub(super) fn prepare(
         }
     };
     Ok(Instance {
-        egressor: plugin.create(instance_id, &config.target)?,
+        connection: plugin.create(instance_id, &config.target)?,
         patterns,
         poll_period,
     })
 }
 
-type Publish =
-    Pin<Box<dyn Future<Output = (Box<dyn Egressor>, EgressBatch, Result<(), String>)> + Send>>;
+type Publish = Pin<
+    Box<
+        dyn Future<
+                Output = (
+                    Box<dyn OutboundConnection>,
+                    OutboundBatch,
+                    Result<(), String>,
+                ),
+            > + Send,
+    >,
+>;
 
 /// Tracks which variables an instance selects and the latest unsent value of each.
 struct Selection {
@@ -126,18 +136,18 @@ impl Selection {
         }
     }
 
-    fn take_batch(&mut self) -> EgressBatch {
+    fn take_batch(&mut self) -> OutboundBatch {
         let timestamp_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_or(0, |elapsed| elapsed.as_millis() as u64);
-        EgressBatch {
+        OutboundBatch {
             timestamp_ms,
             values: self.pending.drain().map(|(_, value)| value).collect(),
         }
     }
 
     /// Requeues a failed batch without overwriting newer values.
-    fn restore(&mut self, batch: EgressBatch) {
+    fn restore(&mut self, batch: OutboundBatch) {
         for value in batch.values {
             if self.paths.contains(&value.var_id) {
                 self.pending.entry(value.var_id.clone()).or_insert(value);
@@ -157,10 +167,10 @@ fn drain(
     batches
 }
 
-fn start_publish(mut egressor: Box<dyn Egressor>, batch: EgressBatch) -> Publish {
+fn start_publish(mut connection: Box<dyn OutboundConnection>, batch: OutboundBatch) -> Publish {
     Box::pin(async move {
-        let result = egressor.publish(&batch).await;
-        (egressor, batch, result)
+        let result = connection.publish(&batch).await;
+        (connection, batch, result)
     })
 }
 
@@ -189,7 +199,7 @@ pub(super) async fn run(
     if poll.is_none() {
         selection.read_current(&variables).await;
     }
-    let mut idle = Some(instance.egressor);
+    let mut idle = Some(instance.connection);
     let mut in_flight: Option<Publish> = None;
     let mut retry_at: Option<Instant> = None;
     let mut retry_delay = FIRST_RETRY_DELAY;
@@ -197,21 +207,21 @@ pub(super) async fn run(
     loop {
         if retry_at.is_none()
             && !selection.pending.is_empty()
-            && let Some(egressor) = idle.take()
+            && let Some(connection) = idle.take()
         {
-            in_flight = Some(start_publish(egressor, selection.take_batch()));
+            in_flight = Some(start_publish(connection, selection.take_batch()));
         }
         tokio::select! {
             biased;
             _ = cancel.cancelled() => break,
-            (egressor, batch, result) = async {
+            (connection, batch, result) = async {
                 match in_flight.as_mut() {
                     Some(publish) => publish.await,
                     None => std::future::pending().await,
                 }
             } => {
                 in_flight = None;
-                idle = Some(egressor);
+                idle = Some(connection);
                 match result {
                     Ok(()) => {
                         retry_delay = FIRST_RETRY_DELAY;
@@ -222,7 +232,7 @@ pub(super) async fn run(
                         });
                     }
                     Err(error) => {
-                        log::warn!("Egressor publish failed: {error}");
+                        log::warn!("Outbound publish failed: {error}");
                         status.send_replace(InstanceStatus {
                             state: InstanceState::Error,
                             last_error: Some(error),
@@ -263,19 +273,19 @@ pub(super) async fn run(
         }
     }
 
-    // Values ingested right before a shutdown may still be queued: give them one last attempt.
+    // Values received right before a shutdown may still be queued: give them one last attempt.
     let finish = async {
-        let egressor = match in_flight {
+        let connection = match in_flight {
             Some(publish) => {
-                let (egressor, batch, result) = publish.await;
+                let (connection, batch, result) = publish.await;
                 if result.is_err() {
                     selection.restore(batch);
                 }
-                Some(egressor)
+                Some(connection)
             }
             None => idle,
         };
-        let Some(mut egressor) = egressor else {
+        let Some(mut connection) = connection else {
             return;
         };
         if let Ok(batch) = events.try_recv() {
@@ -283,7 +293,7 @@ pub(super) async fn run(
             selection.apply(&variables, &batches).await;
         }
         if !selection.pending.is_empty() {
-            let _ = egressor.publish(&selection.take_batch()).await;
+            let _ = connection.publish(&selection.take_batch()).await;
         }
     };
     let _ = tokio::time::timeout(STOP_GRACE, finish).await;

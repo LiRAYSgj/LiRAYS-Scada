@@ -596,10 +596,20 @@ impl<S: VariableStore> VariableManager<S> {
     // Values are stored in a cache HashMap
     // /folder/path/var1: (varDataType, Option<Typed>)
 
-    /// Apply an ingestion batch atomically in memory: infer missing variable types,
+    /// Apply an inbound batch atomically in memory: infer missing variable types,
     /// create their folders, validate existing constraints, and publish normal SCADA events.
     /// Paths must be canonical, absolute, and free of NUL characters.
-    pub async fn ingest(&self, batch: crate::ingestion::IngestionBatch) -> Result<(), String> {
+    pub async fn apply_inbound(&self, batch: crate::inbound::InboundBatch) -> Result<(), String> {
+        self.apply_inbound_with_params(batch, |_| None).await
+    }
+
+    /// Like `apply_inbound`, but numeric variables created by the batch take the `min` and `max`
+    /// entries of `params(path)` as their limits. See `InboundConnection::variable_params`.
+    pub async fn apply_inbound_with_params(
+        &self,
+        batch: crate::inbound::InboundBatch,
+        mut params: impl FnMut(&str) -> Option<crate::inbound::VariableParams> + Send,
+    ) -> Result<(), String> {
         if batch.values.is_empty() {
             return Ok(());
         }
@@ -665,10 +675,18 @@ impl<S: VariableStore> VariableManager<S> {
                     Typed::TextValue(_) => VarDataType::Text,
                     Typed::BooleanValue(_) => VarDataType::Boolean,
                 };
+                let (min, max) = match dtype {
+                    VarDataType::Float | VarDataType::Integer => {
+                        creation_limits(&path, params(&path))?
+                    }
+                    _ => (None, None),
+                };
                 let meta = ItemMeta {
                     name: name.into(),
                     i_type: ItemType::Variable as i32,
                     var_d_type: Some(dtype as i32),
+                    min,
+                    max,
                     ..Default::default()
                 };
                 storage.insert(key.as_str(), meta.encode_to_vec());
@@ -678,8 +696,8 @@ impl<S: VariableStore> VariableManager<S> {
                     CachedValue {
                         val: None,
                         dtype,
-                        min: None,
-                        max: None,
+                        min,
+                        max,
                         options: vec![],
                         max_len: None,
                     },
@@ -715,7 +733,7 @@ impl<S: VariableStore> VariableManager<S> {
         for update in updates {
             let typed = update.value.as_ref().and_then(|v| v.typed.clone());
             let Some(cached) = cache.get_mut(&update.var_id) else {
-                warn!("Ingest: cache entry vanished for {}", update.var_id);
+                warn!("Inbound: cache entry vanished for {}", update.var_id);
                 continue;
             };
             cached.val = typed.clone();
@@ -1190,6 +1208,27 @@ impl<S: VariableStore> VariableManager<S> {
     }
 }
 
+/// The `min` and `max` limits an inbound connection declares for a variable it creates.
+fn creation_limits(
+    path: &str,
+    params: Option<crate::inbound::VariableParams>,
+) -> Result<(Option<f64>, Option<f64>), String> {
+    let Some(params) = params else {
+        return Ok((None, None));
+    };
+    let min = params.get("min").and_then(serde_json::Value::as_f64);
+    let max = params.get("max").and_then(serde_json::Value::as_f64);
+    if min.is_some_and(|v| !v.is_finite())
+        || max.is_some_and(|v| !v.is_finite())
+        || min.zip(max).is_some_and(|(min, max)| min > max)
+    {
+        return Err(format!(
+            "Invalid limits for {path}: min and max must be finite and min <= max"
+        ));
+    }
+    Ok((min, max))
+}
+
 #[cfg(test)]
 mod tests {
     use std::{fs, path::PathBuf};
@@ -1242,11 +1281,11 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-    async fn ingestion_creates_canonical_hierarchy_and_publishes_persisted_values() {
-        let dir = temp_vm_dir("vm_ingestion");
+    async fn inbound_creates_canonical_hierarchy_and_publishes_persisted_values() {
+        let dir = temp_vm_dir("vm_inbound");
         let vm = build_vm(&dir);
         let mut events = vm.register_listener().await;
-        vm.ingest(crate::ingestion::IngestionBatch {
+        vm.apply_inbound(crate::inbound::InboundBatch {
             values: vec![
                 VarIdValue {
                     var_id: "/plant/line/temperature".into(),
@@ -1307,7 +1346,7 @@ mod tests {
                 typed: Some(Typed::FloatValue(1.0)),
             }),
         };
-        vm.ingest(crate::ingestion::IngestionBatch {
+        vm.apply_inbound(crate::inbound::InboundBatch {
             values: vec![
                 float("/top"),
                 float("/plant/line1/temp"),
@@ -1352,12 +1391,85 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-    async fn ingestion_rejects_conflicts_and_invalid_batches_without_partial_creation() {
-        let dir = temp_vm_dir("vm_ingestion_invalid");
+    async fn inbound_applies_min_and_max_params_only_when_creating_numeric_variables() {
+        let dir = temp_vm_dir("vm_inbound_params");
+        let vm = build_vm(&dir);
+        let value = |path: &str, typed: Typed| VarIdValue {
+            var_id: path.into(),
+            value: Some(Value { typed: Some(typed) }),
+        };
+        let params = |path: &str| {
+            let params = match path {
+                "/limited" | "/text" => serde_json::json!({"min": 0, "max": 10}),
+                "/other_names" => serde_json::json!({"minimum": 0, "maximum": 10}),
+                "/only_max" => serde_json::json!({"max": 5.5, "unit": "C"}),
+                _ => return None,
+            };
+            params.as_object().cloned()
+        };
+        vm.apply_inbound_with_params(
+            crate::inbound::InboundBatch {
+                values: vec![
+                    value("/limited", Typed::FloatValue(5.0)),
+                    value("/other_names", Typed::IntegerValue(50)),
+                    value("/only_max", Typed::FloatValue(1.0)),
+                    value("/text", Typed::TextValue("a".into())),
+                ],
+            },
+            params,
+        )
+        .await
+        .unwrap();
+        {
+            let cache = vm.values_cache.read().await;
+            assert_eq!(
+                (cache["/limited"].min, cache["/limited"].max),
+                (Some(0.0), Some(10.0))
+            );
+            assert_eq!(
+                (cache["/other_names"].min, cache["/other_names"].max),
+                (None, None)
+            );
+            assert_eq!(
+                (cache["/only_max"].min, cache["/only_max"].max),
+                (None, Some(5.5))
+            );
+            assert_eq!((cache["/text"].min, cache["/text"].max), (None, None));
+        }
+        let rejected = vm
+            .apply_inbound_with_params(
+                crate::inbound::InboundBatch {
+                    values: vec![value("/limited", Typed::FloatValue(11.0))],
+                },
+                params,
+            )
+            .await;
+        assert!(rejected.is_err());
+        let invalid = vm
+            .apply_inbound_with_params(
+                crate::inbound::InboundBatch {
+                    values: vec![value("/inverted", Typed::FloatValue(1.0))],
+                },
+                |_| serde_json::json!({"min": 2, "max": 1}).as_object().cloned(),
+            )
+            .await;
+        assert!(invalid.is_err());
+        drop(vm);
+        let vm = build_vm(&dir);
+        let cache = vm.values_cache.read().await;
+        assert_eq!(
+            (cache["/limited"].min, cache["/limited"].max),
+            (Some(0.0), Some(10.0))
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn inbound_rejects_conflicts_and_invalid_batches_without_partial_creation() {
+        let dir = temp_vm_dir("vm_inbound_invalid");
         let vm = build_vm(&dir);
         for path in ["/a/b", "relative", "/", "/a//b", "/bad\0name"] {
             let result = vm
-                .ingest(crate::ingestion::IngestionBatch {
+                .apply_inbound(crate::inbound::InboundBatch {
                     values: vec![
                         VarIdValue {
                             var_id: "/a".into(),
@@ -1388,7 +1500,7 @@ mod tests {
             .status,
             OperationStatus::Ok as i32
         );
-        vm.ingest(crate::ingestion::IngestionBatch {
+        vm.apply_inbound(crate::inbound::InboundBatch {
             values: vec![VarIdValue {
                 var_id: "/bounded".into(),
                 value: Some(Value {
@@ -1403,7 +1515,7 @@ mod tests {
             Some(Typed::IntegerValue(4))
         );
         let result = vm
-            .ingest(crate::ingestion::IngestionBatch {
+            .apply_inbound(crate::inbound::InboundBatch {
                 values: vec![
                     VarIdValue {
                         var_id: "/new".into(),

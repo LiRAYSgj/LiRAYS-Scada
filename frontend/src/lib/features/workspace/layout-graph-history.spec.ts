@@ -1,3 +1,4 @@
+import { CANVAS_MAX_ZOOM } from "$lib/features/graph/canvas-zoom";
 import { describe, expect, it } from "vitest";
 import type { Edge, Node, Viewport } from "@xyflow/svelte";
 import {
@@ -91,15 +92,15 @@ describe("layout-graph-history", () => {
   });
 
   it("centers bounds and clamps zoom into allowed range", () => {
-    const saved: Viewport = { x: 0, y: 0, zoom: 4.5 };
+    const saved: Viewport = { x: 0, y: 0, zoom: 6 };
     const node = makePlantNode("n1", {
       position: { x: 100, y: 50 },
       width: 100,
       height: 50,
     });
     const next = resolveInitialEditorViewport(saved, [node], 1000, 500);
-    expect(next.zoom).toBe(1.6);
-    expect(next.x).toBeCloseTo(260);
-    expect(next.y).toBeCloseTo(130);
+    expect(next.zoom).toBe(CANVAS_MAX_ZOOM);
+    expect(next.x).toBeCloseTo(-100);
+    expect(next.y).toBeCloseTo(-50);
   });
 });

@@ -1,5 +1,9 @@
 import type { Edge, Node, Viewport } from "@xyflow/svelte";
 import type { PlantAssetNodeData } from "$lib/features/graph/assets/types";
+import {
+  CANVAS_MAX_ZOOM,
+  CANVAS_MIN_ZOOM,
+} from "$lib/features/graph/canvas-zoom";
 
 export interface GraphHistorySnapshot {
   nodes: Node[];
@@ -242,7 +246,7 @@ export function resolveInitialEditorViewport(
   }
 
   const zoom = Number.isFinite(savedViewport.zoom)
-    ? Math.min(1.6, Math.max(0.4, savedViewport.zoom))
+    ? Math.min(CANVAS_MAX_ZOOM, Math.max(CANVAS_MIN_ZOOM, savedViewport.zoom))
     : 1;
   const contentCenterX = bounds.x + bounds.width / 2;
   const contentCenterY = bounds.y + bounds.height / 2;

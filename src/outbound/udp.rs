@@ -9,7 +9,8 @@ use serde::Deserialize;
 use serde_json::json;
 use tokio::net::{UdpSocket, lookup_host};
 
-use super::{EgressBatch, EgressPlugin, Egressor};
+use super::{OutboundBatch, OutboundConnection, OutboundPlugin};
+use crate::plugin_form::{FieldKind, FormField, PluginDescriptor};
 
 /// Stays below a typical Ethernet MTU so datagrams are not fragmented.
 const MAX_DATAGRAM_BYTES: usize = 1400;
@@ -23,34 +24,50 @@ struct UdpConfig {
     port: u16,
 }
 
-struct UdpEgressor {
+struct UdpConnection {
     config: UdpConfig,
     socket: Option<(UdpSocket, SocketAddr)>,
 }
 
-impl EgressPlugin for UdpPlugin {
+impl OutboundPlugin for UdpPlugin {
     fn kind(&self) -> &'static str {
         "udp"
+    }
+
+    fn descriptor(&self) -> PluginDescriptor {
+        PluginDescriptor::with_form(
+            self.kind(),
+            "UDP",
+            "Sends values as JSON datagrams.",
+            vec![
+                FormField::new("host", "Host", FieldKind::Text)
+                    .required()
+                    .placeholder("127.0.0.1"),
+                FormField::new("port", "Port", FieldKind::integer(Some(1.0), Some(65535.0)))
+                    .required()
+                    .default_value(json!(9000)),
+            ],
+        )
     }
 
     fn create(
         &self,
         _instance_id: &str,
         target: &serde_json::Value,
-    ) -> Result<Box<dyn Egressor>, String> {
+    ) -> Result<Box<dyn OutboundConnection>, String> {
         let config: UdpConfig =
             serde_json::from_value(target.clone()).map_err(|e| e.to_string())?;
         if config.host.trim().is_empty() || config.port == 0 {
             return Err("host must not be blank and port must be positive".into());
         }
-        Ok(Box::new(UdpEgressor {
+        Ok(Box::new(UdpConnection {
             config,
             socket: None,
         }))
     }
 }
 
-impl UdpEgressor {
+impl UdpConnection {
     async fn open_socket(&self) -> Result<(UdpSocket, SocketAddr), String> {
         let host = self.config.host.as_str();
         let target = lookup_host((host, self.config.port))
@@ -68,10 +85,10 @@ impl UdpEgressor {
     }
 }
 
-impl Egressor for UdpEgressor {
+impl OutboundConnection for UdpConnection {
     fn publish<'a>(
         &'a mut self,
-        batch: &'a EgressBatch,
+        batch: &'a OutboundBatch,
     ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
         Box::pin(async move {
             let (socket, target) = match self.socket.take() {
@@ -92,7 +109,7 @@ impl Egressor for UdpEgressor {
 
 /// Splits a batch into JSON datagrams: `{"ts":<ms>,"values":[{"path":..,"value":..}]}`.
 /// A value too large for the limit is sent alone in its own datagram.
-fn encode(batch: &EgressBatch) -> Vec<Vec<u8>> {
+fn encode(batch: &OutboundBatch) -> Vec<Vec<u8>> {
     let header = format!(r#"{{"ts":{},"values":["#, batch.timestamp_ms);
     let mut datagrams = Vec::new();
     let mut current = header.clone();
@@ -134,7 +151,7 @@ mod tests {
     async fn publishes_batches_as_bounded_json_datagrams() {
         let receiver = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         let port = receiver.local_addr().unwrap().port();
-        let mut egressor = UdpPlugin
+        let mut connection = UdpPlugin
             .create("test", &json!({"host": "127.0.0.1", "port": port}))
             .unwrap();
         let values: Vec<_> = (0..100)
@@ -150,8 +167,8 @@ mod tests {
                 }),
             })
             .collect();
-        egressor
-            .publish(&EgressBatch {
+        connection
+            .publish(&OutboundBatch {
                 timestamp_ms: 42,
                 values,
             })

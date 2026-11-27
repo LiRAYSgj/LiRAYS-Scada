@@ -17,9 +17,9 @@ use log::{error, info};
 use resources::{
     auth::{self, session::SessionManager},
     docs,
-    egressors::{self, Egressors},
-    ingestors::{self, Ingestors},
-    patoken,
+    inbound::{self, InboundConnections},
+    outbound::{self, OutboundConnections},
+    patoken, plugin_collections,
     plugin_instances::{self, PluginKind},
     static_files, user, views, ws,
 };
@@ -157,21 +157,21 @@ pub async fn run_http_server(
     );
     let _session_purge_handle = session_manager.clone().start_purge_loop();
 
-    let ingestor_manager = Arc::new(ingestors::service::IngestorManager::new(
+    let inbound_manager = Arc::new(inbound::service::InboundManager::new(
         db.clone(),
         var_manager.clone(),
-        crate::ingestion::builtin_plugins(),
+        crate::inbound::builtin_plugins(),
     )?);
 
-    let egressor_manager = Arc::new(egressors::service::EgressorManager::new(
+    let outbound_manager = Arc::new(outbound::service::OutboundManager::new(
         db.clone(),
         var_manager.clone(),
-        crate::egress::builtin_plugins(),
+        crate::outbound::builtin_plugins(),
     )?);
 
     let app_state = Arc::new(AppState {
-        egressors: egressor_manager.clone(),
-        ingestors: ingestor_manager.clone(),
+        outbound: outbound_manager.clone(),
+        inbound: inbound_manager.clone(),
         views: view_manager,
         users: user_manager,
         patoken_manager,
@@ -183,8 +183,9 @@ pub async fn run_http_server(
     let app = Router::new();
     let app = ws::mount(app, app_state.clone());
     let app = views::mount(app, app_state.clone());
-    let app = ingestors::mount(app, app_state.clone());
-    let app = egressors::mount(app, app_state.clone());
+    let app = inbound::mount(app, app_state.clone());
+    let app = outbound::mount(app, app_state.clone());
+    let app = plugin_collections::mount(app, app_state.clone());
     let app = auth::mount(app);
     let app = docs::mount(app);
     let app = static_files::with_fallback(app).with_state(app_state.clone());
@@ -198,19 +199,19 @@ pub async fn run_http_server(
         Err(err) => return Err(format!("Failed to bind {addr}: {err}")),
     };
 
-    ingestor_manager
+    inbound_manager
         .restore()
         .await
-        .map_err(|e| format!("Failed to restore ingestors: {e}"))?;
-    egressor_manager
+        .map_err(|e| format!("Failed to restore inbound connections: {e}"))?;
+    outbound_manager
         .restore()
         .await
-        .map_err(|e| format!("Failed to restore egressors: {e}"))?;
+        .map_err(|e| format!("Failed to restore outbound connections: {e}"))?;
     let shutdown_vm = var_manager.clone();
     async fn shutdown_signal(
         vm: Arc<VariableManager>,
-        ingestors: Arc<ingestors::service::IngestorManager>,
-        egressors: Arc<egressors::service::EgressorManager>,
+        inbound: Arc<inbound::service::InboundManager>,
+        outbound: Arc<outbound::service::OutboundManager>,
     ) {
         #[cfg(unix)]
         {
@@ -236,8 +237,8 @@ pub async fn run_http_server(
             let _ = tokio::signal::ctrl_c().await;
         }
         info!("Shutdown signal received; stopping plugins and flushing dirty cache");
-        ingestors.shutdown().await;
-        egressors.shutdown().await;
+        inbound.shutdown().await;
+        outbound.shutdown().await;
         vm.flush_dirty_now().await;
         info!("Cache flush complete; exiting");
     }
@@ -249,8 +250,8 @@ pub async fn run_http_server(
         axum::serve(incoming, app)
             .with_graceful_shutdown(shutdown_signal(
                 shutdown_vm,
-                ingestor_manager.clone(),
-                egressor_manager.clone(),
+                inbound_manager.clone(),
+                outbound_manager.clone(),
             ))
             .await
             .map_err(|e| format!("HTTPS server error: {e}"))?;
@@ -258,26 +259,26 @@ pub async fn run_http_server(
         axum::serve(listener, app)
             .with_graceful_shutdown(shutdown_signal(
                 shutdown_vm,
-                ingestor_manager.clone(),
-                egressor_manager.clone(),
+                inbound_manager.clone(),
+                outbound_manager.clone(),
             ))
             .await
             .map_err(|e| format!("HTTP server error: {e}"))?;
     }
 
-    ingestor_manager.shutdown().await;
-    egressor_manager.shutdown().await;
+    inbound_manager.shutdown().await;
+    outbound_manager.shutdown().await;
     var_manager.flush_dirty_now().await;
     Ok(())
 }
 
 async fn ensure_schema(db: &DatabaseConnection) -> Result<(), String> {
-    plugin_instances::ensure_schema(db, Egressors::TABLE)
+    plugin_instances::ensure_schema(db, OutboundConnections::TABLE)
         .await
-        .map_err(|e| format!("Failed to ensure egressors schema: {e}"))?;
-    plugin_instances::ensure_schema(db, Ingestors::TABLE)
+        .map_err(|e| format!("Failed to ensure outbound schema: {e}"))?;
+    plugin_instances::ensure_schema(db, InboundConnections::TABLE)
         .await
-        .map_err(|e| format!("Failed to ensure ingestors schema: {e}"))?;
+        .map_err(|e| format!("Failed to ensure inbound schema: {e}"))?;
     user::ensure_schema(db)
         .await
         .map_err(|e| format!("Failed to ensure users schema: {e}"))?;

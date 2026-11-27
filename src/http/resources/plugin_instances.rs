@@ -25,19 +25,25 @@ use uuid::Uuid;
 use crate::{
     db::{create_table_if_missing, large_text},
     http::ApiResponseEmpty,
+    plugin_form::{PluginDescriptor, redact_secrets},
     rtdata::variable::VariableManager,
 };
 
-/// One kind of compiled-in plugin (ingestion, egress, ...) and how its instances run.
+/// One kind of compiled-in plugin (inbound, outbound, ...) and how its instances run.
 pub trait PluginKind: Send + Sync + 'static {
     type Plugin: ?Sized + Send + Sync;
     /// A validated instance, ready to run.
     type Prepared: Send + 'static;
 
-    /// Database table holding this kind's instances.
+    /// Database table holding this kind's instances; also its collection ID and route segment.
     const TABLE: &'static str;
+    /// Human-readable collection name.
+    const LABEL: &'static str;
 
     fn plugin_type(plugin: &Self::Plugin) -> &'static str;
+
+    /// The form for an instance's complete `config`.
+    fn descriptor(plugin: &Self::Plugin) -> PluginDescriptor;
 
     /// Validates the complete configuration without starting background work.
     fn prepare(
@@ -149,6 +155,16 @@ pub struct InstanceInfo {
     #[schema(value_type = Object)]
     pub config: Value,
     pub status: InstanceStatus,
+}
+
+/// One kind of plugin instances and the plugins available to create them.
+#[derive(Serialize, ToSchema)]
+pub struct PluginCollection {
+    pub id: &'static str,
+    pub label: &'static str,
+    /// Base path of the instance CRUD routes.
+    pub base_path: String,
+    pub plugins: Vec<PluginDescriptor>,
 }
 
 #[derive(Debug)]
@@ -279,6 +295,21 @@ impl<K: PluginKind> PluginManager<K> {
         types
     }
 
+    pub fn collection(&self) -> PluginCollection {
+        let mut plugins: Vec<_> = self
+            .plugins
+            .values()
+            .map(|plugin| K::descriptor(plugin))
+            .collect();
+        plugins.sort_by(|a, b| a.plugin_type.cmp(&b.plugin_type));
+        PluginCollection {
+            id: K::TABLE,
+            label: K::LABEL,
+            base_path: format!("/api/{}", K::TABLE),
+            plugins,
+        }
+    }
+
     fn prepare(&self, id: &str, plugin_type: &str, config: &Value) -> Result<K::Prepared, String> {
         let plugin = self
             .plugins
@@ -403,7 +434,7 @@ impl<K: PluginKind> PluginManager<K> {
         }
     }
 
-    fn info(row: Row, runtime: &Runtime) -> Result<InstanceInfo, InstanceError> {
+    fn info(&self, row: Row, runtime: &Runtime) -> Result<InstanceInfo, InstanceError> {
         let status = match runtime.tasks.get(&row.id) {
             Some(task) => {
                 let mut status = task.status.borrow().clone();
@@ -426,13 +457,21 @@ impl<K: PluginKind> PluginManager<K> {
                 last_error: None,
             },
         };
+        let mut config = serde_json::from_str(&row.config_json)
+            .map_err(|e| InstanceError::Database(DbErr::Custom(e.to_string())))?;
+        if let Some(fields) = self
+            .plugins
+            .get(row.plugin_type.as_str())
+            .and_then(|plugin| K::descriptor(plugin).fields)
+        {
+            redact_secrets(&fields, &mut config);
+        }
         Ok(InstanceInfo {
             id: row.id,
             name: row.name,
             plugin_type: row.plugin_type,
             enabled: row.enabled,
-            config: serde_json::from_str(&row.config_json)
-                .map_err(|e| InstanceError::Database(DbErr::Custom(e.to_string())))?,
+            config,
             status,
         })
     }
@@ -442,14 +481,14 @@ impl<K: PluginKind> PluginManager<K> {
         self.find_all()
             .await?
             .into_iter()
-            .map(|row| Self::info(row, &runtime))
+            .map(|row| self.info(row, &runtime))
             .collect()
     }
 
     pub async fn get(&self, id: &str) -> Result<InstanceInfo, InstanceError> {
         let runtime = self.runtime.lock().await;
         let row = self.find(id).await?.ok_or(InstanceError::NotFound)?;
-        Self::info(row, &runtime)
+        self.info(row, &runtime)
     }
 
     /// Merge updates under the lifecycle lock, then validate the complete plugin configuration.
@@ -468,7 +507,7 @@ impl<K: PluginKind> PluginManager<K> {
             Some(id) => {
                 let existing = self.find(id).await?.ok_or(InstanceError::NotFound)?;
                 if document.as_object().is_some_and(|fields| fields.is_empty()) {
-                    return Self::info(existing, &runtime);
+                    return self.info(existing, &runtime);
                 }
                 let config: Value = serde_json::from_str(&existing.config_json)
                     .map_err(|e| InstanceError::Database(DbErr::Custom(e.to_string())))?;
@@ -525,7 +564,7 @@ impl<K: PluginKind> PluginManager<K> {
                 .tasks
                 .insert(row.id.clone(), self.start_task(Ok(prepared)));
         }
-        Self::info(row, &runtime)
+        self.info(row, &runtime)
     }
 
     pub async fn delete(&self, id: &str) -> Result<(), InstanceError> {

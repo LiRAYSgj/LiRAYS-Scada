@@ -7,7 +7,7 @@ use axum::{
     response::IntoResponse,
 };
 
-use super::Egressors;
+use super::OutboundConnections;
 use crate::http::{
     ApiResponse, ApiResponseEmpty, AppState,
     resources::plugin_instances::{
@@ -15,33 +15,33 @@ use crate::http::{
     },
 };
 
-pub type EgressorManager = PluginManager<Egressors>;
+pub type OutboundManager = PluginManager<OutboundConnections>;
 
-#[utoipa::path(get, operation_id = "list_egressor_plugins", path = "/api/egressors/plugins", tag = "Egressors", security(("bearerAuth" = [])),
+#[utoipa::path(get, operation_id = "list_outbound_plugins", path = "/api/outbound/plugins", tag = "Outbound", security(("bearerAuth" = [])),
     responses((status = 200, description = "Compiled-in plugin types", body = [String])))]
 pub async fn plugins(State(state): State<Arc<AppState>>) -> Json<Vec<String>> {
-    Json(state.egressors.plugin_types())
+    Json(state.outbound.plugin_types())
 }
 
-#[utoipa::path(get, operation_id = "list_egressors", path = "/api/egressors", tag = "Egressors", security(("bearerAuth" = [])),
-    responses((status = 200, description = "Egressor instances and runtime status", body = ApiResponse<Vec<InstanceInfo>>)))]
+#[utoipa::path(get, operation_id = "list_outbound", path = "/api/outbound", tag = "Outbound", security(("bearerAuth" = [])),
+    responses((status = 200, description = "Outbound connections and runtime status", body = ApiResponse<Vec<InstanceInfo>>)))]
 pub async fn list(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<ApiResponse<Vec<InstanceInfo>>>, InstanceError> {
-    Ok(Json(ApiResponse::success(state.egressors.list().await?)))
+    Ok(Json(ApiResponse::success(state.outbound.list().await?)))
 }
 
-#[utoipa::path(get, operation_id = "get_egressor", path = "/api/egressors/{id}", tag = "Egressors", security(("bearerAuth" = [])),
+#[utoipa::path(get, operation_id = "get_outbound", path = "/api/outbound/{id}", tag = "Outbound", security(("bearerAuth" = [])),
     params(("id" = String, Path, description = "Instance ID")),
-    responses((status = 200, description = "Egressor instance", body = ApiResponse<InstanceInfo>), (status = 404, description = "Not found", body = ApiResponseEmpty)))]
+    responses((status = 200, description = "Outbound connection", body = ApiResponse<InstanceInfo>), (status = 404, description = "Not found", body = ApiResponseEmpty)))]
 pub async fn get(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<InstanceInfo>>, InstanceError> {
-    Ok(Json(ApiResponse::success(state.egressors.get(&id).await?)))
+    Ok(Json(ApiResponse::success(state.outbound.get(&id).await?)))
 }
 
-#[utoipa::path(post, operation_id = "create_egressor", path = "/api/egressors", tag = "Egressors", security(("bearerAuth" = [])),
+#[utoipa::path(post, operation_id = "create_outbound", path = "/api/outbound", tag = "Outbound", security(("bearerAuth" = [])),
     request_body(content = InstanceInput, example = json!({"name":"UDP stream","plugin_type":"udp","enabled":true,"config":{"variables":["/plant/**"],"mode":{"type":"subscription"},"target":{"host":"127.0.0.1","port":9000}}})),
     responses((status = 201, description = "Instance created", body = ApiResponse<InstanceInfo>), (status = 400, description = "Invalid configuration", body = ApiResponseEmpty)))]
 pub async fn create(
@@ -51,12 +51,12 @@ pub async fn create(
     Ok((
         StatusCode::CREATED,
         Json(ApiResponse::success(
-            state.egressors.save(None, input).await?,
+            state.outbound.save(None, input).await?,
         )),
     ))
 }
 
-#[utoipa::path(put, operation_id = "update_egressor", path = "/api/egressors/{id}", tag = "Egressors", security(("bearerAuth" = [])),
+#[utoipa::path(put, operation_id = "update_outbound", path = "/api/outbound/{id}", tag = "Outbound", security(("bearerAuth" = [])),
     params(("id" = String, Path, description = "Instance ID")), request_body(content = InstanceUpdate, example = json!({"config":{"mode":{"type":"polling","interval_ms":1000}}})),
     responses((status = 200, description = "Fields merged; omitted fields remain unchanged; arrays replace existing arrays", body = ApiResponse<InstanceInfo>), (status = 400, description = "Invalid configuration", body = ApiResponseEmpty), (status = 404, description = "Not found", body = ApiResponseEmpty)))]
 pub async fn update(
@@ -65,18 +65,18 @@ pub async fn update(
     Json(input): Json<InstanceUpdate>,
 ) -> Result<Json<ApiResponse<InstanceInfo>>, InstanceError> {
     Ok(Json(ApiResponse::success(
-        state.egressors.save(Some(&id), input).await?,
+        state.outbound.save(Some(&id), input).await?,
     )))
 }
 
-#[utoipa::path(delete, operation_id = "delete_egressor", path = "/api/egressors/{id}", tag = "Egressors", security(("bearerAuth" = [])),
+#[utoipa::path(delete, operation_id = "delete_outbound", path = "/api/outbound/{id}", tag = "Outbound", security(("bearerAuth" = [])),
     params(("id" = String, Path, description = "Instance ID")),
     responses((status = 200, description = "Instance deleted", body = ApiResponseEmpty), (status = 404, description = "Not found", body = ApiResponseEmpty)))]
 pub async fn delete(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponseEmpty>, InstanceError> {
-    state.egressors.delete(&id).await?;
+    state.outbound.delete(&id).await?;
     Ok(Json(ApiResponseEmpty::success()))
 }
 
@@ -84,9 +84,9 @@ pub async fn delete(
 mod tests {
     use super::*;
     use crate::{
-        egress::{EgressBatch, EgressPlugin, Egressor},
         http::resources::plugin_instances::{InstanceState, PluginKind, ensure_schema},
-        ingestion::IngestionBatch,
+        inbound::InboundBatch,
+        outbound::{OutboundBatch, OutboundConnection, OutboundPlugin},
         rtdata::{metrics::Metrics, variable::VariableManager},
     };
     use lirays_scada_proto::namespace::v1::{Value as ProtoValue, VarIdValue, value::Typed};
@@ -112,11 +112,11 @@ mod tests {
         failures: Arc<AtomicUsize>,
     }
 
-    impl EgressPlugin for CapturePlugin {
+    impl OutboundPlugin for CapturePlugin {
         fn kind(&self) -> &'static str {
             "capture"
         }
-        fn create(&self, _: &str, target: &Value) -> Result<Box<dyn Egressor>, String> {
+        fn create(&self, _: &str, target: &Value) -> Result<Box<dyn OutboundConnection>, String> {
             if !target.is_object() {
                 return Err("target must be an object".into());
             }
@@ -127,10 +127,10 @@ mod tests {
         }
     }
 
-    impl Egressor for Capture {
+    impl OutboundConnection for Capture {
         fn publish<'a>(
             &'a mut self,
-            batch: &'a EgressBatch,
+            batch: &'a OutboundBatch,
         ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
             Box::pin(async move {
                 if self
@@ -156,16 +156,18 @@ mod tests {
     }
 
     struct Setup {
-        manager: EgressorManager,
+        manager: OutboundManager,
         variables: Arc<VariableManager>,
         published: mpsc::UnboundedReceiver<Vec<(String, i64)>>,
         failures: Arc<AtomicUsize>,
     }
 
     async fn setup() -> Setup {
-        let dir = std::env::temp_dir().join(format!("egressor-test-{}", Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("outbound-test-{}", Uuid::new_v4()));
         let db = Database::connect("sqlite::memory:").await.unwrap();
-        ensure_schema(&db, Egressors::TABLE).await.unwrap();
+        ensure_schema(&db, OutboundConnections::TABLE)
+            .await
+            .unwrap();
         let variables = Arc::new(
             VariableManager::new(
                 dir.to_str().unwrap(),
@@ -179,7 +181,7 @@ mod tests {
             published: sender,
             failures: failures.clone(),
         };
-        let manager = EgressorManager::new(db, variables.clone(), vec![Arc::new(plugin)]).unwrap();
+        let manager = OutboundManager::new(db, variables.clone(), vec![Arc::new(plugin)]).unwrap();
         Setup {
             manager,
             variables,
@@ -188,7 +190,7 @@ mod tests {
         }
     }
 
-    async fn ingest(variables: &VariableManager, values: &[(&str, i64)]) {
+    async fn apply_inbound(variables: &VariableManager, values: &[(&str, i64)]) {
         let values = values
             .iter()
             .map(|(path, n)| VarIdValue {
@@ -198,7 +200,10 @@ mod tests {
                 }),
             })
             .collect();
-        variables.ingest(IngestionBatch { values }).await.unwrap();
+        variables
+            .apply_inbound(InboundBatch { values })
+            .await
+            .unwrap();
     }
 
     async fn next(
@@ -231,20 +236,20 @@ mod tests {
             mut published,
             ..
         } = setup().await;
-        ingest(&variables, &[("/plant/a", 1), ("/other/a", 1)]).await;
+        apply_inbound(&variables, &[("/plant/a", 1), ("/other/a", 1)]).await;
         let config = json!({"variables":["/plant/*"],"mode":{"type":"subscription"},"target":{}});
         let instance = manager.save(None, input(config)).await.unwrap();
         assert_eq!(next(&mut published).await, owned(&[("/plant/a", 1)]));
 
-        ingest(&variables, &[("/other/a", 2), ("/plant/b", 5)]).await;
+        apply_inbound(&variables, &[("/other/a", 2), ("/plant/b", 5)]).await;
         assert_eq!(next(&mut published).await, owned(&[("/plant/b", 5)]));
-        ingest(&variables, &[("/plant/nested/c", 1), ("/plant/a", 3)]).await;
+        apply_inbound(&variables, &[("/plant/nested/c", 1), ("/plant/a", 3)]).await;
         assert_eq!(next(&mut published).await, owned(&[("/plant/a", 3)]));
 
         let disabled: InstanceUpdate = serde_json::from_value(json!({"enabled":false})).unwrap();
         let info = manager.save(Some(&instance.id), disabled).await.unwrap();
         assert!(matches!(info.status.state, InstanceState::Disabled));
-        ingest(&variables, &[("/plant/a", 4)]).await;
+        apply_inbound(&variables, &[("/plant/a", 4)]).await;
         assert!(
             tokio::time::timeout(Duration::from_millis(300), published.recv())
                 .await
@@ -261,13 +266,13 @@ mod tests {
             mut published,
             ..
         } = setup().await;
-        ingest(&variables, &[("/plant/a", 1), ("/plant/line/b", 2)]).await;
+        apply_inbound(&variables, &[("/plant/a", 1), ("/plant/line/b", 2)]).await;
         let config = json!({"variables":["/plant/**"],"mode":{"type":"polling","interval_ms":50},"target":{}});
         manager.save(None, input(config)).await.unwrap();
         let expected = owned(&[("/plant/a", 1), ("/plant/line/b", 2)]);
         assert_eq!(next(&mut published).await, expected);
         assert_eq!(next(&mut published).await, expected);
-        ingest(&variables, &[("/plant/a", 7)]).await;
+        apply_inbound(&variables, &[("/plant/a", 7)]).await;
         let mut latest = next(&mut published).await;
         while latest[0].1 != 7 {
             latest = next(&mut published).await;
@@ -284,7 +289,7 @@ mod tests {
             mut published,
             failures,
         } = setup().await;
-        ingest(&variables, &[("/plant/a", 1), ("/plant/b", 1)]).await;
+        apply_inbound(&variables, &[("/plant/a", 1), ("/plant/b", 1)]).await;
         failures.store(1, Ordering::SeqCst);
         let config = json!({"variables":["/plant/*"],"mode":{"type":"subscription"},"target":{}});
         let instance = manager.save(None, input(config)).await.unwrap();
@@ -296,7 +301,7 @@ mod tests {
             Some("destination unavailable")
         );
 
-        ingest(&variables, &[("/plant/a", 2)]).await;
+        apply_inbound(&variables, &[("/plant/a", 2)]).await;
         assert_eq!(
             next(&mut published).await,
             owned(&[("/plant/a", 2), ("/plant/b", 1)])

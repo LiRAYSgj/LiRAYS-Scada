@@ -25,6 +25,12 @@
   import ContextMenu from "$lib/features/tree/components/ContextMenu.svelte";
   import GraphInspector from "$lib/features/workspace/components/GraphInspector.svelte";
   import PageToolbar from "$lib/features/workspace/components/PageToolbar.svelte";
+  import PluginInstancesPanel from "$lib/features/plugin-instances/components/PluginInstancesPanel.svelte";
+  import {
+    TREE_PATH_DRAG_MIME,
+    TREE_PATH_KIND_DRAG_MIME,
+  } from "$lib/features/plugin-instances/tree-path-drag";
+  import { CANVAS_MAX_ZOOM, CANVAS_MIN_ZOOM } from "$lib/features/graph/canvas-zoom";
   import WorkspaceConfirmDialogs from "$lib/features/workspace/components/WorkspaceConfirmDialogs.svelte";
   import {
     cloneForHistory,
@@ -188,10 +194,13 @@
   } | null = null;
   const workspaceMode: WorkspaceMode = "designer";
   const routeViewId = $derived($page.params.id ?? null);
-  const rightPaneMode = $derived(
-    routeViewId ? "view-editor" : "views-list",
+  const isIntegrationsRoute = $derived(
+    $page.url.pathname === "/integrations" || $page.url.pathname.startsWith("/integrations/"),
   );
-  let previousRightPaneMode = $state<"views-list" | "view-editor" | null>(null);
+  const rightPaneMode = $derived(
+    isIntegrationsRoute ? "integrations" : routeViewId ? "view-editor" : "views-list",
+  );
+  let previousRightPaneMode = $state<"views-list" | "view-editor" | "integrations" | null>(null);
   let canvasMode = $state<CanvasMode>("edit");
   let views = $state<ScadaView[]>([]);
   let viewsTotal = $state(0);
@@ -1136,6 +1145,16 @@
   }
 
   function handleNodeDragStart(event: DragEvent, node: TreeNode): void {
+    if (rightPaneMode === "integrations") {
+      // Integration forms accept namespace paths; the canvas drop preview does not apply.
+      if (event.dataTransfer) {
+        event.dataTransfer.effectAllowed = "copy";
+        event.dataTransfer.setData(TREE_PATH_DRAG_MIME, node.path);
+        event.dataTransfer.setData(TREE_PATH_KIND_DRAG_MIME, node.kind);
+        event.dataTransfer.setData("text/plain", node.path);
+      }
+      return;
+    }
     if (!canDropToCanvas) {
       event.preventDefault();
       return;
@@ -2511,6 +2530,7 @@
     authEnabled={data.authEnabled ?? true}
     onSelectWorkspaceMode={(mode) => void navigateWorkspaceMode(mode)}
     onToggleTheme={toggleTheme}
+    activeSection={rightPaneMode === "integrations" ? "integrations" : "views"}
     {username}
   />
 
@@ -2598,7 +2618,9 @@
       ondragover={handleRightPanelDragOver}
       ondrop={handleRightPanelDrop}
     >
-      {#if rightPaneMode === "views-list"}
+      {#if rightPaneMode === "integrations"}
+        <PluginInstancesPanel />
+      {:else if rightPaneMode === "views-list"}
         <ViewsListPanel
           {views}
           total={viewsTotal}
@@ -2668,8 +2690,8 @@
                   {nodeTypes}
                   {edgeTypes}
                   initialViewport={graphViewport}
-                  minZoom={0.4}
-                  maxZoom={1.6}
+                  minZoom={CANVAS_MIN_ZOOM}
+                  maxZoom={CANVAS_MAX_ZOOM}
                   zoomOnDoubleClick={false}
                   colorMode={$theme ?? "light"}
                   class={`h-full w-full rounded-md ${connectDragActive ? "is-connecting" : ""}`}
