@@ -10,7 +10,15 @@ use super::config::{load_settings, resolve_settings_write_path};
 use super::prompt::print_table;
 use crate::settings::settings::{EnvParse, SettingSpec, Settings, ValueSource};
 
-const SECTION_ORDER: &[&str] = &["server", "paths", "tls", "metrics", "persistence", "auth"];
+const SECTION_ORDER: &[&str] = &[
+    "server",
+    "paths",
+    "tls",
+    "metrics",
+    "persistence",
+    "database",
+    "auth",
+];
 
 struct DisplayEntry {
     section: &'static str,
@@ -272,6 +280,56 @@ fn collect_display_entries(settings: &Settings) -> Result<Vec<DisplayEntry>, Str
         "PERSIST_FLUSH_MS",
         15_000u64,
         |v| v.to_string(),
+    )?;
+
+    add_entry(
+        &mut entries,
+        settings,
+        "database",
+        "url",
+        "DATABASE_URL",
+        None::<String>,
+        |v: &Option<String>| match v.as_deref().map(url::Url::parse) {
+            None => "<sqlite>".to_string(),
+            Some(Ok(mut url)) if url.password().is_some() => {
+                let _ = url.set_password(Some("***"));
+                url.to_string()
+            }
+            Some(_) => v.clone().unwrap_or_default(),
+        },
+    )?;
+    add_entry(
+        &mut entries,
+        settings,
+        "database",
+        "user",
+        "DATABASE_USER",
+        None::<String>,
+        |v: &Option<String>| v.clone().unwrap_or_else(|| "<none>".to_string()),
+    )?;
+    add_entry(
+        &mut entries,
+        settings,
+        "database",
+        "password",
+        "DATABASE_PASSWORD",
+        None::<String>,
+        |v: &Option<String>| {
+            if v.is_some() {
+                "<set>".to_string()
+            } else {
+                "<unset>".to_string()
+            }
+        },
+    )?;
+    add_entry(
+        &mut entries,
+        settings,
+        "database",
+        "max_connections",
+        "DATABASE_MAX_CONNECTIONS",
+        None::<u32>,
+        |v: &Option<u32>| v.map_or("<default>".to_string(), |n| n.to_string()),
     )?;
 
     add_entry(

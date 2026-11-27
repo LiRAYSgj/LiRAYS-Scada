@@ -335,13 +335,13 @@ mod tests {
         let access_token = encode(
             &Header::new(Algorithm::HS256),
             &access_claims,
-            &EncodingKey::from_secret(access_secret.as_bytes()),
+            &EncodingKey::from_secret(access_secret.as_bytes()).unwrap(),
         )
         .unwrap();
         let refresh_token = encode(
             &Header::new(Algorithm::HS256),
             &refresh_claims,
-            &EncodingKey::from_secret(refresh_secret.as_bytes()),
+            &EncodingKey::from_secret(refresh_secret.as_bytes()).unwrap(),
         )
         .unwrap();
 

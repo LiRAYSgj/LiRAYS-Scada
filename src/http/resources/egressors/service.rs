@@ -24,7 +24,7 @@ pub async fn plugins(State(state): State<Arc<AppState>>) -> Json<Vec<String>> {
 }
 
 #[utoipa::path(get, path = "/api/egressors", tag = "Egressors", security(("bearerAuth" = [])),
-    responses((status = 200, description = "Egressor instances and runtime status", body = ApiResponseEgressors)))]
+    responses((status = 200, description = "Egressor instances and runtime status", body = ApiResponse<Vec<InstanceInfo>>)))]
 pub async fn list(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<ApiResponse<Vec<InstanceInfo>>>, InstanceError> {
@@ -33,7 +33,7 @@ pub async fn list(
 
 #[utoipa::path(get, path = "/api/egressors/{id}", tag = "Egressors", security(("bearerAuth" = [])),
     params(("id" = String, Path, description = "Instance ID")),
-    responses((status = 200, description = "Egressor instance", body = ApiResponseEgressor), (status = 404, description = "Not found", body = ApiResponseEmpty)))]
+    responses((status = 200, description = "Egressor instance", body = ApiResponse<InstanceInfo>), (status = 404, description = "Not found", body = ApiResponseEmpty)))]
 pub async fn get(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
@@ -43,7 +43,7 @@ pub async fn get(
 
 #[utoipa::path(post, path = "/api/egressors", tag = "Egressors", security(("bearerAuth" = [])),
     request_body(content = InstanceInput, example = json!({"name":"UDP stream","plugin_type":"udp","enabled":true,"config":{"variables":["/plant/**"],"mode":{"type":"subscription"},"target":{"host":"127.0.0.1","port":9000}}})),
-    responses((status = 201, description = "Instance created", body = ApiResponseEgressor), (status = 400, description = "Invalid configuration", body = ApiResponseEmpty)))]
+    responses((status = 201, description = "Instance created", body = ApiResponse<InstanceInfo>), (status = 400, description = "Invalid configuration", body = ApiResponseEmpty)))]
 pub async fn create(
     State(state): State<Arc<AppState>>,
     Json(input): Json<InstanceInput>,
@@ -58,7 +58,7 @@ pub async fn create(
 
 #[utoipa::path(put, path = "/api/egressors/{id}", tag = "Egressors", security(("bearerAuth" = [])),
     params(("id" = String, Path, description = "Instance ID")), request_body(content = InstanceUpdate, example = json!({"config":{"mode":{"type":"polling","interval_ms":1000}}})),
-    responses((status = 200, description = "Fields merged; omitted fields remain unchanged; arrays replace existing arrays", body = ApiResponseEgressor), (status = 400, description = "Invalid configuration", body = ApiResponseEmpty), (status = 404, description = "Not found", body = ApiResponseEmpty)))]
+    responses((status = 200, description = "Fields merged; omitted fields remain unchanged; arrays replace existing arrays", body = ApiResponse<InstanceInfo>), (status = 400, description = "Invalid configuration", body = ApiResponseEmpty), (status = 404, description = "Not found", body = ApiResponseEmpty)))]
 pub async fn update(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,

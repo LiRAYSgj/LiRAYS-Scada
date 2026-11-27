@@ -1,11 +1,7 @@
 use std::io::{self, Write};
 
-use argon2::{
-    Argon2,
-    password_hash::{PasswordHasher, SaltString},
-};
+use argon2::{Argon2, password_hash::PasswordHasher};
 use chrono::Utc;
-use rand::rngs::OsRng;
 use rpassword::prompt_password;
 
 pub(super) fn prompt_and_confirm(prompt: &str) -> Result<String, String> {
@@ -24,9 +20,8 @@ pub(super) fn prompt_and_confirm(prompt: &str) -> Result<String, String> {
 }
 
 pub(super) fn hash_password(password: &str) -> Result<String, String> {
-    let salt = SaltString::generate(&mut OsRng);
     Argon2::default()
-        .hash_password(password.as_bytes(), &salt)
+        .hash_password(password.as_bytes())
         .map_err(|_| "Failed to hash password".to_string())
         .map(|ph| ph.to_string())
 }

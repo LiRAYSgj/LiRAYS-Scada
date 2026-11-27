@@ -14,7 +14,6 @@ use axum::Router;
 use axum::serve::Listener;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use log::{error, info};
-use rand::{RngCore, rngs::OsRng};
 use resources::{
     auth::{self, session::SessionManager},
     docs,
@@ -25,14 +24,17 @@ use resources::{
     static_files, user, views, ws,
 };
 pub use response::{ApiResponse, ApiResponseEmpty, ApiResponseView, ApiResponseViewPage};
-use sea_orm::{Database, DatabaseConnection};
+use sea_orm::DatabaseConnection;
 use state::AuthConfig;
 pub use state::{AppState, AuthContext};
 use tokio::net::{TcpListener, TcpStream};
 use tokio_rustls::{TlsAcceptor, server::TlsStream};
 
 use super::tls::{ServerTlsConfig, build_tls_acceptor};
-use crate::rtdata::{metrics::Metrics, variable::VariableManager};
+use crate::{
+    db::DatabaseConfig,
+    rtdata::{metrics::Metrics, variable::VariableManager},
+};
 
 struct TlsIncoming {
     listener: TcpListener,
@@ -77,7 +79,8 @@ pub async fn run_http_server(
     port: u16,
     rt_db_dir: &Path,
     sessions_dir: &Path,
-    static_db_file: &Path,
+    data_dir: &Path,
+    database: &DatabaseConfig,
     tls_config: Option<ServerTlsConfig>,
     metrics_dir: PathBuf,
     metrics_real_time: bool,
@@ -88,11 +91,7 @@ pub async fn run_http_server(
     auth_refresh_ttl: u64,
     auth_secret: Option<Vec<u8>>,
 ) -> Result<(), String> {
-    let db_url = format!("sqlite://{}?mode=rwc", static_db_file.to_string_lossy());
-    let db = match Database::connect(db_url).await {
-        Ok(db) => db,
-        Err(err) => return Err(format!("Failed to connect database: {err}")),
-    };
+    let db = database.connect(data_dir).await?;
     if let Err(err) = ensure_schema(&db).await {
         return Err(err);
     }
@@ -126,7 +125,7 @@ pub async fn run_http_server(
                 return Err("AUTH_ENABLED=true but no auth.secret provided; set AUTH_SECRET or auth.secret in settings.".to_string());
             } else {
                 let mut buf = vec![0u8; 32];
-                OsRng.fill_bytes(&mut buf);
+                rand::fill(&mut buf[..]);
                 buf
             }
         }

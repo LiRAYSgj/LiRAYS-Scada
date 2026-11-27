@@ -21,6 +21,33 @@ SDK/client packages, proto definitions, and full documentation are maintained in
 
 Visit https://help.lirays.com for full documentation.
 
+## Database
+
+Users, access tokens, views, ingestors, and egressors are stored in a relational
+database. By default it is the embedded SQLite file `{data_dir}/static.db`, so a
+single binary runs without external services. Larger deployments can point the
+`database` settings section at PostgreSQL, MySQL, or MariaDB instead:
+
+```yaml
+database:
+  url: postgres://db.example.com:5432/lirays?sslmode=require
+  user: lirays
+  password: null          # prefer DATABASE_PASSWORD
+  max_connections: 10
+```
+
+Use `mysql://host:3306/lirays` for MySQL and MariaDB. Each key has an environment
+override: `DATABASE_URL`, `DATABASE_USER`, `DATABASE_PASSWORD`, and
+`DATABASE_MAX_CONNECTIONS`. The user and password are inserted into the URL with
+percent-encoding, so special characters need no escaping. TLS is configured with
+the driver's URL options, for example `sslmode=verify-full&sslrootcert=/path/ca.pem`
+for PostgreSQL or `ssl-mode=VERIFY_IDENTITY&ssl-ca=/path/ca.pem` for MySQL/MariaDB.
+
+The database must exist before startup and the user needs permission to create
+tables; LiRAYS creates its tables when they are missing. Real-time values,
+the namespace (sled), and sessions always stay in `data_dir`. Existing SQLite data
+is not migrated automatically when switching to an external server.
+
 ## Ingestion plugins
 
 The backend includes a compile-time `simulator` plugin. Open `/swagger` on the
@@ -132,7 +159,7 @@ configuration before anything is saved or its worker is replaced; invalid
 updates leave the stored configuration and running worker unchanged.
 
 All ingestion endpoints require admin access when authentication is enabled.
-Instances persist in SQLite and enabled instances resume on startup. A source or
+Instances persist in the configured database and enabled instances resume on startup. A source or
 batch-processing error stops that instance and appears in `status.last_error`;
 a valid update restarts it. Plugins omitted from a subsequent build leave their
 instances persisted with an error status.
@@ -195,7 +222,7 @@ guarantees. Listen with `nc -ul 9000` to see them:
 
 The endpoints mirror the ingestion ones (`/api/egressors`, `/api/egressors/plugins`,
 `/api/egressors/{id}`), including partial updates, admin-only access, persistence
-in SQLite, and restoration on startup.
+in the configured database, and restoration on startup.
 
 The plugin contract is in `src/egress/mod.rs`: implement `EgressPlugin` to validate
 `target` and create an `Egressor` whose asynchronous `publish` sends one batch.

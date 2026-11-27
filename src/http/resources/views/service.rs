@@ -8,14 +8,18 @@ use axum::{
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DatabaseConnection, EntityTrait,
-    PaginatorTrait, QueryFilter, QueryOrder, Set, SqlErr, Statement, TransactionTrait,
+    PaginatorTrait, QueryFilter, QueryOrder, Set, SqlErr, TransactionTrait,
+    sea_query::{BinOper, ColumnDef, Expr, Func, SimpleExpr, Table},
 };
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
 use super::model::{self, Entity as ViewEntity};
-use crate::http::{ApiResponse, ApiResponseEmpty, AppState};
+use crate::{
+    db::{create_table_if_missing, large_text},
+    http::{ApiResponse, ApiResponseEmpty, ApiResponseView, ApiResponseViewPage, AppState},
+};
 
 const EMPTY_GRAPH_JSON: &str =
     r#"{"version":1,"nodes":[],"edges":[],"viewport":{"x":0,"y":0,"zoom":1}}"#;
@@ -160,13 +164,33 @@ fn validate_description(description: &str) -> String {
     description.trim().to_string()
 }
 
+/// Ids are generated UUIDs, so a unique violation on write can only come from the name.
 fn map_view_name_unique_error(error: sea_orm::DbErr, name: &str) -> ViewManagerError {
-    if let Some(SqlErr::UniqueConstraintViolation(message)) = error.sql_err() {
-        if message.to_ascii_lowercase().contains("views.name") {
-            return ViewManagerError::DuplicateName(name.to_string());
-        }
+    if let Some(SqlErr::UniqueConstraintViolation(_)) = error.sql_err() {
+        return ViewManagerError::DuplicateName(name.to_string());
     }
     ViewManagerError::Database(error)
+}
+
+fn lower_name() -> SimpleExpr {
+    Func::lower(Expr::col(model::Column::Name)).into()
+}
+
+/// View names are unique ignoring case on every database backend.
+async fn ensure_name_available<C: ConnectionTrait>(
+    db: &C,
+    name: &str,
+    except_id: Option<&str>,
+) -> Result<(), ViewManagerError> {
+    use sea_orm::sea_query::ExprTrait;
+    let mut query = ViewEntity::find().filter(lower_name().eq(Func::lower(Expr::val(name))));
+    if let Some(id) = except_id {
+        query = query.filter(model::Column::Id.ne(id));
+    }
+    if query.count(db).await? > 0 {
+        return Err(ViewManagerError::DuplicateName(name.to_string()));
+    }
+    Ok(())
 }
 
 fn validate_canvas_json(canvas_json: &str) -> Result<(), ViewManagerError> {
@@ -185,21 +209,46 @@ impl ViewManager {
     }
 
     pub async fn ensure_initialized(&self) -> Result<(), sea_orm::DbErr> {
-        self.db
-            .execute(Statement::from_string(
-                self.db.get_database_backend(),
-                "CREATE TABLE IF NOT EXISTS views (
-                    id TEXT PRIMARY KEY NOT NULL,
-                    name TEXT NOT NULL UNIQUE COLLATE NOCASE,
-                    description TEXT NOT NULL DEFAULT '',
-                    is_entry_point BOOLEAN NOT NULL DEFAULT 0,
-                    canvas_json TEXT NOT NULL DEFAULT '{}',
-                    created_at BIGINT NOT NULL,
-                    updated_at BIGINT NOT NULL
-                )"
-                .to_string(),
-            ))
-            .await?;
+        let backend = self.db.get_database_backend();
+        create_table_if_missing(
+            &self.db,
+            Table::create()
+                .table(ViewEntity)
+                .col(
+                    ColumnDef::new(model::Column::Id)
+                        .string()
+                        .not_null()
+                        .primary_key(),
+                )
+                .col(
+                    ColumnDef::new(model::Column::Name)
+                        .string()
+                        .not_null()
+                        .unique_key(),
+                )
+                .col(ColumnDef::new(model::Column::Description).text().not_null())
+                .col(
+                    ColumnDef::new(model::Column::IsEntryPoint)
+                        .boolean()
+                        .not_null(),
+                )
+                .col(
+                    ColumnDef::new_with_type(model::Column::CanvasJson, large_text(backend))
+                        .not_null(),
+                )
+                .col(
+                    ColumnDef::new(model::Column::CreatedAt)
+                        .big_integer()
+                        .not_null(),
+                )
+                .col(
+                    ColumnDef::new(model::Column::UpdatedAt)
+                        .big_integer()
+                        .not_null(),
+                )
+                .to_owned(),
+        )
+        .await?;
 
         let count = ViewEntity::find().count(&self.db).await?;
         if count == 0 {
@@ -225,10 +274,10 @@ impl ViewManager {
 
         let mut select = match (query.sort_by, query.sort_direction) {
             (ViewSortBy::Name, SortDirection::Asc) => ViewEntity::find()
-                .order_by_asc(model::Column::Name)
+                .order_by_asc(lower_name())
                 .order_by_asc(model::Column::Id),
             (ViewSortBy::Name, SortDirection::Desc) => ViewEntity::find()
-                .order_by_desc(model::Column::Name)
+                .order_by_desc(lower_name())
                 .order_by_asc(model::Column::Id),
             (ViewSortBy::UpdatedAt, SortDirection::Asc) => ViewEntity::find()
                 .order_by_asc(model::Column::UpdatedAt)
@@ -248,10 +297,14 @@ impl ViewManager {
 
         if let Some(search) = query.search.as_deref().map(str::trim) {
             if !search.is_empty() {
+                use sea_orm::sea_query::ExprTrait;
+                let pattern: SimpleExpr = Func::lower(Expr::val(format!("%{search}%"))).into();
+                let description: SimpleExpr =
+                    Func::lower(Expr::col(model::Column::Description)).into();
                 select = select.filter(
                     Condition::any()
-                        .add(model::Column::Name.contains(search))
-                        .add(model::Column::Description.contains(search)),
+                        .add(lower_name().binary(BinOper::Like, pattern.clone()))
+                        .add(description.binary(BinOper::Like, pattern)),
                 );
             }
         }
@@ -293,6 +346,7 @@ impl ViewManager {
         let name_for_error = name.clone();
 
         let txn = self.db.begin().await?;
+        ensure_name_available(&txn, &name, None).await?;
 
         if should_be_entry_point {
             let current_entry_points = ViewEntity::find()
@@ -337,6 +391,7 @@ impl ViewManager {
             txn.rollback().await?;
             return Err(ViewManagerError::NotFound);
         };
+        ensure_name_available(&txn, &name, Some(id)).await?;
 
         if input.is_entry_point == Some(false) && existing.is_entry_point {
             txn.rollback().await?;
@@ -654,5 +709,56 @@ pub async fn set_entry_point_view(
     match state.views.set_entry_point(&id).await {
         Ok(view) => (StatusCode::OK, Json(ApiResponse::success(view))).into_response(),
         Err(error) => map_view_error(error).into_response(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use sea_orm::Database;
+
+    use super::*;
+
+    fn input(name: &str) -> ViewInput {
+        ViewInput {
+            name: name.into(),
+            description: String::new(),
+            is_entry_point: None,
+            canvas_json: default_canvas_json(),
+        }
+    }
+
+    #[tokio::test]
+    async fn names_are_unique_and_searchable_ignoring_case() {
+        let db = Database::connect("sqlite::memory:").await.unwrap();
+        let manager = ViewManager::new(db);
+        manager.ensure_initialized().await.unwrap();
+
+        let pump = manager.create_view(input("Pump Station")).await.unwrap();
+        assert!(matches!(
+            manager.create_view(input("pump station")).await,
+            Err(ViewManagerError::DuplicateName(_))
+        ));
+        let other = manager.create_view(input("Tank")).await.unwrap();
+        assert!(matches!(
+            manager.update_view(&other.id, input("PUMP STATION")).await,
+            Err(ViewManagerError::DuplicateName(_))
+        ));
+        manager
+            .update_view(&pump.id, input("pump station"))
+            .await
+            .unwrap();
+
+        let page = manager
+            .list_views_page(ViewListQuery {
+                page: 1,
+                page_size: 10,
+                sort_by: ViewSortBy::Name,
+                sort_direction: SortDirection::Asc,
+                search: Some("PUMP".into()),
+            })
+            .await
+            .unwrap();
+        assert_eq!(page.total, 1);
+        assert_eq!(page.items[0].id, pump.id);
     }
 }

@@ -1,11 +1,10 @@
 use std::{path::PathBuf, sync::Arc};
 
-use rustls_pemfile::{certs, private_key};
 use tokio_rustls::{
     TlsAcceptor,
     rustls::{
         ServerConfig,
-        pki_types::{CertificateDer, PrivateKeyDer},
+        pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject},
     },
 };
 
@@ -27,14 +26,8 @@ impl ServerTlsConfig {
 pub fn build_tls_acceptor(
     config: &ServerTlsConfig,
 ) -> Result<TlsAcceptor, Box<dyn std::error::Error + Send + Sync>> {
-    let mut cert_reader = std::io::BufReader::new(std::fs::File::open(&config.cert_path)?);
-    let mut key_reader = std::io::BufReader::new(std::fs::File::open(&config.key_path)?);
-
-    let certs: Vec<CertificateDer<'static>> =
-        certs(&mut cert_reader).collect::<Result<Vec<_>, _>>()?;
-
-    let key: PrivateKeyDer<'static> =
-        private_key(&mut key_reader)?.ok_or("no private key found in key file")?;
+    let certs = CertificateDer::pem_file_iter(&config.cert_path)?.collect::<Result<Vec<_>, _>>()?;
+    let key = PrivateKeyDer::from_pem_file(&config.key_path)?;
 
     let tls_config = ServerConfig::builder()
         .with_no_client_auth()

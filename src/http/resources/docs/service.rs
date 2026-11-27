@@ -1,6 +1,7 @@
+use std::sync::LazyLock;
+
 use axum::{Json, response::Response};
 use log::warn;
-use once_cell::sync::Lazy;
 use utoipa::OpenApi;
 
 use crate::http::resources::egressors::service as egressors;
@@ -30,8 +31,6 @@ use crate::http::resources::views::service as views;
             crate::http::ApiResponseView,
             crate::http::ApiResponseViewPage,
             plugin_instances::InstanceInput, plugin_instances::InstanceUpdate, plugin_instances::InstanceInfo, plugin_instances::InstanceStatus, plugin_instances::InstanceState,
-            crate::http::response::ApiResponseIngestor, crate::http::response::ApiResponseIngestors,
-            crate::http::response::ApiResponseEgressor, crate::http::response::ApiResponseEgressors,
             crate::http::ApiResponseEmpty
         )
     ),
@@ -58,7 +57,7 @@ impl utoipa::Modify for Security {
     }
 }
 
-pub static OPENAPI: Lazy<utoipa::openapi::OpenApi> = Lazy::new(|| ApiDoc::openapi());
+pub static OPENAPI: LazyLock<utoipa::openapi::OpenApi> = LazyLock::new(|| ApiDoc::openapi());
 
 pub async fn openapi_spec() -> Json<utoipa::openapi::OpenApi> {
     Json(OPENAPI.clone())

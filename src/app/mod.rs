@@ -10,7 +10,6 @@ pub async fn run() {
     let config = load_runtime_config(config_path);
     let rt_db_dir = config.data_dir.join("rt_data");
     let sessions_dir = config.data_dir.join("sessions");
-    let static_db_file = config.data_dir.join("static.db");
     env_logger::Builder::new()
         .filter_level(config.log_level)
         .filter_module("sqlx::query", log::LevelFilter::Warn)
@@ -44,7 +43,8 @@ pub async fn run() {
         config.port,
         &rt_db_dir,
         &sessions_dir,
-        &static_db_file,
+        &config.data_dir,
+        &config.database,
         http_tls,
         metrics_dir,
         config.metrics_real_time,

@@ -56,6 +56,27 @@ persistence:
   # Env: PERSIST_FLUSH_MS
   flush_ms: 15000
 
+database:
+  # Relational database for users, tokens, views, ingestors and egressors.
+  # Leave url empty to use the embedded SQLite file {data_dir}/static.db.
+  # External servers: postgres://host:5432/lirays or mysql://host:3306/lirays
+  # (mysql:// also covers MariaDB). The database must already exist; tables
+  # are created on startup. Add TLS through URL options, for example
+  # ?sslmode=require&sslrootcert=/path/ca.pem (Postgres) or
+  # ?ssl-mode=VERIFY_IDENTITY&ssl-ca=/path/ca.pem (MySQL/MariaDB).
+  # Env: DATABASE_URL
+  url: null
+
+  # Credentials for external servers, kept out of the URL so special
+  # characters need no escaping. Prefer the env variable for the password.
+  # Env: DATABASE_USER, DATABASE_PASSWORD
+  user: null
+  password: null
+
+  # Maximum pooled connections. Defaults to the driver default (10).
+  # Env: DATABASE_MAX_CONNECTIONS
+  max_connections: null
+
 logger:
   # Global log verbosity level.
   # Env: LOGGER_LEVEL

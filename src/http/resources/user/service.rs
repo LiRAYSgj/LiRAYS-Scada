@@ -1,8 +1,7 @@
 use argon2::{
     Argon2,
-    password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
+    password_hash::{PasswordHasher, PasswordVerifier, phc::PasswordHash},
 };
-use rand::rngs::OsRng;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
     Set,
@@ -36,10 +35,9 @@ impl UserManager {
 
     /// Create the initial admin account with Argon2-hashed password.
     pub async fn create_admin(&self, password: String) -> Result<(), sea_orm::DbErr> {
-        let salt = SaltString::generate(&mut OsRng);
         let hash = self
             .argon
-            .hash_password(password.as_bytes(), &salt)
+            .hash_password(password.as_bytes())
             .map_err(|_| sea_orm::DbErr::Custom("Failed to hash password".into()))?
             .to_string();
 
@@ -73,5 +71,27 @@ impl UserManager {
             .filter(model::Column::Username.eq(username.to_string()))
             .one(&self.db)
             .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use sea_orm::Database;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn verifies_hashes_created_by_previous_argon2_release() {
+        // Produced by argon2 0.5 for "secret"; stored hashes must keep working after upgrades.
+        let user = model::Model {
+            id: 1,
+            username: "admin".into(),
+            password_hash: "$argon2id$v=19$m=19456,t=2,p=1$ulbbegiRAUQI9KZ2G9dKaw$go1zu/26Mwj6P4F3G1HyoDjq3ujtvL3n9Qga/eNSDoM".into(),
+            role: Role::Admin,
+        };
+        let manager = UserManager::new(Database::connect("sqlite::memory:").await.unwrap());
+
+        assert!(manager.verify_password(&user, "secret").await.unwrap());
+        assert!(!manager.verify_password(&user, "wrong").await.unwrap());
     }
 }
