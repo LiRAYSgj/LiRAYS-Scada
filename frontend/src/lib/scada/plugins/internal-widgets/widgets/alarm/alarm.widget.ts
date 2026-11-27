@@ -5,16 +5,21 @@ import {
   renderTemplate,
   toNumeric,
 } from "$lib/scada/plugins/internal-widgets/runtime/widget-runtime";
-import type { WidgetConfigThresholdRange } from "$lib/scada/plugins/types";
+import {
+  readThresholds,
+  resolveThreshold,
+} from "$lib/scada/plugins/thresholds";
+import type { WidgetConfigThresholds } from "$lib/scada/plugins/types";
 import template from "./alarm.widget.html?raw";
 import styles from "./alarm.widget.css?raw";
 
-const DEFAULT_THRESHOLDS: WidgetConfigThresholdRange[] = [
-  { max: 25, color: "#3b82f6", label: "" },
-  { min: 25, max: 60, color: "#546a0e", label: "" },
-  { min: 60, max: 80, color: "#f59e0b", label: "" },
-  { min: 80, color: "#ef4444", label: "" },
-];
+const DEFAULT_THRESHOLDS: WidgetConfigThresholds = {
+  default: { color: "#ef4444", label: "" },
+  levels: [
+    { value: 25, color: "#3b82f6", label: "" },
+    { value: 60, color: "#546a0e", label: "" },
+  ],
+};
 
 function normalizeHexColor(
   color: string | undefined,
@@ -64,49 +69,6 @@ function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${a})`;
 }
 
-function readThresholdConfig(raw: unknown): WidgetConfigThresholdRange[] {
-  if (!Array.isArray(raw)) {
-    return DEFAULT_THRESHOLDS;
-  }
-
-  const parsed: WidgetConfigThresholdRange[] = [];
-  for (const entry of raw) {
-    if (!entry || typeof entry !== "object") {
-      continue;
-    }
-    const source = entry as Partial<WidgetConfigThresholdRange>;
-    parsed.push({
-      min: typeof source.min === "number" ? source.min : undefined,
-      max: typeof source.max === "number" ? source.max : undefined,
-      color: normalizeHexColor(
-        typeof source.color === "string" ? source.color : undefined,
-      ),
-      label: typeof source.label === "string" ? source.label : "",
-    });
-  }
-
-  return parsed.length > 0 ? parsed : DEFAULT_THRESHOLDS;
-}
-
-function findThreshold(
-  value: number | null,
-  ranges: WidgetConfigThresholdRange[],
-): WidgetConfigThresholdRange | null {
-  if (value === null) {
-    return null;
-  }
-
-  for (const range of ranges) {
-    const min = typeof range.min === "number" ? range.min : -Infinity;
-    const max = typeof range.max === "number" ? range.max : Infinity;
-    if (value >= min && value <= max) {
-      return range;
-    }
-  }
-
-  return ranges[ranges.length - 1] ?? null;
-}
-
 export const alarmWidget = declareInternalCustomElementWidget({
   manifest: {
     type: PlantAssetKind.ALARM,
@@ -128,7 +90,7 @@ export const alarmWidget = declareInternalCustomElementWidget({
         label: "Alarm Thresholds",
         type: "thresholds",
         description:
-          "Configure ranges, color, and optional label for each alarm interval.",
+          "Default color plus thresholds: values <= a threshold use its color, values above the highest use the default.",
       },
     ],
     defaultConfig: {
@@ -144,8 +106,11 @@ export const alarmWidget = declareInternalCustomElementWidget({
   render: (data) => {
     const raw = getBindingValue(data, "value") ?? data.liveValue;
     const numeric = toNumeric(raw);
-    const thresholds = readThresholdConfig(data.widgetConfig?.thresholds);
-    const active = findThreshold(numeric, thresholds);
+    const thresholds = readThresholds(
+      data.widgetConfig?.thresholds,
+      DEFAULT_THRESHOLDS,
+    );
+    const active = resolveThreshold(numeric, thresholds);
 
     const baseColor = normalizeHexColor(active?.color, "#3f3f46");
     const highlightColor = shiftColor(baseColor, 38);
