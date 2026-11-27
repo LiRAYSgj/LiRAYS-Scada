@@ -66,12 +66,13 @@ pub(super) async fn update_setting(
     config_arg: Option<PathBuf>,
     args: &[String],
 ) -> Result<(), String> {
-    if args.len() < 2 {
+    let [key_path, value_parts @ ..] = args else {
+        return Err("Usage: settings-update <section.key> <value>".to_string());
+    };
+    if value_parts.is_empty() {
         return Err("Usage: settings-update <section.key> <value>".to_string());
     }
-
-    let key_path = &args[0];
-    let raw_value = args[1..].join(" ");
+    let raw_value = value_parts.join(" ");
     let (section, key) = parse_setting_path(key_path)?;
     let yaml_value = parse_yaml_value(&raw_value);
 

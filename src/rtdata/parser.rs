@@ -71,8 +71,13 @@ pub fn parse_repeated_name(
     (prefix_out, suffix_out, start, end, step, options)
 }
 
+/// Upper bound for the names produced by a single range expression, so a client
+/// cannot exhaust memory with a request such as `name[1:4000000000]`.
+pub const MAX_REPEATED_NAMES: usize = 1_000_000;
+
 /// Expand into a list of names, either by numeric range or explicit options.
-/// Names are built as `prefix + value + suffix`.
+/// Names are built as `prefix + value + suffix`. Fails when a range would produce
+/// more than [`MAX_REPEATED_NAMES`] names.
 pub fn clone_name(
     prefix: &str,
     suffix: &str,
@@ -80,32 +85,34 @@ pub fn clone_name(
     stop: Option<usize>,
     step: Option<usize>,
     options: Option<Vec<String>>,
-) -> Vec<String> {
+) -> Result<Vec<String>, String> {
     if let Some(opts) = options {
-        return opts
+        return Ok(opts
             .into_iter()
             .map(|opt| format!("{prefix}{opt}{suffix}"))
-            .collect();
+            .collect());
     }
 
-    if let Some(end) = stop {
-        let start_val = start.unwrap_or(1);
-        let step_val = step.unwrap_or(1);
-
-        if step_val == 0 {
-            return vec![format!("{prefix}{suffix}")];
-        }
-
-        let mut result = Vec::new();
-        let mut current = start_val;
-        while current <= end {
-            result.push(format!("{prefix}{current}{suffix}"));
-            current += step_val;
-        }
-        result
-    } else {
-        vec![format!("{prefix}{suffix}")]
+    let Some(end) = stop else {
+        return Ok(vec![format!("{prefix}{suffix}")]);
+    };
+    let start = start.unwrap_or(1);
+    let step = step.unwrap_or(1);
+    if step == 0 {
+        return Ok(vec![format!("{prefix}{suffix}")]);
     }
+    if start > end {
+        return Ok(Vec::new());
+    }
+    let count = (end - start) / step + 1;
+    if count > MAX_REPEATED_NAMES {
+        return Err(format!(
+            "Range [{start}:{end}:{step}] expands to {count} names; the limit is {MAX_REPEATED_NAMES}"
+        ));
+    }
+    Ok((0..count)
+        .map(|i| format!("{prefix}{}{suffix}", start + i * step))
+        .collect())
 }
 
 #[cfg(test)]
@@ -232,7 +239,7 @@ mod tests {
 
     #[test]
     fn test_clone_name() {
-        let names = clone_name("base", "", Some(1), Some(3), Some(1), None);
+        let names = clone_name("base", "", Some(1), Some(3), Some(1), None).unwrap();
         assert_eq!(names, vec!["base1", "base2", "base3"]);
 
         let names_opts = clone_name(
@@ -242,12 +249,13 @@ mod tests {
             None,
             None,
             Some(vec!["ab".into(), "xz".into(), "kk".into()]),
-        );
+        )
+        .unwrap();
         assert_eq!(names_opts, vec!["baseab", "basexz", "basekk"]);
 
         // With suffix preserved separately
         let (pfx, sfx, s, e, stp, opts) = parse_repeated_name("prefix[1:4]suffix");
-        let names = clone_name(&pfx, &sfx, s, e, stp, opts);
+        let names = clone_name(&pfx, &sfx, s, e, stp, opts).unwrap();
         assert_eq!(
             names,
             vec![
@@ -259,7 +267,25 @@ mod tests {
         );
 
         let (pfx, sfx, s, e, stp, opts) = parse_repeated_name("prefix[a, b]suffix");
-        let names = clone_name(&pfx, &sfx, s, e, stp, opts);
+        let names = clone_name(&pfx, &sfx, s, e, stp, opts).unwrap();
         assert_eq!(names, vec!["prefixasuffix", "prefixbsuffix"]);
+    }
+
+    #[test]
+    fn clone_name_rejects_oversized_ranges_without_overflowing() {
+        assert!(clone_name("n", "", Some(1), Some(4_000_000_000), None, None).is_err());
+        assert!(clone_name("n", "", Some(1), Some(usize::MAX), None, None).is_err());
+        let names = clone_name(
+            "n",
+            "",
+            Some(usize::MAX - 1),
+            Some(usize::MAX),
+            Some(1),
+            None,
+        )
+        .unwrap();
+        assert_eq!(names.len(), 2);
+        let names = clone_name("n", "", Some(1), Some(usize::MAX), Some(usize::MAX), None).unwrap();
+        assert_eq!(names, vec!["n1"]);
     }
 }

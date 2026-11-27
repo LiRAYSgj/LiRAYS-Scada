@@ -206,40 +206,39 @@ impl Ingestor for Simulator {
                 .iter()
                 .map(|variable| {
                     let config = &variable.config;
-                    let value = if config.waveform == Waveform::Random {
-                        match &variable.decimals {
-                            Some(range) => {
-                                rng.random_range(range.min..=range.max) as f64 / range.scale
-                            }
-                            None => rng.random_range(config.min..=config.max),
-                        }
-                    } else {
-                        let period = Duration::from_millis(config.period_ms.unwrap()).as_secs_f64();
-                        let phase = ((elapsed % period) / period
+                    let phase = config.period_ms.filter(|ms| *ms > 0).map(|ms| {
+                        let period = Duration::from_millis(ms).as_secs_f64();
+                        ((elapsed % period) / period
                             + config.phase_degrees.rem_euclid(360.0) / 360.0)
-                            .rem_euclid(1.0);
-                        let fraction = match config.waveform {
-                            Waveform::Sine => 0.5 + 0.5 * (std::f64::consts::TAU * phase).sin(),
-                            Waveform::Square => {
-                                if phase < 0.5 {
-                                    1.0
-                                } else {
-                                    0.0
+                            .rem_euclid(1.0)
+                    });
+                    let fraction = match (config.waveform, phase) {
+                        (Waveform::Sine, Some(phase)) => {
+                            Some(0.5 + 0.5 * (std::f64::consts::TAU * phase).sin())
+                        }
+                        (Waveform::Square, Some(phase)) => {
+                            Some(if phase < 0.5 { 1.0 } else { 0.0 })
+                        }
+                        (Waveform::Ramp, Some(phase)) => Some(phase),
+                        _ => None,
+                    };
+                    let value = match (fraction, &variable.decimals) {
+                        (None, Some(range)) => {
+                            rng.random_range(range.min..=range.max) as f64 / range.scale
+                        }
+                        (None, None) => rng.random_range(config.min..=config.max),
+                        (Some(fraction), decimals) => {
+                            let value = (config.min + (config.max - config.min) * fraction)
+                                .clamp(config.min, config.max);
+                            match decimals {
+                                Some(range) => {
+                                    (value * range.scale)
+                                        .round()
+                                        .clamp(range.min as f64, range.max as f64)
+                                        / range.scale
                                 }
+                                None => value,
                             }
-                            Waveform::Ramp => phase,
-                            Waveform::Random => unreachable!(),
-                        };
-                        let value = (config.min + (config.max - config.min) * fraction)
-                            .clamp(config.min, config.max);
-                        match &variable.decimals {
-                            Some(range) => {
-                                (value * range.scale)
-                                    .round()
-                                    .clamp(range.min as f64, range.max as f64)
-                                    / range.scale
-                            }
-                            None => value,
                         }
                     };
                     VarIdValue {

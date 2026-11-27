@@ -485,7 +485,7 @@ impl<S: VariableStore> VariableManager<S> {
             for (key, val) in nodes {
                 let name_ = key.as_str();
                 let (pfx, sfx, start, stop, step, options) = parse_repeated_name(name_);
-                let item_names = clone_name(&pfx, &sfx, start, stop, step, options);
+                let item_names = clone_name(&pfx, &sfx, start, stop, step, options)?;
 
                 let capacity = item_names.len();
                 let mut vars_to_create: Vec<ItemMeta> = Vec::with_capacity(capacity);
@@ -625,7 +625,11 @@ impl<S: VariableStore> VariableManager<S> {
                 return Err(format!("Non-finite value for {path}"));
             }
             if !cache.contains_key(&path) && !pending_cache.contains_key(&path) {
-                let (parent, name) = path.rsplit_once('/').unwrap();
+                let Some((parent, name)) =
+                    path.rsplit_once('/').filter(|(_, name)| !name.is_empty())
+                else {
+                    return Err(format!("Invalid namespace path: {path:?}"));
+                };
                 let mut folder = String::new();
                 for part in parent.split('/').filter(|part| !part.is_empty()) {
                     let key = format!("{folder}/\0{part}");
@@ -681,10 +685,9 @@ impl<S: VariableStore> VariableManager<S> {
                     },
                 );
             }
-            let cached = cache
-                .get(&path)
-                .or_else(|| pending_cache.get(&path))
-                .unwrap();
+            let Some(cached) = cache.get(&path).or_else(|| pending_cache.get(&path)) else {
+                return Err(format!("Missing cache entry for {path}"));
+            };
             let typed = self.validate_constraints(cached, &value)?;
             updates.push(VarIdValue {
                 var_id: path,
@@ -693,8 +696,10 @@ impl<S: VariableStore> VariableManager<S> {
         }
         let mut events = Vec::with_capacity(created.len() + updates.len());
         for (path, meta) in created {
-            let (parent, _) = path.rsplit_once('/').unwrap();
-            let parent = if parent.is_empty() { "/" } else { parent };
+            let parent = match path.rsplit_once('/') {
+                Some((parent, _)) if !parent.is_empty() => parent,
+                _ => "/",
+            };
             let (folders, variables) = if meta.i_type() == ItemType::Folder {
                 (vec![meta], vec![])
             } else {
@@ -709,7 +714,11 @@ impl<S: VariableStore> VariableManager<S> {
         }
         for update in updates {
             let typed = update.value.as_ref().and_then(|v| v.typed.clone());
-            cache.get_mut(&update.var_id).unwrap().val = typed.clone();
+            let Some(cached) = cache.get_mut(&update.var_id) else {
+                warn!("Ingest: cache entry vanished for {}", update.var_id);
+                continue;
+            };
+            cached.val = typed.clone();
             dirty.insert(update.var_id.clone(), typed);
             events.push(Event {
                 ev: Some(Ev::VarValueEv(update)),
@@ -747,7 +756,11 @@ impl<S: VariableStore> VariableManager<S> {
         for event in &ev_batch.events {
             if let Some(Ev::VarValueEv(value)) = &event.ev {
                 let typed = value.value.as_ref().and_then(|v| v.typed.clone());
-                var_cache_guard.get_mut(&value.var_id).unwrap().val = typed.clone();
+                let Some(cached) = var_cache_guard.get_mut(&value.var_id) else {
+                    warn!("Set values: cache entry vanished for {}", value.var_id);
+                    continue;
+                };
+                cached.val = typed.clone();
                 dirty.insert(value.var_id.clone(), typed);
             }
         }
@@ -1142,10 +1155,10 @@ impl<S: VariableStore> VariableManager<S> {
                         return Err(format!("Value {} is above max {}", v_f64, max));
                     }
                 }
-                match cached_val.dtype {
-                    VarDataType::Integer => Ok(Typed::IntegerValue(v_f64 as i64)),
-                    VarDataType::Float => Ok(Typed::FloatValue(v_f64)),
-                    _ => unreachable!(),
+                if cached_val.dtype == VarDataType::Integer {
+                    Ok(Typed::IntegerValue(v_f64 as i64))
+                } else {
+                    Ok(Typed::FloatValue(v_f64))
                 }
             }
             VarDataType::Text => {

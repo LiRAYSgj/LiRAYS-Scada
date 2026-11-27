@@ -74,17 +74,17 @@ impl Egressor for UdpEgressor {
         batch: &'a EgressBatch,
     ) -> Pin<Box<dyn Future<Output = Result<(), String>> + Send + 'a>> {
         Box::pin(async move {
-            if self.socket.is_none() {
-                self.socket = Some(self.open_socket().await?);
-            }
-            let (socket, target) = self.socket.as_ref().unwrap();
+            let (socket, target) = match self.socket.take() {
+                Some(open) => open,
+                None => self.open_socket().await?,
+            };
             for datagram in encode(batch) {
                 if let Err(error) = socket.send_to(&datagram, target).await {
-                    // Resolve the host again on the next attempt.
-                    self.socket = None;
+                    // The socket is dropped so the host is resolved again on the next attempt.
                     return Err(format!("UDP send failed: {error}"));
                 }
             }
+            self.socket = Some((socket, target));
             Ok(())
         })
     }

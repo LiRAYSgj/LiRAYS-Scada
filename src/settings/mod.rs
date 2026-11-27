@@ -12,6 +12,9 @@ use settings::{SettingSpec, Settings};
 
 use crate::{db::DatabaseConfig, settings::settings::EnvParse, tls::ServerTlsConfig};
 
+/// Ten years: far beyond any practical session and safely inside chrono's date range.
+const MAX_AUTH_TTL_SECS: u64 = 10 * 365 * 24 * 60 * 60;
+
 #[derive(Clone)]
 pub struct RuntimeConfig {
     pub host: String,
@@ -188,7 +191,7 @@ pub fn load_runtime_config(config_path: Option<PathBuf>) -> RuntimeConfig {
         },
         "persistence.flush_ms",
     );
-    let flush_ms = flush_ms_raw.max(5_000);
+    let flush_ms = flush_ms_raw.clamp(5_000, 86_400_000);
 
     let auth_enabled: bool = read_setting(
         &settings,
@@ -239,6 +242,16 @@ pub fn load_runtime_config(config_path: Option<PathBuf>) -> RuntimeConfig {
         },
         "auth.refresh_ttl",
     );
+
+    for (name, ttl) in [
+        ("auth.access_ttl", auth_access_ttl),
+        ("auth.refresh_ttl", auth_refresh_ttl),
+    ] {
+        if ttl == 0 || ttl > MAX_AUTH_TTL_SECS {
+            eprintln!("{name} must be between 1 and {MAX_AUTH_TTL_SECS} seconds; got {ttl}.");
+            std::process::exit(1);
+        }
+    }
 
     let log_level_raw: String = read_setting(
         &settings,

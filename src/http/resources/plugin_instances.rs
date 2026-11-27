@@ -1,12 +1,13 @@
 //! Persistence, validation, and worker lifecycle shared by every kind of plugin instance.
 
-use std::{collections::HashMap, future::Future, sync::Arc};
+use std::{collections::HashMap, future::Future, panic::AssertUnwindSafe, sync::Arc};
 
 use axum::{
     Json,
     http::StatusCode,
     response::{IntoResponse, Response},
 };
+use futures_util::FutureExt;
 use sea_orm::{
     ConnectionTrait, DatabaseConnection, DbErr, DeriveIden, FromQueryResult, StatementBuilder,
     sea_query::{Alias, ColumnDef, Expr, Order, Query, SelectStatement, Table},
@@ -107,10 +108,10 @@ where
 fn merge_config(target: &mut Value, patch: Value) {
     match patch {
         Value::Object(fields) => {
-            if !target.is_object() {
-                *target = serde_json::json!({});
-            }
-            let object = target.as_object_mut().unwrap();
+            let mut object = match std::mem::take(target) {
+                Value::Object(object) => object,
+                _ => serde_json::Map::new(),
+            };
             for (key, value) in fields {
                 if value.is_null() {
                     object.remove(&key);
@@ -118,6 +119,7 @@ fn merge_config(target: &mut Value, patch: Value) {
                     merge_config(object.entry(key).or_insert(Value::Null), value);
                 }
             }
+            *target = Value::Object(object);
         }
         value => *target = value,
     }
@@ -299,12 +301,29 @@ impl<K: PluginKind> PluginManager<K> {
                 });
                 None
             }
-            Ok(prepared) => Some(tokio::spawn(K::run(
-                prepared,
-                self.variables.clone(),
-                cancel.clone(),
-                status_tx,
-            ))),
+            Ok(prepared) => {
+                let run = K::run(
+                    prepared,
+                    self.variables.clone(),
+                    cancel.clone(),
+                    status_tx.clone(),
+                );
+                Some(tokio::spawn(async move {
+                    // A panicking plugin must not leave its instance looking healthy.
+                    if let Err(panic) = AssertUnwindSafe(run).catch_unwind().await {
+                        let reason = panic
+                            .downcast_ref::<&str>()
+                            .map(|s| s.to_string())
+                            .or_else(|| panic.downcast_ref::<String>().cloned())
+                            .unwrap_or_else(|| "unknown panic".into());
+                        log::error!("Plugin instance task panicked: {reason}");
+                        status_tx.send_replace(InstanceStatus {
+                            state: InstanceState::Error,
+                            last_error: Some(format!("Instance task panicked: {reason}")),
+                        });
+                    }
+                }))
+            }
         };
         InstanceTask {
             cancel,

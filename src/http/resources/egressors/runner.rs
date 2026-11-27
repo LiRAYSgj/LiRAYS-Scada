@@ -204,7 +204,12 @@ pub(super) async fn run(
         tokio::select! {
             biased;
             _ = cancel.cancelled() => break,
-            (egressor, batch, result) = async { in_flight.as_mut().unwrap().await }, if in_flight.is_some() => {
+            (egressor, batch, result) = async {
+                match in_flight.as_mut() {
+                    Some(publish) => publish.await,
+                    None => std::future::pending().await,
+                }
+            } => {
                 in_flight = None;
                 idle = Some(egressor);
                 match result {
@@ -228,10 +233,20 @@ pub(super) async fn run(
                     }
                 }
             }
-            _ = async { tokio::time::sleep_until(retry_at.unwrap()).await }, if retry_at.is_some() => {
+            _ = async {
+                match retry_at {
+                    Some(at) => tokio::time::sleep_until(at).await,
+                    None => std::future::pending().await,
+                }
+            } => {
                 retry_at = None;
             }
-            _ = async { poll.as_mut().unwrap().tick().await }, if poll.is_some() => {
+            _ = async {
+                match poll.as_mut() {
+                    Some(poll) => poll.tick().await,
+                    None => std::future::pending().await,
+                }
+            } => {
                 selection.read_current(&variables).await;
             }
             batch = events.recv() => {
@@ -250,15 +265,18 @@ pub(super) async fn run(
 
     // Values ingested right before a shutdown may still be queued: give them one last attempt.
     let finish = async {
-        let mut egressor = match in_flight {
+        let egressor = match in_flight {
             Some(publish) => {
                 let (egressor, batch, result) = publish.await;
                 if result.is_err() {
                     selection.restore(batch);
                 }
-                egressor
+                Some(egressor)
             }
-            None => idle.expect("egressor is idle when no publish is in flight"),
+            None => idle,
+        };
+        let Some(mut egressor) = egressor else {
+            return;
         };
         if let Ok(batch) = events.try_recv() {
             let batches = drain(&mut events, batch);

@@ -105,6 +105,17 @@ These are the maintainer's preferences, especially for Rust:
   permissions, persistence, or relevant asynchronous behavior. Avoid trivial
   tests that merely reproduce the implementation, and do not automatically
   test every helper. Extend existing tests when sufficient.
+- This is robust software that must not fail arbitrarily. Panics (`unwrap`,
+  `expect`, `panic!`, `unreachable!`, unchecked indexing or slicing, arithmetic
+  that can overflow or divide by zero) are allowed only for critical startup or
+  configuration errors, before the service starts serving. Every other failure,
+  including invalid client input, plugin errors, storage errors, and values
+  derived from runtime data, must be handled gracefully inside the service flow:
+  return an error, log it, report it in the instance status, and keep the
+  service running. Validate untrusted sizes, ranges, and durations before using
+  them. If an invariant truly makes a failure impossible, prefer restructuring
+  the code so the type system expresses it; otherwise document the invariant
+  next to the call. Tests may keep `unwrap` and `expect`.
 - When changing asynchronous logic, consider lock duration and blocking work.
   Preserve consistency between the namespace, cache, persistence, and events,
   and keep slow clients isolated during event distribution.

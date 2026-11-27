@@ -66,14 +66,15 @@ pub(super) fn prompt_expiration_seconds() -> Result<i64, String> {
     let secs: i64 = trimmed
         .parse()
         .map_err(|e| format!("Invalid number: {e}"))?;
-    Ok(now + secs)
+    now.checked_add(secs)
+        .ok_or_else(|| format!("Expiration is out of range: {secs} seconds"))
 }
 
 pub(super) fn print_table(headers: &[&str], rows: &[Vec<String>]) {
     let mut widths: Vec<usize> = headers.iter().map(|h| h.len()).collect();
     for row in rows {
-        for (i, cell) in row.iter().enumerate() {
-            widths[i] = widths[i].max(cell.len());
+        for (width, cell) in widths.iter_mut().zip(row) {
+            *width = (*width).max(cell.len());
         }
     }
 
@@ -94,16 +95,16 @@ pub(super) fn print_table(headers: &[&str], rows: &[Vec<String>]) {
 
     print_sep(&widths, '┌', '┬', '┐');
     print!("│");
-    for (i, header) in headers.iter().enumerate() {
-        print!(" {:<width$} │", header, width = widths[i]);
+    for (header, width) in headers.iter().zip(&widths) {
+        print!(" {:<width$} │", header, width = *width);
     }
     println!();
     print_sep(&widths, '├', '┼', '┤');
 
     for row in rows {
         print!("│");
-        for (i, cell) in row.iter().enumerate() {
-            print!(" {:<width$} │", cell, width = widths[i]);
+        for (cell, width) in row.iter().zip(&widths) {
+            print!(" {:<width$} │", cell, width = *width);
         }
         println!();
     }

@@ -58,16 +58,27 @@ fn is_within(path: &str, ancestor: &str) -> bool {
             .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
 }
 
+// Tracks which path prefixes the pattern consumed so far can match, so `**` segments
+// cost O(pattern × path) instead of backtracking exponentially.
 fn match_segments(pattern: &[String], path: &[&str]) -> bool {
-    match pattern.split_first() {
-        None => path.is_empty(),
-        Some((first, rest)) if first == "**" => {
-            (0..=path.len()).any(|skip| match_segments(rest, &path[skip..]))
-        }
-        Some((first, rest)) => {
-            !path.is_empty() && match_glob(first, path[0]) && match_segments(rest, &path[1..])
+    let mut reachable = vec![false; path.len() + 1];
+    reachable[0] = true;
+    for segment in pattern {
+        if segment == "**" {
+            let mut seen = false;
+            for slot in reachable.iter_mut() {
+                seen |= *slot;
+                *slot = seen;
+            }
+        } else {
+            let mut next = vec![false; path.len() + 1];
+            for (index, part) in path.iter().enumerate() {
+                next[index + 1] = reachable[index] && match_glob(segment, part);
+            }
+            reachable = next;
         }
     }
+    reachable[path.len()]
 }
 
 fn match_glob(pattern: &str, text: &str) -> bool {
@@ -113,6 +124,14 @@ mod tests {
         assert!(matches("/plant/**/temp", "/plant/temp"));
         assert!(matches("/plant/**/temp", "/plant/a/b/temp"));
         assert!(!matches("/plant/**/temp", "/plant/a/b/pressure"));
+    }
+
+    #[test]
+    fn repeated_double_wildcards_do_not_backtrack_exponentially() {
+        let pattern = format!("{}/z", "/**".repeat(40));
+        let path = format!("{}/y", "/a".repeat(200));
+        assert!(!matches(&pattern, &path));
+        assert!(matches(&pattern, &format!("{}/z", "/a".repeat(200))));
     }
 
     #[test]

@@ -27,8 +27,16 @@ impl Session {
         role: Role,
     ) -> Result<Self, String> {
         let now = Utc::now();
-        let access_exp = (now + Duration::seconds(access_ttl_secs as i64)).timestamp();
-        let refresh_exp = (now + Duration::seconds(refresh_ttl_secs as i64)).timestamp();
+        let expiration = |ttl_secs: u64| {
+            i64::try_from(ttl_secs)
+                .ok()
+                .and_then(Duration::try_seconds)
+                .and_then(|ttl| now.checked_add_signed(ttl))
+                .map(|exp| exp.timestamp())
+                .ok_or_else(|| format!("Session TTL of {ttl_secs} seconds is out of range"))
+        };
+        let access_exp = expiration(access_ttl_secs)?;
+        let refresh_exp = expiration(refresh_ttl_secs)?;
 
         let access_claims = TokenClaims {
             user: username.to_string(),
