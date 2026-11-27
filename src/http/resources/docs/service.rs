@@ -117,6 +117,15 @@ mod tests {
                 _ => {}
             }
         }
+        // Swagger UI routes "Try it out" by operationId, so a duplicate sends the
+        // request to another endpoint.
+        let mut operation_ids = std::collections::HashSet::new();
+        for path in document["paths"].as_object().unwrap().values() {
+            for operation in path.as_object().unwrap().values() {
+                let id = operation["operationId"].as_str().unwrap();
+                assert!(operation_ids.insert(id), "Duplicate operationId: {id}");
+            }
+        }
         assert!(document["paths"]["/api/ingestors"]["post"].is_object());
         assert!(document["paths"]["/api/egressors"]["post"].is_object());
         assert!(document["components"]["securitySchemes"]["bearerAuth"].is_object());

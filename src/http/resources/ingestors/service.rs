@@ -17,13 +17,13 @@ use crate::http::{
 
 pub type IngestorManager = PluginManager<Ingestors>;
 
-#[utoipa::path(get, path = "/api/ingestors/plugins", tag = "Ingestors", security(("bearerAuth" = [])),
+#[utoipa::path(get, operation_id = "list_ingestor_plugins", path = "/api/ingestors/plugins", tag = "Ingestors", security(("bearerAuth" = [])),
     responses((status = 200, description = "Compiled-in plugin types", body = [String])))]
 pub async fn plugins(State(state): State<Arc<AppState>>) -> Json<Vec<String>> {
     Json(state.ingestors.plugin_types())
 }
 
-#[utoipa::path(get, path = "/api/ingestors", tag = "Ingestors", security(("bearerAuth" = [])),
+#[utoipa::path(get, operation_id = "list_ingestors", path = "/api/ingestors", tag = "Ingestors", security(("bearerAuth" = [])),
     responses((status = 200, description = "Ingestor instances and runtime status", body = ApiResponse<Vec<InstanceInfo>>)))]
 pub async fn list(
     State(state): State<Arc<AppState>>,
@@ -31,7 +31,7 @@ pub async fn list(
     Ok(Json(ApiResponse::success(state.ingestors.list().await?)))
 }
 
-#[utoipa::path(get, path = "/api/ingestors/{id}", tag = "Ingestors", security(("bearerAuth" = [])),
+#[utoipa::path(get, operation_id = "get_ingestor", path = "/api/ingestors/{id}", tag = "Ingestors", security(("bearerAuth" = [])),
     params(("id" = String, Path, description = "Instance ID")),
     responses((status = 200, description = "Ingestor instance", body = ApiResponse<InstanceInfo>), (status = 404, description = "Not found", body = ApiResponseEmpty)))]
 pub async fn get(
@@ -41,8 +41,8 @@ pub async fn get(
     Ok(Json(ApiResponse::success(state.ingestors.get(&id).await?)))
 }
 
-#[utoipa::path(post, path = "/api/ingestors", tag = "Ingestors", security(("bearerAuth" = [])),
-    request_body(content = InstanceInput, example = json!({"name":"Waveform simulator","plugin_type":"simulator","enabled":true,"config":{"interval_ms":100,"variables":[{"path":"/plant/random","waveform":"random","min":0,"max":100,"decimal_places":2},{"path":"/plant/sine","waveform":"sine","min":0,"max":100,"period_ms":5000,"phase_degrees":0,"decimal_places":2},{"path":"/plant/square","waveform":"square","min":0,"max":100,"period_ms":5000,"phase_degrees":90},{"path":"/plant/ramp","waveform":"ramp","min":0,"max":100,"period_ms":10000,"phase_degrees":0,"decimal_places":2}]}})),
+#[utoipa::path(post, operation_id = "create_ingestor", path = "/api/ingestors", tag = "Ingestors", security(("bearerAuth" = [])),
+    request_body(content = InstanceInput, example = json!({"name":"Waveform simulator","plugin_type":"simulator","enabled":true,"config":{"interval_ms":1000,"variables":[{"path":"/plant/line[1:10]/ramp[1:200]","waveform":"ramp","min":0,"max":100,"period_ms":10000,"phase_degrees":0,"decimal_places":2},{"path":"/plant/line[1:10]/sine[1:150]","waveform":"sine","min":0,"max":100,"period_ms":5000,"phase_degrees":0,"decimal_places":2},{"path":"/plant/line[1:10]/square[1:100]","waveform":"square","min":0,"max":100,"period_ms":5000,"phase_degrees":90},{"path":"/plant/line[1:10]/random[1:50]","waveform":"random","min":0,"max":100,"decimal_places":2}]}})),
     responses((status = 201, description = "Instance created", body = ApiResponse<InstanceInfo>), (status = 400, description = "Invalid configuration", body = ApiResponseEmpty)))]
 pub async fn create(
     State(state): State<Arc<AppState>>,
@@ -56,7 +56,7 @@ pub async fn create(
     ))
 }
 
-#[utoipa::path(put, path = "/api/ingestors/{id}", tag = "Ingestors", security(("bearerAuth" = [])),
+#[utoipa::path(put, operation_id = "update_ingestor", path = "/api/ingestors/{id}", tag = "Ingestors", security(("bearerAuth" = [])),
     params(("id" = String, Path, description = "Instance ID")), request_body(content = InstanceUpdate, example = json!({"config":{"interval_ms":500}})),
     responses((status = 200, description = "Fields merged; omitted fields remain unchanged; arrays replace existing arrays", body = ApiResponse<InstanceInfo>), (status = 400, description = "Invalid configuration", body = ApiResponseEmpty), (status = 404, description = "Not found", body = ApiResponseEmpty)))]
 pub async fn update(
@@ -69,7 +69,7 @@ pub async fn update(
     )))
 }
 
-#[utoipa::path(delete, path = "/api/ingestors/{id}", tag = "Ingestors", security(("bearerAuth" = [])),
+#[utoipa::path(delete, operation_id = "delete_ingestor", path = "/api/ingestors/{id}", tag = "Ingestors", security(("bearerAuth" = [])),
     params(("id" = String, Path, description = "Instance ID")),
     responses((status = 200, description = "Instance deleted; namespace variables are retained", body = ApiResponseEmpty), (status = 404, description = "Not found", body = ApiResponseEmpty)))]
 pub async fn delete(

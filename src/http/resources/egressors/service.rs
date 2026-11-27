@@ -17,13 +17,13 @@ use crate::http::{
 
 pub type EgressorManager = PluginManager<Egressors>;
 
-#[utoipa::path(get, path = "/api/egressors/plugins", tag = "Egressors", security(("bearerAuth" = [])),
+#[utoipa::path(get, operation_id = "list_egressor_plugins", path = "/api/egressors/plugins", tag = "Egressors", security(("bearerAuth" = [])),
     responses((status = 200, description = "Compiled-in plugin types", body = [String])))]
 pub async fn plugins(State(state): State<Arc<AppState>>) -> Json<Vec<String>> {
     Json(state.egressors.plugin_types())
 }
 
-#[utoipa::path(get, path = "/api/egressors", tag = "Egressors", security(("bearerAuth" = [])),
+#[utoipa::path(get, operation_id = "list_egressors", path = "/api/egressors", tag = "Egressors", security(("bearerAuth" = [])),
     responses((status = 200, description = "Egressor instances and runtime status", body = ApiResponse<Vec<InstanceInfo>>)))]
 pub async fn list(
     State(state): State<Arc<AppState>>,
@@ -31,7 +31,7 @@ pub async fn list(
     Ok(Json(ApiResponse::success(state.egressors.list().await?)))
 }
 
-#[utoipa::path(get, path = "/api/egressors/{id}", tag = "Egressors", security(("bearerAuth" = [])),
+#[utoipa::path(get, operation_id = "get_egressor", path = "/api/egressors/{id}", tag = "Egressors", security(("bearerAuth" = [])),
     params(("id" = String, Path, description = "Instance ID")),
     responses((status = 200, description = "Egressor instance", body = ApiResponse<InstanceInfo>), (status = 404, description = "Not found", body = ApiResponseEmpty)))]
 pub async fn get(
@@ -41,7 +41,7 @@ pub async fn get(
     Ok(Json(ApiResponse::success(state.egressors.get(&id).await?)))
 }
 
-#[utoipa::path(post, path = "/api/egressors", tag = "Egressors", security(("bearerAuth" = [])),
+#[utoipa::path(post, operation_id = "create_egressor", path = "/api/egressors", tag = "Egressors", security(("bearerAuth" = [])),
     request_body(content = InstanceInput, example = json!({"name":"UDP stream","plugin_type":"udp","enabled":true,"config":{"variables":["/plant/**"],"mode":{"type":"subscription"},"target":{"host":"127.0.0.1","port":9000}}})),
     responses((status = 201, description = "Instance created", body = ApiResponse<InstanceInfo>), (status = 400, description = "Invalid configuration", body = ApiResponseEmpty)))]
 pub async fn create(
@@ -56,7 +56,7 @@ pub async fn create(
     ))
 }
 
-#[utoipa::path(put, path = "/api/egressors/{id}", tag = "Egressors", security(("bearerAuth" = [])),
+#[utoipa::path(put, operation_id = "update_egressor", path = "/api/egressors/{id}", tag = "Egressors", security(("bearerAuth" = [])),
     params(("id" = String, Path, description = "Instance ID")), request_body(content = InstanceUpdate, example = json!({"config":{"mode":{"type":"polling","interval_ms":1000}}})),
     responses((status = 200, description = "Fields merged; omitted fields remain unchanged; arrays replace existing arrays", body = ApiResponse<InstanceInfo>), (status = 400, description = "Invalid configuration", body = ApiResponseEmpty), (status = 404, description = "Not found", body = ApiResponseEmpty)))]
 pub async fn update(
@@ -69,7 +69,7 @@ pub async fn update(
     )))
 }
 
-#[utoipa::path(delete, path = "/api/egressors/{id}", tag = "Egressors", security(("bearerAuth" = [])),
+#[utoipa::path(delete, operation_id = "delete_egressor", path = "/api/egressors/{id}", tag = "Egressors", security(("bearerAuth" = [])),
     params(("id" = String, Path, description = "Instance ID")),
     responses((status = 200, description = "Instance deleted", body = ApiResponseEmpty), (status = 404, description = "Not found", body = ApiResponseEmpty)))]
 pub async fn delete(

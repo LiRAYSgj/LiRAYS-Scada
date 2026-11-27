@@ -75,6 +75,31 @@ pub fn parse_repeated_name(
 /// cannot exhaust memory with a request such as `name[1:4000000000]`.
 pub const MAX_REPEATED_NAMES: usize = 1_000_000;
 
+/// Number of names [`clone_name`] produces for the same arguments, computed
+/// without building them.
+pub fn repeated_name_count(
+    start: Option<usize>,
+    stop: Option<usize>,
+    step: Option<usize>,
+    options: Option<&[String]>,
+) -> usize {
+    if let Some(opts) = options {
+        return opts.len();
+    }
+    let Some(end) = stop else {
+        return 1;
+    };
+    let start = start.unwrap_or(1);
+    let step = step.unwrap_or(1);
+    if step == 0 {
+        return 1;
+    }
+    if start > end {
+        return 0;
+    }
+    (end - start) / step + 1
+}
+
 /// Expand into a list of names, either by numeric range or explicit options.
 /// Names are built as `prefix + value + suffix`. Fails when a range would produce
 /// more than [`MAX_REPEATED_NAMES`] names.
@@ -93,18 +118,15 @@ pub fn clone_name(
             .collect());
     }
 
+    let count = repeated_name_count(start, stop, step, None);
     let Some(end) = stop else {
         return Ok(vec![format!("{prefix}{suffix}")]);
     };
-    let start = start.unwrap_or(1);
     let step = step.unwrap_or(1);
     if step == 0 {
         return Ok(vec![format!("{prefix}{suffix}")]);
     }
-    if start > end {
-        return Ok(Vec::new());
-    }
-    let count = (end - start) / step + 1;
+    let start = start.unwrap_or(1);
     if count > MAX_REPEATED_NAMES {
         return Err(format!(
             "Range [{start}:{end}:{step}] expands to {count} names; the limit is {MAX_REPEATED_NAMES}"

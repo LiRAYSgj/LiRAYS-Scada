@@ -114,6 +114,15 @@ Equal bounds generate a constant. The list must be nonempty; paths must be
 canonical, unique within the instance, and cannot be parents of other variables.
 Missed ticks are skipped instead of replayed in a burst.
 
+A `path` can expand into many variables with the namespace bulk ADD syntax in
+any segment: a numeric range `[start:end]` or `[start:end:step]` (inclusive,
+`start` defaults to 1) or a list of options `[A,B,C]`, with optional text before
+and after the brackets. The expansion is the combination of every segment, and
+each resulting variable shares the rest of the entry's configuration. For
+example, `"/plant/line[1:4]/ramp[1:100]"` creates folders `line1` to `line4`
+with variables `ramp1` to `ramp100` in each one. The rules above apply to the
+expanded paths, and an instance can expand to at most 100,000 variables.
+
 Bounds control generation, not constraints on the SCADA variable. Missing folders
 and variables are created with an inferred type and no optional metadata.
 Existing variables retain their metadata and use the normal SCADA value

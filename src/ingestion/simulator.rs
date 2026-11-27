@@ -6,6 +6,10 @@ use serde::Deserialize;
 use tokio::time::{Instant, Interval, MissedTickBehavior};
 
 use super::{IngestionBatch, Ingestor, IngestorPlugin};
+use crate::rtdata::parser::{clone_name, parse_repeated_name, repeated_name_count};
+
+/// Upper bound for the variables of one instance after expanding path patterns.
+const MAX_SIMULATED_VARIABLES: usize = 100_000;
 
 pub struct SimulatorPlugin;
 
@@ -55,7 +59,7 @@ enum Waveform {
     Ramp,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct VariableConfig {
     path: String,
@@ -69,6 +73,7 @@ struct VariableConfig {
     decimal_places: Option<u32>,
 }
 
+#[derive(Clone)]
 struct DecimalRange {
     scale: f64,
     min: i64,
@@ -102,17 +107,8 @@ impl IngestorPlugin for SimulatorPlugin {
             return Err("variables must contain at least one variable".into());
         }
         let mut paths = HashSet::new();
-        let mut variables = Vec::with_capacity(config.variables.len());
-        for variable in config.variables {
-            if !variable.path.starts_with('/')
-                || variable.path.contains('\0')
-                || variable.path != crate::rtdata::utils::normalize_path(&variable.path)
-            {
-                return Err(format!("Invalid namespace path: {:?}", variable.path));
-            }
-            if !paths.insert(variable.path.clone()) {
-                return Err(format!("Duplicate variable path: {}", variable.path));
-            }
+        let mut variables = Vec::new();
+        for mut variable in config.variables {
             if !variable.min.is_finite()
                 || !variable.max.is_finite()
                 || variable.min > variable.max
@@ -167,10 +163,23 @@ impl IngestorPlugin for SimulatorPlugin {
             } else {
                 None
             };
-            variables.push(SimulatedVariable {
-                config: variable,
-                decimals,
-            });
+            let pattern = std::mem::take(&mut variable.path);
+            let remaining = MAX_SIMULATED_VARIABLES.saturating_sub(variables.len());
+            for path in expand_path_pattern(&pattern, remaining)? {
+                if path.contains('\0') || path != crate::rtdata::utils::normalize_path(&path) {
+                    return Err(format!("Invalid namespace path: {path:?}"));
+                }
+                if !paths.insert(path.clone()) {
+                    return Err(format!("Duplicate variable path: {path}"));
+                }
+                variables.push(SimulatedVariable {
+                    config: VariableConfig {
+                        path,
+                        ..variable.clone()
+                    },
+                    decimals: decimals.clone(),
+                });
+            }
         }
         for path in &paths {
             let mut parent = path.as_str();
@@ -188,6 +197,38 @@ impl IngestorPlugin for SimulatorPlugin {
             started_at: None,
         }))
     }
+}
+
+/// Expand range and option brackets in each path segment, using the namespace
+/// bulk ADD syntax, into the cartesian product of the segment names. The size is
+/// checked against `limit` before any path is built.
+fn expand_path_pattern(pattern: &str, limit: usize) -> Result<Vec<String>, String> {
+    let Some(relative) = pattern.strip_prefix('/') else {
+        return Err(format!("Invalid namespace path: {pattern:?}"));
+    };
+    let segments: Vec<_> = relative.split('/').map(parse_repeated_name).collect();
+    let mut total = 1usize;
+    for (_, _, start, stop, step, options) in &segments {
+        let count = repeated_name_count(*start, *stop, *step, options.as_deref());
+        total = total
+            .checked_mul(count)
+            .filter(|total| *total <= limit)
+            .ok_or_else(|| {
+                format!("Variable paths expand to more than {MAX_SIMULATED_VARIABLES} variables")
+            })?;
+    }
+    if total == 0 {
+        return Err(format!("Path pattern expands to no variables: {pattern}"));
+    }
+    let mut paths = vec![String::new()];
+    for (prefix, suffix, start, stop, step, options) in segments {
+        let names = clone_name(&prefix, &suffix, start, stop, step, options)?;
+        paths = paths
+            .iter()
+            .flat_map(|parent| names.iter().map(move |name| format!("{parent}/{name}")))
+            .collect();
+    }
+    Ok(paths)
 }
 
 impl Ingestor for Simulator {
@@ -369,6 +410,68 @@ mod tests {
                 "Accepted {config}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn path_patterns_expand_into_folders_and_variables_sharing_config() {
+        let mut source = SimulatorPlugin
+            .create(
+                "test",
+                &json!({"variables":[
+                    {"path":"/plant/line[1:2]/ramp[1:3]","waveform":"ramp","period_ms":1000,"phase_degrees":90,"min":0,"max":100},
+                    {"path":"/plant/pump[A, B]/temp","min":5,"max":5}
+                ]}),
+            )
+            .unwrap();
+        let batch = source.next_batch().await.unwrap();
+        let paths: Vec<_> = batch.values.iter().map(|v| v.var_id.as_str()).collect();
+        assert_eq!(
+            paths,
+            [
+                "/plant/line1/ramp1",
+                "/plant/line1/ramp2",
+                "/plant/line1/ramp3",
+                "/plant/line2/ramp1",
+                "/plant/line2/ramp2",
+                "/plant/line2/ramp3",
+                "/plant/pumpA/temp",
+                "/plant/pumpB/temp",
+            ]
+        );
+        for entry in &batch.values[..6] {
+            assert_eq!(
+                entry.value.as_ref().unwrap().typed,
+                Some(Typed::FloatValue(25.0))
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn path_patterns_reject_oversized_empty_and_overlapping_expansions() {
+        for variables in [
+            json!([{"path":"/a[1:1000000]/b[1:1000000]","min":0,"max":1}]),
+            json!([{"path":"/a[1:4000000000]","min":0,"max":1}]),
+            json!([{"path":"/a[1:100000]","min":0,"max":1},{"path":"/b","min":0,"max":1}]),
+            json!([{"path":"/a[5:1]/b[1:1000000]","min":0,"max":1}]),
+            json!([{"path":"/a[1:3]","min":0,"max":1},{"path":"/a2","min":0,"max":1}]),
+            json!([{"path":"/a[1:2]","min":0,"max":1},{"path":"/a1/b","min":0,"max":1}]),
+            json!([{"path":"/a[1:2]/","min":0,"max":1}]),
+        ] {
+            assert!(
+                SimulatorPlugin
+                    .create("test", &json!({"variables":variables}))
+                    .is_err(),
+                "Accepted {variables}"
+            );
+        }
+        assert!(
+            SimulatorPlugin
+                .create(
+                    "test",
+                    &json!({"variables":[{"path":"/a[1:100000]","min":0,"max":1}]})
+                )
+                .is_ok()
+        );
     }
 
     #[tokio::test(start_paused = true)]
