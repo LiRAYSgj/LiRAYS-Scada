@@ -145,3 +145,60 @@ requesting the next, without an unbounded queue. Pending reads must support
 cancellation. Plugins are trusted code compiled into the server, not runtime
 loads. Build with `rtk cargo build --no-default-features` to omit the simulator;
 the ingestion interface and endpoints remain available.
+
+## Egress plugins
+
+Egress instances publish namespace values to external destinations. The backend
+includes a compile-time `udp` plugin as an example. Use `POST /api/egressors` with:
+
+```json
+{
+  "name": "UDP stream",
+  "plugin_type": "udp",
+  "enabled": true,
+  "config": {
+    "variables": ["/plant/**"],
+    "mode": { "type": "subscription" },
+    "target": { "host": "127.0.0.1", "port": 9000 }
+  }
+}
+```
+
+`variables` lists canonical paths or patterns. `*` matches any characters within
+one path segment (`/plant/*/temp`, `/line*/temp`) and a whole `**` segment matches
+any depth (`/plant/**`, or `/**` for the entire namespace). Patterns resolve to
+existing variables by scanning only the sled subtree below their literal prefix,
+and they are resolved again when folders under that prefix change, so new
+variables are picked up automatically.
+
+`mode` selects how values are read:
+
+- `{"type": "subscription"}` sends the current values once, then every change
+  of a selected variable.
+- `{"type": "polling", "interval_ms": 1000}` sends the current values of all
+  selected variables every interval. Missed ticks are skipped.
+
+Values are collected while a publish is in progress and only the latest value of
+each variable is kept, so a slow destination delays values without unbounded
+memory. A failed publish sets `status.state` to `error` with `status.last_error`,
+keeps the instance running, and retries the unsent values with a backoff of up to
+30 seconds. On shutdown, ingestors stop first and egress instances get one last
+short attempt to publish pending values.
+
+`target` belongs to the plugin. The `udp` plugin sends JSON datagrams of at most
+1400 bytes, splitting larger batches, without authentication or delivery
+guarantees. Listen with `nc -ul 9000` to see them:
+
+```json
+{"ts":1764211200000,"values":[{"path":"/plant/temp","value":21.4}]}
+```
+
+The endpoints mirror the ingestion ones (`/api/egressors`, `/api/egressors/plugins`,
+`/api/egressors/{id}`), including partial updates, admin-only access, persistence
+in SQLite, and restoration on startup.
+
+The plugin contract is in `src/egress/mod.rs`: implement `EgressPlugin` to validate
+`target` and create an `Egressor` whose asynchronous `publish` sends one batch.
+The engine handles variable selection, read mode, batching, and retries, and runs
+at most one publish per instance at a time. Register factories in
+`builtin_plugins()`. Build with `--no-default-features` to omit the `udp` example.

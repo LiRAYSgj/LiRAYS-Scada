@@ -1,11 +1,16 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::http::resources::ingestors::service::IngestorInfo;
+use crate::http::resources::plugin_instances::InstanceInfo;
 use crate::http::resources::views::service::{View, ViewPage};
 
 #[derive(Serialize, Deserialize, ToSchema)]
-#[aliases(ApiResponseIngestor = ApiResponse<IngestorInfo>, ApiResponseIngestors = ApiResponse<Vec<IngestorInfo>>)]
+#[aliases(
+    ApiResponseIngestor = ApiResponse<InstanceInfo>,
+    ApiResponseIngestors = ApiResponse<Vec<InstanceInfo>>,
+    ApiResponseEgressor = ApiResponse<InstanceInfo>,
+    ApiResponseEgressors = ApiResponse<Vec<InstanceInfo>>
+)]
 pub struct ApiResponse<T> {
     success: bool,
     data: Option<T>,

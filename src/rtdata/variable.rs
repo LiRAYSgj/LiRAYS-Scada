@@ -22,6 +22,7 @@ use uuid::Uuid;
 use super::events::{extract_add_event, extract_del_event, extract_edit_event};
 use super::metrics::Metrics;
 use super::parser::{clone_name, parse_repeated_name};
+use super::pattern::PathPattern;
 use super::utils::{CachedValue, get_ancestors, normalize_path};
 use crate::http::resources::user::model::Role;
 
@@ -140,6 +141,45 @@ impl VariableManager {
         for k in closed_keys {
             self.event_senders.remove(&k);
         }
+    }
+
+    /// Expand patterns to existing variable paths. Wildcard patterns scan only the sled
+    /// subtree under their literal prefix (keys are `parent/\0name`).
+    pub async fn resolve_patterns(&self, patterns: &[PathPattern]) -> HashSet<String> {
+        let mut candidates = Vec::new();
+        for pattern in patterns {
+            if pattern.is_exact() {
+                candidates.push(pattern.literal_prefix().to_string());
+                continue;
+            }
+            let prefix = format!("{}/", pattern.literal_prefix());
+            for key in self.items_tree.scan_prefix(prefix).keys().flatten() {
+                let path = String::from_utf8_lossy(&key).replacen("/\0", "/", 1);
+                if pattern.matches(&path) {
+                    candidates.push(path);
+                }
+            }
+        }
+        let cache = self.values_cache.read().await;
+        candidates
+            .into_iter()
+            .filter(|path| cache.contains_key(path))
+            .collect()
+    }
+
+    /// Current values of `paths`, skipping missing variables and variables without a value.
+    pub async fn snapshot(&self, paths: &HashSet<String>) -> Vec<VarIdValue> {
+        let cache = self.values_cache.read().await;
+        paths
+            .iter()
+            .filter_map(|path| {
+                let typed = cache.get(path)?.val.clone()?;
+                Some(VarIdValue {
+                    var_id: path.clone(),
+                    value: Some(Value { typed: Some(typed) }),
+                })
+            })
+            .collect()
     }
 
     /// Flush dirty variable values to `values_tree` (coalesced last write wins).
@@ -1273,6 +1313,60 @@ mod tests {
             vm.values_cache.read().await["/plant/line/temperature"].val,
             Some(Typed::FloatValue(23.5))
         );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn patterns_resolve_to_existing_variables_only() {
+        let dir = temp_vm_dir("vm_patterns");
+        let vm = build_vm(&dir);
+        let float = |path: &str| VarIdValue {
+            var_id: path.into(),
+            value: Some(Value {
+                typed: Some(Typed::FloatValue(1.0)),
+            }),
+        };
+        vm.ingest(crate::ingestion::IngestionBatch {
+            values: vec![
+                float("/top"),
+                float("/plant/line1/temp"),
+                float("/plant/line2/temp"),
+                float("/plant/line2/sub/temp"),
+                float("/plantx/temp"),
+            ],
+        })
+        .await
+        .unwrap();
+        let resolve = |patterns: &[&str]| {
+            let patterns: Vec<_> = patterns
+                .iter()
+                .map(|p| PathPattern::parse(p).unwrap())
+                .collect();
+            let vm = &vm;
+            async move {
+                let mut paths: Vec<_> = vm.resolve_patterns(&patterns).await.into_iter().collect();
+                paths.sort();
+                paths
+            }
+        };
+        assert_eq!(resolve(&["/*"]).await, ["/top"]);
+        assert_eq!(
+            resolve(&["/plant/*/temp"]).await,
+            ["/plant/line1/temp", "/plant/line2/temp"]
+        );
+        assert_eq!(
+            resolve(&["/plant/**"]).await,
+            [
+                "/plant/line1/temp",
+                "/plant/line2/sub/temp",
+                "/plant/line2/temp"
+            ]
+        );
+        assert_eq!(resolve(&["/**"]).await.len(), 5);
+        assert_eq!(resolve(&["/plant", "/missing", "/top"]).await, ["/top"]);
+        let snapshot = vm
+            .snapshot(&resolve(&["/top"]).await.into_iter().collect())
+            .await;
+        assert_eq!(snapshot, vec![float("/top")]);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
