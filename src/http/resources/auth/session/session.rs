@@ -47,18 +47,12 @@ impl Session {
         };
 
         let header = Header::new(Algorithm::HS256);
-        let access_token = encode(
-            &header,
-            &access_claims,
-            &EncodingKey::from_secret(access_secret),
-        )
-        .map_err(|e| format!("Failed to encode access token: {e}"))?;
-        let refresh_token = encode(
-            &header,
-            &refresh_claims,
-            &EncodingKey::from_secret(refresh_secret),
-        )
-        .map_err(|e| format!("Failed to encode refresh token: {e}"))?;
+        let access_token = EncodingKey::from_secret(access_secret)
+            .and_then(|key| encode(&header, &access_claims, &key))
+            .map_err(|e| format!("Failed to encode access token: {e}"))?;
+        let refresh_token = EncodingKey::from_secret(refresh_secret)
+            .and_then(|key| encode(&header, &refresh_claims, &key))
+            .map_err(|e| format!("Failed to encode refresh token: {e}"))?;
 
         Ok(Session {
             access_token,
@@ -72,12 +66,8 @@ pub fn decode_token_claims(
     token: &str,
     secret: &[u8],
 ) -> Result<TokenClaims, jsonwebtoken::errors::Error> {
-    decode::<TokenClaims>(
-        token,
-        &DecodingKey::from_secret(secret),
-        &Validation::new(Algorithm::HS256),
-    )
-    .map(|data| data.claims)
+    let key = DecodingKey::from_secret(secret)?;
+    decode::<TokenClaims>(token, &key, &Validation::new(Algorithm::HS256)).map(|data| data.claims)
 }
 
 pub fn is_expired_error(error: &jsonwebtoken::errors::Error) -> bool {

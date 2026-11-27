@@ -2,19 +2,11 @@ pub mod model;
 pub mod namespace;
 pub mod service;
 
-use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseConnection, DbErr, Statement};
+use sea_orm::{DatabaseConnection, DbErr, Schema};
+
+use crate::db::create_table_if_missing;
 
 pub async fn ensure_schema(db: &DatabaseConnection) -> Result<(), DbErr> {
-    let users_sql = "CREATE TABLE IF NOT EXISTS users (\
-        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,\
-        username TEXT NOT NULL UNIQUE,\
-        password_hash TEXT NOT NULL,\
-        role TEXT NOT NULL DEFAULT 'operator'\
-    );";
-    db.execute(Statement::from_string(
-        DatabaseBackend::Sqlite,
-        users_sql.to_string(),
-    ))
-    .await?;
-    Ok(())
+    let schema = Schema::new(db.get_database_backend());
+    create_table_if_missing(db, schema.create_table_from_entity(model::Entity)).await
 }

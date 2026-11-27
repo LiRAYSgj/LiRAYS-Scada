@@ -2,6 +2,7 @@ pub mod events;
 pub mod metrics;
 pub mod parser;
 pub mod pattern;
+pub mod store;
 pub mod utils;
 pub mod variable;
 

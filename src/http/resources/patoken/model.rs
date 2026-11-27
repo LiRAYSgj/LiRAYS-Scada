@@ -7,6 +7,7 @@ use crate::http::resources::user::model::Role;
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: String,
+    #[sea_orm(unique)]
     pub name: String,
     pub user: String,
     pub role: Role,

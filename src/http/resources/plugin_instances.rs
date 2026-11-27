@@ -8,7 +8,8 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use sea_orm::{
-    ConnectionTrait, DatabaseConnection, DbErr, FromQueryResult, Statement, Value as DbValue,
+    ConnectionTrait, DatabaseConnection, DbErr, DeriveIden, FromQueryResult, StatementBuilder,
+    sea_query::{Alias, ColumnDef, Expr, Order, Query, SelectStatement, Table},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -20,7 +21,11 @@ use tokio_util::sync::CancellationToken;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-use crate::{http::ApiResponseEmpty, rtdata::variable::VariableManager};
+use crate::{
+    db::{create_table_if_missing, large_text},
+    http::ApiResponseEmpty,
+    rtdata::variable::VariableManager,
+};
 
 /// One kind of compiled-in plugin (ingestion, egress, ...) and how its instances run.
 pub trait PluginKind: Send + Sync + 'static {
@@ -28,7 +33,7 @@ pub trait PluginKind: Send + Sync + 'static {
     /// A validated instance, ready to run.
     type Prepared: Send + 'static;
 
-    /// SQLite table holding this kind's instances.
+    /// Database table holding this kind's instances.
     const TABLE: &'static str;
 
     fn plugin_type(plugin: &Self::Plugin) -> &'static str;
@@ -179,21 +184,34 @@ impl IntoResponse for InstanceError {
     }
 }
 
+#[derive(DeriveIden)]
+enum Instance {
+    Id,
+    Name,
+    PluginType,
+    Enabled,
+    ConfigJson,
+}
+
 pub async fn ensure_schema(db: &DatabaseConnection, table: &str) -> Result<(), DbErr> {
-    db.execute(Statement::from_string(
-        db.get_database_backend(),
-        format!(
-            "CREATE TABLE IF NOT EXISTS {table} (
-                id TEXT PRIMARY KEY NOT NULL,
-                name TEXT NOT NULL,
-                plugin_type TEXT NOT NULL,
-                enabled BOOLEAN NOT NULL,
-                config_json TEXT NOT NULL
-            )"
-        ),
-    ))
-    .await?;
-    Ok(())
+    let backend = db.get_database_backend();
+    create_table_if_missing(
+        db,
+        Table::create()
+            .table(Alias::new(table))
+            .col(
+                ColumnDef::new(Instance::Id)
+                    .string()
+                    .not_null()
+                    .primary_key(),
+            )
+            .col(ColumnDef::new(Instance::Name).string().not_null())
+            .col(ColumnDef::new(Instance::PluginType).string().not_null())
+            .col(ColumnDef::new(Instance::Enabled).boolean().not_null())
+            .col(ColumnDef::new_with_type(Instance::ConfigJson, large_text(backend)).not_null())
+            .to_owned(),
+    )
+    .await
 }
 
 #[derive(FromQueryResult)]
@@ -304,33 +322,39 @@ impl<K: PluginKind> PluginManager<K> {
         }
     }
 
+    fn select() -> SelectStatement {
+        Query::select()
+            .columns([
+                Instance::Id,
+                Instance::Name,
+                Instance::PluginType,
+                Instance::Enabled,
+                Instance::ConfigJson,
+            ])
+            .from(Alias::new(K::TABLE))
+            .to_owned()
+    }
+
+    fn id_is(id: impl Into<Expr>) -> Expr {
+        use sea_orm::sea_query::ExprTrait;
+        Expr::col(Instance::Id).eq(id)
+    }
+
     async fn find(&self, id: &str) -> Result<Option<Row>, DbErr> {
-        Row::find_by_statement(Statement::from_sql_and_values(
-            self.db.get_database_backend(),
-            format!(
-                "SELECT id, name, plugin_type, enabled, config_json FROM {} WHERE id = ?",
-                K::TABLE
-            ),
-            [id.into()],
-        ))
-        .one(&self.db)
-        .await
+        let query = Self::select().and_where(Self::id_is(id)).to_owned();
+        Row::find_by_statement(self.db.get_database_backend().build(&query))
+            .one(&self.db)
+            .await
     }
 
     async fn find_all(&self) -> Result<Vec<Row>, DbErr> {
-        Row::find_by_statement(Statement::from_string(
-            self.db.get_database_backend(),
-            format!(
-                "SELECT id, name, plugin_type, enabled, config_json FROM {} ORDER BY id",
-                K::TABLE
-            ),
-        ))
-        .all(&self.db)
-        .await
+        let query = Self::select().order_by(Instance::Id, Order::Asc).to_owned();
+        Row::find_by_statement(self.db.get_database_backend().build(&query))
+            .all(&self.db)
+            .await
     }
 
-    async fn execute(&self, sql: String, values: Vec<DbValue>) -> Result<u64, DbErr> {
-        let statement = Statement::from_sql_and_values(self.db.get_database_backend(), sql, values);
+    async fn execute(&self, statement: &impl StatementBuilder) -> Result<u64, DbErr> {
         Ok(self.db.execute(statement).await?.rows_affected())
     }
 
@@ -454,20 +478,28 @@ impl<K: PluginKind> PluginManager<K> {
             enabled: input.enabled,
             config_json: input.config.to_string(),
         };
-        let values = vec![
-            row.name.clone().into(),
-            row.plugin_type.clone().into(),
-            row.enabled.into(),
-            row.config_json.clone().into(),
-            row.id.clone().into(),
+        let values = [
+            (Instance::Name, row.name.clone().into()),
+            (Instance::PluginType, row.plugin_type.clone().into()),
+            (Instance::Enabled, row.enabled.into()),
+            (Instance::ConfigJson, row.config_json.clone().into()),
         ];
-        let sql = if id.is_some() {
-            "UPDATE {table} SET name = ?, plugin_type = ?, enabled = ?, config_json = ? WHERE id = ?"
+        if id.is_some() {
+            let update = Query::update()
+                .table(Alias::new(K::TABLE))
+                .values(values)
+                .and_where(Self::id_is(row.id.clone()))
+                .to_owned();
+            self.execute(&update).await?;
         } else {
-            "INSERT INTO {table} (name, plugin_type, enabled, config_json, id) VALUES (?, ?, ?, ?, ?)"
-        };
-        self.execute(sql.replace("{table}", K::TABLE), values)
-            .await?;
+            let (columns, values): (Vec<_>, Vec<_>) = values.into_iter().unzip();
+            let insert = Query::insert()
+                .into_table(Alias::new(K::TABLE))
+                .columns(columns.into_iter().chain([Instance::Id]))
+                .values_panic(values.into_iter().chain([row.id.clone().into()]))
+                .to_owned();
+            self.execute(&insert).await?;
+        }
         Self::stop_task(&mut runtime, &row.id).await;
         if row.enabled {
             runtime
@@ -482,8 +514,11 @@ impl<K: PluginKind> PluginManager<K> {
         if runtime.stopping {
             return Err(InstanceError::Stopping);
         }
-        let sql = format!("DELETE FROM {} WHERE id = ?", K::TABLE);
-        if self.execute(sql, vec![id.into()]).await? == 0 {
+        let delete = Query::delete()
+            .from_table(Alias::new(K::TABLE))
+            .and_where(Self::id_is(id))
+            .to_owned();
+        if self.execute(&delete).await? == 0 {
             return Err(InstanceError::NotFound);
         }
         Self::stop_task(&mut runtime, id).await;

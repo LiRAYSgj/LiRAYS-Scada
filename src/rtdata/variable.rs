@@ -12,8 +12,6 @@ use lirays_scada_proto::namespace::v1::{
 };
 use log::{debug, info, warn};
 use prost::Message;
-use sled::transaction::Transactional;
-use sled::{Batch, Tree};
 use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::{Mutex, RwLock, mpsc};
 use tokio::task::{JoinHandle, block_in_place};
@@ -23,12 +21,12 @@ use super::events::{extract_add_event, extract_del_event, extract_edit_event};
 use super::metrics::Metrics;
 use super::parser::{clone_name, parse_repeated_name};
 use super::pattern::PathPattern;
+use super::store::{FjallStore, VariableStore, WriteBatch};
 use super::utils::{CachedValue, get_ancestors, normalize_path};
 use crate::http::resources::user::model::Role;
 
-pub struct VariableManager {
-    pub items_tree: Tree,
-    pub values_tree: Tree,
+pub struct VariableManager<S: VariableStore = FjallStore> {
+    store: S,
     pub values_cache: RwLock<HashMap<String, CachedValue>>,
     event_senders: DashMap<u64, mpsc::Sender<Arc<EventBatch>>>,
     next_listener_id: AtomicU64,
@@ -38,22 +36,17 @@ pub struct VariableManager {
     persistence_write: Mutex<()>,
 }
 
-impl VariableManager {
+impl VariableManager<FjallStore> {
     pub fn new(files_dir: &str, metrics: Arc<Metrics>) -> Result<Self, String> {
-        let db =
-            sled::open(files_dir).map_err(|e| format!("Failed to open variable DB store: {e}"))?;
-        let items_tree = db
-            .open_tree("mainTree")
-            .map_err(|e| format!("Failed to open items tree: {e}"))?;
-        let values_tree = db
-            .open_tree("valuesTree")
-            .map_err(|e| format!("Failed to open values tree: {e}"))?;
-        let values_cache = RwLock::new(HashMap::new());
+        Self::with_store(FjallStore::open(files_dir)?, metrics)
+    }
+}
 
+impl<S: VariableStore> VariableManager<S> {
+    pub fn with_store(store: S, metrics: Arc<Metrics>) -> Result<Self, String> {
         let vm = Self {
-            items_tree,
-            values_tree,
-            values_cache,
+            store,
+            values_cache: RwLock::new(HashMap::new()),
             event_senders: DashMap::new(),
             next_listener_id: AtomicU64::new(0),
             metrics,
@@ -68,19 +61,19 @@ impl VariableManager {
     /// Build `values_cache` from item metadata and persisted values on startup.
     fn load_cache_from_storage(&self) {
         let mut cache = block_in_place(|| self.values_cache.blocking_write());
-        for result in self.items_tree.iter() {
+        for result in self.store.items() {
             if let Ok((key, value)) = result {
                 if let Ok(i_meta) = ItemMeta::decode(value.as_ref()) {
                     if i_meta.i_type() == ItemType::Variable {
-                        let key_str = String::from_utf8_lossy(&key);
+                        let key_str = String::from_utf8_lossy(key.as_ref());
                         let (parent, _) = match key_str.rsplit_once("/\0") {
                             Some((p, _)) => (p.to_string(), i_meta.name.clone()),
                             None => continue,
                         };
                         let full_path = format!("{}/{}", parent, i_meta.name);
                         let persisted_val = self
-                            .values_tree
-                            .get(full_path.as_bytes())
+                            .store
+                            .get_value(full_path.as_bytes())
                             .ok()
                             .flatten()
                             .and_then(|v| Value::decode(v.as_ref()).ok())
@@ -143,7 +136,7 @@ impl VariableManager {
         }
     }
 
-    /// Expand patterns to existing variable paths. Wildcard patterns scan only the sled
+    /// Expand patterns to existing variable paths. Wildcard patterns scan only the stored
     /// subtree under their literal prefix (keys are `parent/\0name`).
     pub async fn resolve_patterns(&self, patterns: &[PathPattern]) -> HashSet<String> {
         let mut candidates = Vec::new();
@@ -153,8 +146,8 @@ impl VariableManager {
                 continue;
             }
             let prefix = format!("{}/", pattern.literal_prefix());
-            for key in self.items_tree.scan_prefix(prefix).keys().flatten() {
-                let path = String::from_utf8_lossy(&key).replacen("/\0", "/", 1);
+            for (key, _) in self.store.scan_items(prefix.as_bytes()).flatten() {
+                let path = String::from_utf8_lossy(key.as_ref()).replacen("/\0", "/", 1);
                 if pattern.matches(&path) {
                     candidates.push(path);
                 }
@@ -182,7 +175,7 @@ impl VariableManager {
             .collect()
     }
 
-    /// Flush dirty variable values to `values_tree` (coalesced last write wins).
+    /// Flush dirty variable values to the values store (coalesced last write wins).
     pub async fn flush_dirty_now(&self) {
         // Serialize flushes and deletions without holding the cache or dirty-value locks.
         let _persistence = self.persistence_write.lock().await;
@@ -190,30 +183,19 @@ impl VariableManager {
         if pending.is_empty() {
             return;
         }
-        let mut batch = Batch::default();
+        let mut batch = WriteBatch::default();
         for (var_id, val_opt) in &pending {
             match val_opt {
                 Some(typed) => {
                     let val = Value {
                         typed: Some(typed.clone()),
                     };
-                    batch.insert(var_id.as_bytes(), val.encode_to_vec());
+                    batch.insert(var_id.as_str(), val.encode_to_vec());
                 }
-                None => batch.remove(var_id.as_bytes()),
+                None => batch.remove(var_id.as_str()),
             }
         }
-        let tree = self.values_tree.clone();
-        let result = match tokio::task::spawn_blocking(move || tree.apply_batch(batch)).await {
-            Ok(Ok(())) => self
-                .values_tree
-                .flush_async()
-                .await
-                .map(|_| ())
-                .map_err(|e| e.to_string()),
-            Ok(Err(e)) => Err(e.to_string()),
-            Err(e) => Err(e.to_string()),
-        };
-        if let Err(e) = result {
+        if let Err(e) = self.store.write_values(batch).await {
             warn!("flush_dirty_now: {e}");
             self.restore_dirty_values(pending).await;
         }
@@ -245,12 +227,12 @@ impl VariableManager {
 
     /// Create folders/variables under `parent_id`, auto-creating missing ancestors,
     /// staging cache metadata until the entire command has been validated.
-    /// Uses key `parent/\0name` in `items_tree`; `values_cache` keyed by full path without `\0`.
+    /// Uses key `parent/\0name` in the items store; `values_cache` keyed by full path without `\0`.
     async fn add_items(
         &self,
         parent_id: &str,
         items_meta: Vec<ItemMeta>,
-        batch: &mut Batch,
+        batch: &mut WriteBatch,
         pending_cache: &mut HashMap<String, CachedValue>,
         pending_names: &mut HashSet<String>,
     ) -> Result<(bool, Vec<ItemMeta>, Vec<ItemMeta>), String> {
@@ -262,8 +244,8 @@ impl VariableManager {
         for (parent, folder_name) in ancestors {
             let h_key = format!("{}/\0{}", parent, folder_name);
             if !self
-                .items_tree
-                .contains_key(&h_key)
+                .store
+                .contains_item(h_key.as_bytes())
                 .map_err(|e| format!("Reading error: {e}"))?
             {
                 let item = ItemMeta {
@@ -276,7 +258,7 @@ impl VariableManager {
                     options: Vec::new(),
                     max_len: None,
                 };
-                batch.insert(h_key.as_bytes(), item.encode_to_vec());
+                batch.insert(h_key.as_str(), item.encode_to_vec());
             }
         }
         for i_meta in items_meta {
@@ -287,20 +269,20 @@ impl VariableManager {
             let h_key = format!("{}/\0{}", parent_path, i_meta.name);
             if !pending_names.insert(h_key.clone())
                 || self
-                    .items_tree
-                    .contains_key(&h_key)
+                    .store
+                    .contains_item(h_key.as_bytes())
                     .map_err(|e| format!("Reading error: {e}"))?
             {
                 return Err(format!("Can't create existing item {}", h_key));
             }
             match i_meta.i_type() {
                 ItemType::Folder => {
-                    batch.insert(h_key.as_bytes(), i_meta.encode_to_vec());
+                    batch.insert(h_key.as_str(), i_meta.encode_to_vec());
                     new_folders.push(i_meta)
                 }
                 ItemType::Variable => {
                     let d_key = format!("{}/{}", parent_path, i_meta.name);
-                    batch.insert(h_key.as_bytes(), i_meta.encode_to_vec());
+                    batch.insert(h_key.as_str(), i_meta.encode_to_vec());
                     pending_cache.insert(
                         d_key,
                         CachedValue {
@@ -324,17 +306,17 @@ impl VariableManager {
 
     async fn commit_add(
         &self,
-        batch: Batch,
+        batch: WriteBatch,
         pending_cache: HashMap<String, CachedValue>,
-    ) -> Result<(), sled::Error> {
+    ) -> Result<(), String> {
         let mut cache = self.values_cache.write().await;
-        self.items_tree.apply_batch(batch)?;
+        self.store.apply_items(batch)?;
         cache.extend(pending_cache);
         Ok(())
     }
 
     /// Update variable metadata (unit/min/max/options/max_len) and mirror changes in cache.
-    /// Does not alter type or name. Requires presence in `items_tree` and `values_cache`.
+    /// Does not alter type or name. Requires presence in the items store and `values_cache`.
     async fn edit_variables(
         &self,
         var_id: &str,
@@ -350,7 +332,7 @@ impl VariableManager {
             .rsplit_once('/')
             .ok_or("Invalid normalized path".to_string())?;
         let h_key = format!("{}/\0{}", parent, name);
-        let mut current: ItemMeta = match self.items_tree.get(h_key.as_bytes()) {
+        let mut current: ItemMeta = match self.store.get_item(h_key.as_bytes()) {
             Ok(Some(value)) => {
                 ItemMeta::decode(value.as_ref()).map_err(|e| format!("Error decoding Item: {e}"))?
             }
@@ -384,13 +366,15 @@ impl VariableManager {
             }
             VarDataType::Unspecified => warn!("Invalid variable stored: {}", normalized),
         }
-        self.items_tree
-            .insert(h_key.as_bytes(), current.encode_to_vec())
+        let mut batch = WriteBatch::default();
+        batch.insert(h_key, current.encode_to_vec());
+        self.store
+            .apply_items(batch)
             .map_err(|e| format!("Error Applying batch op: {e}"))?;
         Ok(())
     }
 
-    /// List direct children of `parent_id` from `items_tree` (key `parent/\0name`).
+    /// List direct children of `parent_id` from the items store (key `parent/\0name`).
     /// Skips vars missing `var_d_type`, logs warn, continues.
     async fn list_path(&self, parent_id: &str) -> Result<(Vec<FolderInfo>, Vec<VarInfo>), String> {
         let parent_path = normalize_path(parent_id);
@@ -398,7 +382,7 @@ impl VariableManager {
         let mut children_folders = Vec::new();
         let mut children_vars = Vec::new();
 
-        for result in self.items_tree.scan_prefix(prefix) {
+        for result in self.store.scan_items(prefix.as_bytes()) {
             let (_, value) = result.map_err(|e| format!("Error reading tree: {e}"))?;
             let i_meta = ItemMeta::decode(value.as_ref())
                 .map_err(|e| format!("Error decoding Item: {e}"))?;
@@ -443,21 +427,21 @@ impl VariableManager {
         let _persistence = self.persistence_write.lock().await;
         let mut cache = self.values_cache.write().await;
         let mut dirty = self.dirty_values.lock().await;
-        let mut items_batch = Batch::default();
-        let mut values_batch = Batch::default();
+        let mut items_batch = WriteBatch::default();
+        let mut values_batch = WriteBatch::default();
         let mut removed = HashSet::new();
         for id in item_ids {
             let path = normalize_path(&id);
             let (parent, name) = path.rsplit_once('/').ok_or("Invalid normalized path")?;
             let prefix = format!("{path}/");
-            items_batch.remove(format!("{parent}/\0{name}").as_bytes());
-            for result in self.items_tree.scan_prefix(&prefix) {
+            items_batch.remove(format!("{parent}/\0{name}"));
+            for result in self.store.scan_items(prefix.as_bytes()) {
                 let (key, _) = result.map_err(|e| format!("Error reading tree: {e}"))?;
-                items_batch.remove(key);
+                items_batch.remove(key.as_ref());
             }
-            for result in self.values_tree.scan_prefix(&prefix) {
-                let (key, _) = result.map_err(|e| format!("Error reading values: {e}"))?;
-                values_batch.remove(key);
+            for result in self.store.scan_value_keys(prefix.as_bytes()) {
+                let key = result.map_err(|e| format!("Error reading values: {e}"))?;
+                values_batch.remove(key.as_ref());
             }
             removed.extend(
                 cache
@@ -466,19 +450,15 @@ impl VariableManager {
                     .filter(|key| **key == path || key.starts_with(&prefix))
                     .cloned(),
             );
-            values_batch.remove(path.as_bytes());
+            values_batch.remove(path.as_str());
             removed.insert(path);
         }
         for id in &removed {
-            values_batch.remove(id.as_bytes());
+            values_batch.remove(id.as_str());
         }
-        let result: Result<(), sled::transaction::TransactionError<()>> =
-            (&self.items_tree, &self.values_tree).transaction(|(items, values)| {
-                items.apply_batch(&items_batch)?;
-                values.apply_batch(&values_batch)?;
-                Ok(())
-            });
-        result.map_err(|e| format!("Error removing items: {e:?}"))?;
+        self.store
+            .apply_atomic(items_batch, values_batch)
+            .map_err(|e| format!("Error removing items: {e}"))?;
         for id in removed {
             cache.remove(&id);
             dirty.remove(&id);
@@ -491,7 +471,7 @@ impl VariableManager {
         &self,
         root_parent_id: &str,
         root_nodes: HashMap<String, NamespaceNode>,
-        batch: &mut Batch,
+        batch: &mut WriteBatch,
         pending_cache: &mut HashMap<String, CachedValue>,
         pending_names: &mut HashSet<String>,
     ) -> Result<(Vec<ItemMeta>, Vec<ItemMeta>), String> {
@@ -627,7 +607,7 @@ impl VariableManager {
         let mut cache = self.values_cache.write().await;
         let mut pending_cache = HashMap::new();
         let mut created = std::collections::BTreeMap::<String, ItemMeta>::new();
-        let mut storage = Batch::default();
+        let mut storage = WriteBatch::default();
         let mut updates = Vec::with_capacity(batch.values.len());
         for entry in batch.values {
             let path = entry.var_id;
@@ -654,11 +634,7 @@ impl VariableManager {
                     if pending_cache.contains_key(&folder) || cache.contains_key(&folder) {
                         return Err(format!("Variable cannot be a parent folder: {folder}"));
                     }
-                    if let Some(bytes) = self
-                        .items_tree
-                        .get(key.as_bytes())
-                        .map_err(|e| e.to_string())?
-                    {
+                    if let Some(bytes) = self.store.get_item(key.as_bytes())? {
                         let meta = ItemMeta::decode(bytes.as_ref()).map_err(|e| e.to_string())?;
                         if meta.i_type() != ItemType::Folder {
                             return Err(format!("Path is not a folder: {folder}"));
@@ -669,17 +645,12 @@ impl VariableManager {
                             i_type: ItemType::Folder as i32,
                             ..Default::default()
                         };
-                        storage.insert(key.as_bytes(), meta.encode_to_vec());
+                        storage.insert(key.as_str(), meta.encode_to_vec());
                         created.insert(folder.clone(), meta);
                     }
                 }
                 let key = format!("{parent}/\0{name}");
-                if created.contains_key(&path)
-                    || self
-                        .items_tree
-                        .contains_key(key.as_bytes())
-                        .map_err(|e| e.to_string())?
-                {
+                if created.contains_key(&path) || self.store.contains_item(key.as_bytes())? {
                     return Err(format!(
                         "Path already exists without a variable cache entry: {path}"
                     ));
@@ -696,7 +667,7 @@ impl VariableManager {
                     var_d_type: Some(dtype as i32),
                     ..Default::default()
                 };
-                storage.insert(key.as_bytes(), meta.encode_to_vec());
+                storage.insert(key.as_str(), meta.encode_to_vec());
                 created.insert(path.clone(), meta);
                 pending_cache.insert(
                     path.clone(),
@@ -733,9 +704,7 @@ impl VariableManager {
         }
         let mut dirty = self.dirty_values.lock().await;
         if !pending_cache.is_empty() {
-            self.items_tree
-                .apply_batch(storage)
-                .map_err(|e| e.to_string())?;
+            self.store.apply_items(storage)?;
             cache.extend(pending_cache);
         }
         for update in updates {
@@ -825,7 +794,7 @@ impl VariableManager {
                         let _namespace = self.namespace_write.lock().await;
                         let mut pending_cache = HashMap::new();
                         let mut pending_names = HashSet::new();
-                        let mut batch = Batch::default();
+                        let mut batch = WriteBatch::default();
                         let t0 = std::time::Instant::now();
                         let (status, error_msg) = match self
                             .add_items(
@@ -926,7 +895,7 @@ impl VariableManager {
                         let _namespace = self.namespace_write.lock().await;
                         let mut pending_cache = HashMap::new();
                         let mut pending_names = HashSet::new();
-                        let mut batch = sled::Batch::default();
+                        let mut batch = WriteBatch::default();
                         let t0 = std::time::Instant::now();
                         let (status, error_msg) = match addb_cmd.schema {
                             Some(schema) => {
@@ -1393,7 +1362,7 @@ mod tests {
                 })
                 .await;
             assert!(result.is_err());
-            assert!(vm.items_tree.is_empty());
+            assert!(vm.store.items.is_empty().unwrap());
             assert!(vm.values_cache.read().await.is_empty());
         }
         assert_eq!(
@@ -1494,7 +1463,7 @@ mod tests {
                 .await;
             if name == "invalid/name" {
                 assert_eq!(response.status, OperationStatus::Err as i32);
-                assert!(vm.items_tree.is_empty());
+                assert!(vm.store.items.is_empty().unwrap());
                 assert!(vm.values_cache.read().await.is_empty());
             } else {
                 assert_eq!(response.status, OperationStatus::Ok as i32);
@@ -1545,7 +1514,7 @@ mod tests {
         let (_, deleted) = tokio::join!(flush, delete);
         deleted.unwrap();
         vm.flush_dirty_now().await;
-        assert!(!vm.values_tree.contains_key("/value").unwrap());
+        assert!(!vm.store.values.contains_key("/value").unwrap());
         assert!(!vm.dirty_values.lock().await.contains_key("/value"));
         assert!(!vm.values_cache.read().await.contains_key("/value"));
     }
@@ -1566,7 +1535,7 @@ mod tests {
             )
             .await;
             assert_eq!(response.status, OperationStatus::Err as i32);
-            assert!(vm.items_tree.is_empty());
+            assert!(vm.store.items.is_empty().unwrap());
             assert!(vm.values_cache.read().await.is_empty());
             assert!(vm.dirty_values.lock().await.is_empty());
             assert!(events.try_recv().is_err());
@@ -1630,7 +1599,7 @@ mod tests {
             assert!(events.try_recv().is_err());
         }
         vm.flush_dirty_now().await;
-        assert!(vm.values_tree.is_empty());
+        assert!(vm.store.values.is_empty().unwrap());
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
@@ -1671,7 +1640,7 @@ mod tests {
         .await
         .unwrap();
         vm.del_items(vec!["/plant".into()]).await.unwrap();
-        assert!(!vm.values_tree.contains_key("/plant/value").unwrap());
+        assert!(!vm.store.values.contains_key("/plant/value").unwrap());
         assert!(!vm.dirty_values.lock().await.contains_key("/plant/value"));
         assert_eq!(
             add_test_items(&vm, "/plant", vec![integer_item("value", None, None)])
@@ -1690,14 +1659,70 @@ mod tests {
         );
     }
 
+    /// Delegates to a real store but fails value writes while `fail_writes` is set.
+    struct FailingValueWrites {
+        inner: FjallStore,
+        fail_writes: std::sync::atomic::AtomicBool,
+    }
+
+    impl VariableStore for FailingValueWrites {
+        type Bytes = fjall::Slice;
+
+        fn items(&self) -> impl Iterator<Item = Result<(Self::Bytes, Self::Bytes), String>> + '_ {
+            self.inner.items()
+        }
+
+        fn scan_items(
+            &self,
+            prefix: &[u8],
+        ) -> impl Iterator<Item = Result<(Self::Bytes, Self::Bytes), String>> + '_ {
+            self.inner.scan_items(prefix)
+        }
+
+        fn get_item(&self, key: &[u8]) -> Result<Option<Self::Bytes>, String> {
+            self.inner.get_item(key)
+        }
+
+        fn contains_item(&self, key: &[u8]) -> Result<bool, String> {
+            self.inner.contains_item(key)
+        }
+
+        fn apply_items(&self, batch: WriteBatch) -> Result<(), String> {
+            self.inner.apply_items(batch)
+        }
+
+        fn scan_value_keys(
+            &self,
+            prefix: &[u8],
+        ) -> impl Iterator<Item = Result<Self::Bytes, String>> + '_ {
+            self.inner.scan_value_keys(prefix)
+        }
+
+        fn get_value(&self, key: &[u8]) -> Result<Option<Self::Bytes>, String> {
+            self.inner.get_value(key)
+        }
+
+        async fn write_values(&self, batch: WriteBatch) -> Result<(), String> {
+            if self.fail_writes.load(Ordering::Relaxed) {
+                return Err("injected write failure".into());
+            }
+            self.inner.write_values(batch).await
+        }
+
+        fn apply_atomic(&self, items: WriteBatch, values: WriteBatch) -> Result<(), String> {
+            self.inner.apply_atomic(items, values)
+        }
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn failed_flush_retains_pending_values_for_retry() {
         let dir = temp_vm_dir("vm_flush_failure");
-        let mut vm = build_vm(&dir);
-        let failure_db = sled::open(dir.join("failure")).unwrap();
-        let dropped_tree = failure_db.open_tree("dropped").unwrap();
-        failure_db.drop_tree("dropped").unwrap();
-        let healthy_tree = std::mem::replace(&mut vm.values_tree, dropped_tree);
+        let store = FailingValueWrites {
+            inner: FjallStore::open(dir.to_str().unwrap()).unwrap(),
+            fail_writes: true.into(),
+        };
+        let metrics = Arc::new(Metrics::new(dir.join("metrics"), false, false));
+        let vm = VariableManager::with_store(store, metrics).unwrap();
         vm.dirty_values
             .lock()
             .await
@@ -1707,10 +1732,10 @@ mod tests {
             vm.dirty_values.lock().await["/value"],
             Some(Typed::IntegerValue(7))
         );
-        vm.values_tree = healthy_tree;
+        vm.store.fail_writes.store(false, Ordering::Relaxed);
         vm.flush_dirty_now().await;
         assert!(vm.dirty_values.lock().await.is_empty());
-        let stored = vm.values_tree.get("/value").unwrap().unwrap();
+        let stored = vm.store.inner.values.get("/value").unwrap().unwrap();
         assert_eq!(
             Value::decode(stored.as_ref()).unwrap().typed,
             Some(Typed::IntegerValue(7))
@@ -1732,9 +1757,9 @@ mod tests {
         ]))
         .await;
         vm.flush_dirty_now().await;
-        assert!(!vm.values_tree.contains_key("/cleared").unwrap());
+        assert!(!vm.store.values.contains_key("/cleared").unwrap());
         for (id, expected) in [("/updated", 9), ("/retry", 7)] {
-            let stored = vm.values_tree.get(id).unwrap().unwrap();
+            let stored = vm.store.values.get(id).unwrap().unwrap();
             assert_eq!(
                 Value::decode(stored.as_ref()).unwrap().typed,
                 Some(Typed::IntegerValue(expected))

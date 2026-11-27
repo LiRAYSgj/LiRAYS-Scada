@@ -6,17 +6,18 @@ use std::{
 };
 
 use log::LevelFilter;
-use rcgen::{CertifiedKey, generate_simple_self_signed};
+use rcgen::generate_simple_self_signed;
 use serde::de::DeserializeOwned;
 use settings::{SettingSpec, Settings};
 
-use crate::{settings::settings::EnvParse, tls::ServerTlsConfig};
+use crate::{db::DatabaseConfig, settings::settings::EnvParse, tls::ServerTlsConfig};
 
 #[derive(Clone)]
 pub struct RuntimeConfig {
     pub host: String,
     pub port: u16,
     pub data_dir: PathBuf,
+    pub database: DatabaseConfig,
     pub metrics_real_time: bool,
     pub metrics_historic: bool,
     pub flush_ms: u64,
@@ -33,10 +34,10 @@ fn generate_self_signed_cert(out_dir: &Path) -> Result<(PathBuf, PathBuf), Strin
         .map_err(|e| format!("Failed creating TLS output dir {}: {e}", out_dir.display()))?;
 
     // Simple self-signed certificate for local usage
-    let cert: CertifiedKey = generate_simple_self_signed(vec!["localhost".to_string()])
+    let cert = generate_simple_self_signed(vec!["localhost".to_string()])
         .map_err(|e| format!("Failed generating self-signed TLS certificate: {e}"))?;
     let cert_pem = cert.cert.pem();
-    let key_pem = cert.key_pair.serialize_pem();
+    let key_pem = cert.signing_key.serialize_pem();
 
     let cert_path = out_dir.join("server.crt");
     let key_path = out_dir.join("server.key");
@@ -105,6 +106,11 @@ pub fn load_runtime_config(config_path: Option<PathBuf>) -> RuntimeConfig {
         "data_dir",
     );
     let data_dir = data_dir_opt.unwrap_or(default_data_dir.clone());
+
+    let database = DatabaseConfig::from_settings(&settings).unwrap_or_else(|e| {
+        eprintln!("{e}");
+        std::process::exit(1);
+    });
 
     let tls_enabled: bool = read_setting(
         &settings,
@@ -204,7 +210,8 @@ pub fn load_runtime_config(config_path: Option<PathBuf>) -> RuntimeConfig {
             default: None::<String>,
         },
         "auth.secret",
-    );
+    )
+    .filter(|secret| !secret.is_empty());
 
     if auth_enabled && auth_secret_str.is_none() {
         eprintln!("AUTH_ENABLED=true requires auth.secret (or AUTH_SECRET env) to be set.");
@@ -285,6 +292,7 @@ pub fn load_runtime_config(config_path: Option<PathBuf>) -> RuntimeConfig {
         host,
         port,
         data_dir,
+        database,
         metrics_real_time,
         metrics_historic,
         flush_ms,
@@ -333,4 +341,20 @@ pub fn parse_config_arg() -> Option<PathBuf> {
         }
     }
     config
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tls::{ServerTlsConfig, build_tls_acceptor};
+
+    #[test]
+    fn generated_self_signed_certificate_loads_into_tls_acceptor() {
+        let dir = env::temp_dir().join(format!("tls-test-{}", uuid::Uuid::new_v4()));
+        let (cert_path, key_path) = generate_self_signed_cert(&dir).unwrap();
+
+        let result = build_tls_acceptor(&ServerTlsConfig::new(cert_path, key_path));
+        fs::remove_dir_all(&dir).unwrap();
+        assert!(result.is_ok());
+    }
 }

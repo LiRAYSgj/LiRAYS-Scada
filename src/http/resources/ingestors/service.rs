@@ -24,7 +24,7 @@ pub async fn plugins(State(state): State<Arc<AppState>>) -> Json<Vec<String>> {
 }
 
 #[utoipa::path(get, path = "/api/ingestors", tag = "Ingestors", security(("bearerAuth" = [])),
-    responses((status = 200, description = "Ingestor instances and runtime status", body = ApiResponseIngestors)))]
+    responses((status = 200, description = "Ingestor instances and runtime status", body = ApiResponse<Vec<InstanceInfo>>)))]
 pub async fn list(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<ApiResponse<Vec<InstanceInfo>>>, InstanceError> {
@@ -33,7 +33,7 @@ pub async fn list(
 
 #[utoipa::path(get, path = "/api/ingestors/{id}", tag = "Ingestors", security(("bearerAuth" = [])),
     params(("id" = String, Path, description = "Instance ID")),
-    responses((status = 200, description = "Ingestor instance", body = ApiResponseIngestor), (status = 404, description = "Not found", body = ApiResponseEmpty)))]
+    responses((status = 200, description = "Ingestor instance", body = ApiResponse<InstanceInfo>), (status = 404, description = "Not found", body = ApiResponseEmpty)))]
 pub async fn get(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
@@ -43,7 +43,7 @@ pub async fn get(
 
 #[utoipa::path(post, path = "/api/ingestors", tag = "Ingestors", security(("bearerAuth" = [])),
     request_body(content = InstanceInput, example = json!({"name":"Waveform simulator","plugin_type":"simulator","enabled":true,"config":{"interval_ms":100,"variables":[{"path":"/plant/random","waveform":"random","min":0,"max":100,"decimal_places":2},{"path":"/plant/sine","waveform":"sine","min":0,"max":100,"period_ms":5000,"phase_degrees":0,"decimal_places":2},{"path":"/plant/square","waveform":"square","min":0,"max":100,"period_ms":5000,"phase_degrees":90},{"path":"/plant/ramp","waveform":"ramp","min":0,"max":100,"period_ms":10000,"phase_degrees":0,"decimal_places":2}]}})),
-    responses((status = 201, description = "Instance created", body = ApiResponseIngestor), (status = 400, description = "Invalid configuration", body = ApiResponseEmpty)))]
+    responses((status = 201, description = "Instance created", body = ApiResponse<InstanceInfo>), (status = 400, description = "Invalid configuration", body = ApiResponseEmpty)))]
 pub async fn create(
     State(state): State<Arc<AppState>>,
     Json(input): Json<InstanceInput>,
@@ -58,7 +58,7 @@ pub async fn create(
 
 #[utoipa::path(put, path = "/api/ingestors/{id}", tag = "Ingestors", security(("bearerAuth" = [])),
     params(("id" = String, Path, description = "Instance ID")), request_body(content = InstanceUpdate, example = json!({"config":{"interval_ms":500}})),
-    responses((status = 200, description = "Fields merged; omitted fields remain unchanged; arrays replace existing arrays", body = ApiResponseIngestor), (status = 400, description = "Invalid configuration", body = ApiResponseEmpty), (status = 404, description = "Not found", body = ApiResponseEmpty)))]
+    responses((status = 200, description = "Fields merged; omitted fields remain unchanged; arrays replace existing arrays", body = ApiResponse<InstanceInfo>), (status = 400, description = "Invalid configuration", body = ApiResponseEmpty), (status = 404, description = "Not found", body = ApiResponseEmpty)))]
 pub async fn update(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,

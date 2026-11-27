@@ -1,7 +1,7 @@
 use std::{collections::HashSet, future::Future, pin::Pin, time::Duration};
 
 use lirays_scada_proto::namespace::v1::{Value, VarIdValue, value::Typed};
-use rand::Rng;
+use rand::RngExt;
 use serde::Deserialize;
 use tokio::time::{Instant, Interval, MissedTickBehavior};
 
@@ -200,7 +200,7 @@ impl Ingestor for Simulator {
             let elapsed = now
                 .duration_since(*self.started_at.get_or_insert(now))
                 .as_secs_f64();
-            let mut rng = rand::thread_rng();
+            let mut rng = rand::rng();
             let values = self
                 .variables
                 .iter()
@@ -209,9 +209,9 @@ impl Ingestor for Simulator {
                     let value = if config.waveform == Waveform::Random {
                         match &variable.decimals {
                             Some(range) => {
-                                rng.gen_range(range.min..=range.max) as f64 / range.scale
+                                rng.random_range(range.min..=range.max) as f64 / range.scale
                             }
-                            None => rng.gen_range(config.min..=config.max),
+                            None => rng.random_range(config.min..=config.max),
                         }
                     } else {
                         let period = Duration::from_millis(config.period_ms.unwrap()).as_secs_f64();

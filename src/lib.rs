@@ -1,4 +1,5 @@
 pub mod app;
+pub mod db;
 pub mod egress;
 pub mod http;
 pub mod ingestion;

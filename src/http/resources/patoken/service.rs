@@ -1,10 +1,9 @@
 use argon2::{
     Argon2,
-    password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
+    password_hash::{PasswordHasher, PasswordVerifier, phc::PasswordHash},
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::Utc;
-use rand::{RngCore, rngs::OsRng};
 use sea_orm::{ActiveModelTrait, DatabaseConnection, EntityTrait, Set};
 use uuid::Uuid;
 
@@ -37,15 +36,14 @@ impl PATokenManager {
         expires_at: i64,
     ) -> Result<String, sea_orm::DbErr> {
         let id = Uuid::new_v4().to_string();
-        let mut secret_bytes = vec![0u8; 32];
-        OsRng.fill_bytes(&mut secret_bytes);
+        let mut secret_bytes = [0u8; 32];
+        rand::fill(&mut secret_bytes);
         let secret = URL_SAFE_NO_PAD.encode(secret_bytes);
         let pat = format!("pat_{id}.{secret}");
 
-        let salt = SaltString::generate(&mut OsRng);
         let token_hash = self
             .argon
-            .hash_password(secret.as_bytes(), &salt)
+            .hash_password(secret.as_bytes())
             .map_err(|_| sea_orm::DbErr::Custom("Failed to hash token secret".into()))?
             .to_string();
 

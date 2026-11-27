@@ -3,7 +3,7 @@ use sea_orm::entity::prelude::*;
 #[derive(
     Clone, Debug, PartialEq, Eq, DeriveActiveEnum, EnumIter, serde::Serialize, serde::Deserialize,
 )]
-#[sea_orm(rs_type = "String", db_type = "String(Some(16))")]
+#[sea_orm(rs_type = "String", db_type = "String(StringLen::N(16))")]
 pub enum Role {
     #[sea_orm(string_value = "admin")]
     #[serde(rename = "admin")]
@@ -18,6 +18,7 @@ pub enum Role {
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i32,
+    #[sea_orm(unique)]
     pub username: String,
     pub password_hash: String,
     pub role: Role,

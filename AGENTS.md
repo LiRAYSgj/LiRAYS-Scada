@@ -31,6 +31,7 @@ and **Axum** for HTTP and WebSocket. The Cargo package is named `scada`.
 | `src/http/mod.rs`, `src/http/state.rs` | Storage and service initialization, shared state, route mounting, TLS, and graceful shutdown. |
 | `src/http/resources/` | HTTP resources for authentication, views, WebSocket, documentation, and static files; also user and personal access token models and services. |
 | `src/rtdata/variable.rs` | `VariableManager`: namespace tree, metadata, values, commands, cache, persistence, and event distribution. |
+| `src/rtdata/store.rs` | `VariableStore` trait for namespace items and values, `WriteBatch`, the fjall implementation (`FjallStore`, one instance per directory), and `open_database`, shared with sessions. |
 | `src/rtdata/{parser,utils,events,metrics}.rs` | Name parsing, namespace utilities, event construction, and metrics. |
 | `src/ingestion/` | Compile-time ingestor traits, registry, and the optional waveform simulator. |
 | `src/http/resources/plugin_instances.rs` | Generic `PluginManager<K: PluginKind>`: SQLite instances, partial updates, validation, worker lifecycle, and runtime status shared by every plugin kind. |
@@ -38,6 +39,7 @@ and **Axum** for HTTP and WebSocket. The Cargo package is named `scada`.
 | `src/egress/` | Compile-time egress plugin traits, registry, and the optional UDP example. |
 | `src/http/resources/egressors/` | Egress `PluginKind`, admin routes, and the subscription/polling runner with retries. |
 | `src/rtdata/pattern.rs` | Namespace path patterns with `*` and `**` wildcards. |
+| `src/db.rs` | Database selection from settings, connection, and portable table helpers. |
 | `src/settings/` | YAML configuration and environment variables; precedence: environment, file, defaults. |
 | `src/tls/` | TLS configuration and certificates. |
 | `src/bin/liraysctl.rs`, `src/liraysctl/` | The `lirays` administration binary: users, tokens, configuration, service management, and metrics. |
@@ -53,12 +55,15 @@ and **Axum** for HTTP and WebSocket. The Cargo package is named `scada`.
 - Messages use types from `lirays-scada-proto` and Protobuf encoding through
   `prost`. SDKs, proto definitions, and full documentation are maintained in
   separate repositories.
-- **sled** stores the namespace and values in `data_dir/rt_data`. Values are
-  cached in memory, and pending changes are persisted periodically. Graceful
-  shutdown also requests a flush.
-- **SQLite + SeaORM** stores users, personal access tokens, views, and ingestors in
-  `data_dir/static.db`. Schema initialization lives in the corresponding
-  resources through `ensure_schema`.
+- **fjall** stores the namespace and values in `data_dir/rt_data`, accessed only
+  through `VariableStore` (`src/rtdata/store.rs`); keep fjall types out of
+  `VariableManager`. Namespace changes are fsynced on commit. Values are cached in memory, and pending changes are
+  persisted periodically. Graceful shutdown also requests a flush.
+- **SeaORM** stores users, personal access tokens, views, ingestors, and egressors
+  in SQLite (`data_dir/static.db`, default), PostgreSQL, or MySQL/MariaDB,
+  selected by the `database` settings in `src/db.rs`. Schema initialization lives
+  in the corresponding resources through `ensure_schema`; build tables and
+  queries with SeaORM/sea-query instead of raw SQL so every backend works.
 - Sessions have separate storage in `data_dir/sessions`. Optional metrics are
   written to `data_dir/metrics`.
 - `AppState` shares managers through `Arc`. Authentication includes sessions,
