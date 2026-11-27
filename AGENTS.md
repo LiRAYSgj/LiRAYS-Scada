@@ -33,7 +33,11 @@ and **Axum** for HTTP and WebSocket. The Cargo package is named `scada`.
 | `src/rtdata/variable.rs` | `VariableManager`: namespace tree, metadata, values, commands, cache, persistence, and event distribution. |
 | `src/rtdata/{parser,utils,events,metrics}.rs` | Name parsing, namespace utilities, event construction, and metrics. |
 | `src/ingestion/` | Compile-time ingestor traits, registry, and the optional waveform simulator. |
-| `src/http/resources/ingestors/` | SQLite instances, admin CRUD, worker lifecycle, and runtime status. |
+| `src/http/resources/plugin_instances.rs` | Generic `PluginManager<K: PluginKind>`: SQLite instances, partial updates, validation, worker lifecycle, and runtime status shared by every plugin kind. |
+| `src/http/resources/ingestors/` | Ingestion `PluginKind` (batch ingestion loop) and admin routes. |
+| `src/egress/` | Compile-time egress plugin traits, registry, and the optional UDP example. |
+| `src/http/resources/egressors/` | Egress `PluginKind`, admin routes, and the subscription/polling runner with retries. |
+| `src/rtdata/pattern.rs` | Namespace path patterns with `*` and `**` wildcards. |
 | `src/settings/` | YAML configuration and environment variables; precedence: environment, file, defaults. |
 | `src/tls/` | TLS configuration and certificates. |
 | `src/bin/liraysctl.rs`, `src/liraysctl/` | The `lirays` administration binary: users, tokens, configuration, service management, and metrics. |
@@ -66,8 +70,12 @@ and **Axum** for HTTP and WebSocket. The Cargo package is named `scada`.
 - Ingestors yield typed values at canonical namespace paths. `VariableManager::ingest`
   validates a whole batch, creates missing folders/variables, and uses existing
   persistence and events. Stop ingestors before the shutdown flush.
-- Swagger UI at `/swagger` documents ingestion CRUD. The simulator is selected
-  by the default `simulator` Cargo feature; no frontend changes are needed.
+- Egress instances select variables by path patterns, read them by event
+  subscription or polling, and delegate publishing to plugins. Stop them after
+  ingestors and before the shutdown flush.
+- Swagger UI at `/swagger` documents ingestion and egress CRUD. The simulator
+  and the UDP egress example are selected by the default `simulator` and `udp`
+  Cargo features; no frontend changes are needed.
 
 ## Programming Style
 

@@ -1,7 +1,9 @@
 pub mod auth;
 pub mod docs;
+pub mod egressors;
 pub mod ingestors;
 pub mod patoken;
+pub mod plugin_instances;
 pub mod static_files;
 pub mod user;
 pub mod views;

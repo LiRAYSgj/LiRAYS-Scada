@@ -12,8 +12,9 @@ name = "lirays"
 path = "src/bin/liraysctl.rs"
 
 [features]
-default = ["simulator"]
+default = ["simulator", "udp"]
 simulator = []
+udp = []
 
 [dependencies]
 bytes = "1.11.1"

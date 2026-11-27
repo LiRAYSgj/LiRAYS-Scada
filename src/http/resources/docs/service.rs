@@ -3,13 +3,16 @@ use log::warn;
 use once_cell::sync::Lazy;
 use utoipa::OpenApi;
 
+use crate::http::resources::egressors::service as egressors;
 use crate::http::resources::ingestors::service as ingestors;
+use crate::http::resources::plugin_instances;
 use crate::http::resources::views::service as views;
 
 #[derive(OpenApi)]
 #[openapi(
     paths(
         ingestors::plugins, ingestors::list, ingestors::get, ingestors::create, ingestors::update, ingestors::delete,
+        egressors::plugins, egressors::list, egressors::get, egressors::create, egressors::update, egressors::delete,
         views::get_all_views,
         views::get_view,
         views::create_view,
@@ -26,14 +29,16 @@ use crate::http::resources::views::service as views;
             views::ViewSortBy, views::SortDirection,
             crate::http::ApiResponseView,
             crate::http::ApiResponseViewPage,
-            ingestors::IngestorInput, ingestors::IngestorUpdate, ingestors::IngestorInfo, ingestors::IngestorStatus, ingestors::IngestorState,
+            plugin_instances::InstanceInput, plugin_instances::InstanceUpdate, plugin_instances::InstanceInfo, plugin_instances::InstanceStatus, plugin_instances::InstanceState,
             crate::http::response::ApiResponseIngestor, crate::http::response::ApiResponseIngestors,
+            crate::http::response::ApiResponseEgressor, crate::http::response::ApiResponseEgressors,
             crate::http::ApiResponseEmpty
         )
     ),
     modifiers(&Security),
     tags(
         (name = "Ingestors", description = "Admin-only ingestion instances and compiled plugins"),
+        (name = "Egressors", description = "Admin-only egress instances and compiled plugins"),
         (name = "Views", description = "Canvas views CRUD")
     )
 )]
@@ -93,7 +98,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn openapi_references_resolve_and_include_ingestor_endpoints() {
+    fn openapi_references_resolve_and_include_plugin_endpoints() {
         let document = serde_json::to_value(ApiDoc::openapi()).unwrap();
         let mut pending = vec![&document];
         while let Some(value) = pending.pop() {
@@ -114,6 +119,7 @@ mod tests {
             }
         }
         assert!(document["paths"]["/api/ingestors"]["post"].is_object());
+        assert!(document["paths"]["/api/egressors"]["post"].is_object());
         assert!(document["components"]["securitySchemes"]["bearerAuth"].is_object());
     }
 }
