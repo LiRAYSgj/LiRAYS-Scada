@@ -37,11 +37,18 @@ export interface WidgetConfigOption {
   label: string;
 }
 
-export interface WidgetConfigThresholdRange {
-  min?: number;
-  max?: number;
+/** One threshold: values `<=` `value` (and above the previous one) use `color`. */
+export interface WidgetConfigThreshold {
+  value: number;
   color: string;
   label?: string;
+}
+
+/** Value of a `thresholds` config field. See `$lib/scada/plugins/thresholds`. */
+export interface WidgetConfigThresholds {
+  /** Applies above the highest threshold. Always present. */
+  default: { color: string; label?: string };
+  levels: WidgetConfigThreshold[];
 }
 
 export interface WidgetConfigFieldSchema {

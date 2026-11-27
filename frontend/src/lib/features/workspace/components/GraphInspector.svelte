@@ -11,7 +11,18 @@
   import {
     listViews,
   } from "$lib/features/views/api/views-api";
-  import type { WidgetConfigFieldSchema, WidgetConfigThresholdRange } from "$lib/scada/plugins/types";
+  import type {
+    WidgetConfigFieldSchema,
+    WidgetConfigThreshold,
+    WidgetConfigThresholds,
+  } from "$lib/scada/plugins/types";
+  import {
+    FALLBACK_THRESHOLD_COLOR,
+    duplicateThresholdIndexes,
+    nextThresholdValue,
+    parseThresholds,
+    sortThresholdLevels,
+  } from "$lib/scada/plugins/thresholds";
   import type {
     GraphAssetDefinition,
     NodePortOffsets,
@@ -237,57 +248,82 @@
     onWidgetConfigChange(selectedNodeId, next);
   }
 
-  function readThresholdRanges(field: WidgetConfigFieldSchema): WidgetConfigThresholdRange[] {
-    const raw = getConfigValue(field);
-    if (!Array.isArray(raw)) {
-      return [];
-    }
-    const ranges: WidgetConfigThresholdRange[] = [];
-    for (const entry of raw) {
-      if (!entry || typeof entry !== "object") {
-        continue;
-      }
-      const source = entry as Partial<WidgetConfigThresholdRange>;
-      ranges.push({
-        min: typeof source.min === "number" ? source.min : undefined,
-        max: typeof source.max === "number" ? source.max : undefined,
-        color: typeof source.color === "string" ? source.color : "#546a0e",
-        label: typeof source.label === "string" ? source.label : "",
-      });
-    }
-    return ranges;
+  const EMPTY_THRESHOLDS: WidgetConfigThresholds = {
+    default: { color: FALLBACK_THRESHOLD_COLOR, label: "" },
+    levels: [],
+  };
+
+  // Keeps the stored order while editing; levels are re-sorted on commit.
+  function readThresholdsField(
+    field: WidgetConfigFieldSchema,
+  ): WidgetConfigThresholds {
+    return parseThresholds(getConfigValue(field), EMPTY_THRESHOLDS);
   }
 
-  function addThresholdRange(field: WidgetConfigFieldSchema): void {
-    const next = [
-      ...readThresholdRanges(field),
-      {
-        min: undefined,
-        max: undefined,
-        color: "#546a0e",
-        label: "",
-      },
-    ];
+  function writeThresholdsField(
+    field: WidgetConfigFieldSchema,
+    next: WidgetConfigThresholds,
+  ): void {
     updateConfigField(field.key, next);
   }
 
-  function removeThresholdRange(
+  function addThreshold(field: WidgetConfigFieldSchema): void {
+    const current = readThresholdsField(field);
+    writeThresholdsField(field, {
+      ...current,
+      levels: sortThresholdLevels([
+        ...current.levels,
+        {
+          value: nextThresholdValue(current.levels),
+          color: FALLBACK_THRESHOLD_COLOR,
+          label: "",
+        },
+      ]),
+    });
+  }
+
+  function removeThreshold(
     field: WidgetConfigFieldSchema,
     index: number,
   ): void {
-    const next = readThresholdRanges(field).filter((_, i) => i !== index);
-    updateConfigField(field.key, next);
+    const current = readThresholdsField(field);
+    writeThresholdsField(field, {
+      ...current,
+      levels: current.levels.filter((_, i) => i !== index),
+    });
   }
 
-  function updateThresholdRange(
+  function updateThreshold(
     field: WidgetConfigFieldSchema,
     index: number,
-    patch: Partial<WidgetConfigThresholdRange>,
+    patch: Partial<WidgetConfigThreshold>,
   ): void {
-    const next = readThresholdRanges(field).map((entry, i) =>
-      i === index ? { ...entry, ...patch } : entry,
-    );
-    updateConfigField(field.key, next);
+    const current = readThresholdsField(field);
+    writeThresholdsField(field, {
+      ...current,
+      levels: current.levels.map((entry, i) =>
+        i === index ? { ...entry, ...patch } : entry,
+      ),
+    });
+  }
+
+  function commitThresholdOrder(field: WidgetConfigFieldSchema): void {
+    const current = readThresholdsField(field);
+    const sorted = sortThresholdLevels(current.levels);
+    if (sorted.some((entry, i) => entry !== current.levels[i])) {
+      writeThresholdsField(field, { ...current, levels: sorted });
+    }
+  }
+
+  function updateThresholdDefault(
+    field: WidgetConfigFieldSchema,
+    patch: Partial<WidgetConfigThresholds["default"]>,
+  ): void {
+    const current = readThresholdsField(field);
+    writeThresholdsField(field, {
+      ...current,
+      default: { ...current.default, ...patch },
+    });
   }
 
   function defaultAction(): WidgetEventAction {
@@ -1154,68 +1190,70 @@
                     </Select.Content>
                   </Select.Root>
                 {:else if field.type === "thresholds"}
-                  {@const ranges = readThresholdRanges(field)}
+                  {@const thresholds = readThresholdsField(field)}
+                  {@const duplicates = duplicateThresholdIndexes(thresholds.levels)}
+                  {@const highest = thresholds.levels.length
+                    ? Math.max(...thresholds.levels.map((entry) => entry.value))
+                    : null}
                   <div class="space-y-2">
                     <div class="flex items-center justify-between">
-                      <p class="text-[10px] uppercase text-muted-foreground">Intervals</p>
+                      <p class="text-[10px] uppercase text-muted-foreground">Thresholds</p>
                       <Button
                         variant="outline-accent"
                         label="Add"
                         class="h-7 px-2 text-[10px]"
-                        onclick={() => addThresholdRange(field)}
+                        onclick={() => addThreshold(field)}
                       />
                     </div>
 
-                    {#if ranges.length === 0}
-                      <p class="text-[10px] text-muted-foreground">
-                        Add at least one interval.
-                      </p>
-                    {/if}
-
-                    {#each ranges as range, rangeIndex (`${field.key}-${rangeIndex}`)}
+                    {#each thresholds.levels as level, levelIndex (`${field.key}-${levelIndex}`)}
                       <div class="space-y-2 rounded border border-border/50 bg-card/70 p-2">
-                        <div class="grid grid-cols-[1fr_1fr_1fr_40px] items-center gap-2">
+                        <div class="grid grid-cols-[12px_1fr_1fr_40px] items-center gap-2">
+                          <span class="text-xs text-muted-foreground">≤</span>
                           <Input
-                            class="h-8 text-xs"
+                            class="h-8 text-xs {duplicates.has(levelIndex)
+                              ? 'border-destructive'
+                              : ''}"
                             type="number"
                             step="any"
-                            placeholder="From"
-                            value={range.min ?? ""}
+                            placeholder="Value"
+                            title={duplicates.has(levelIndex) ? "Duplicated threshold" : undefined}
+                            value={level.value}
                             oninput={(event) => {
                               const raw = (event.currentTarget as HTMLInputElement).value;
-                              updateThresholdRange(field, rangeIndex, {
-                                min: raw.trim().length ? Number(raw) : undefined,
-                              });
+                              const parsed = Number(raw);
+                              if (raw.trim().length && Number.isFinite(parsed)) {
+                                updateThreshold(field, levelIndex, { value: parsed });
+                              }
                             }}
-                          />
-                          <Input
-                            class="h-8 text-xs"
-                            type="number"
-                            step="any"
-                            placeholder="To"
-                            value={range.max ?? ""}
-                            oninput={(event) => {
-                              const raw = (event.currentTarget as HTMLInputElement).value;
-                              updateThresholdRange(field, rangeIndex, {
-                                max: raw.trim().length ? Number(raw) : undefined,
-                              });
+                            onchange={(event) => {
+                              const input = event.currentTarget as HTMLInputElement;
+                              if (!input.value.trim().length) {
+                                input.value = String(level.value);
+                              }
+                              commitThresholdOrder(field);
+                            }}
+                            onkeydown={(event) => {
+                              if (event.key === "Enter") {
+                                (event.currentTarget as HTMLInputElement).blur();
+                              }
                             }}
                           />
                           <div class="flex items-center gap-1">
                             <input
                               type="color"
                               class="h-8 w-9 cursor-pointer rounded border border-input bg-transparent p-1"
-                              value={range.color}
+                              value={level.color}
                               onchange={(event) =>
-                                updateThresholdRange(field, rangeIndex, {
+                                updateThreshold(field, levelIndex, {
                                   color: (event.currentTarget as HTMLInputElement).value,
                                 })}
                             />
                             <Input
                               class="h-8 text-xs"
-                              value={range.color}
+                              value={level.color}
                               oninput={(event) =>
-                                updateThresholdRange(field, rangeIndex, {
+                                updateThreshold(field, levelIndex, {
                                   color: (event.currentTarget as HTMLInputElement).value,
                                 })}
                             />
@@ -1224,22 +1262,60 @@
                             variant="icon"
                             icon={Trash2}
                             class="border-destructive/45 text-destructive hover:border-destructive/70 hover:bg-destructive/12 hover:text-destructive"
-                            title="Remove interval"
-                            ariaLabel="Remove interval"
-                            onclick={() => removeThresholdRange(field, rangeIndex)}
+                            title="Remove threshold"
+                            ariaLabel="Remove threshold"
+                            onclick={() => removeThreshold(field, levelIndex)}
                           />
                         </div>
                         <Input
                           class="h-8 text-xs"
                           placeholder="Optional label"
-                          value={range.label ?? ""}
+                          value={level.label ?? ""}
                           oninput={(event) =>
-                            updateThresholdRange(field, rangeIndex, {
+                            updateThreshold(field, levelIndex, {
                               label: (event.currentTarget as HTMLInputElement).value,
                             })}
                         />
                       </div>
                     {/each}
+
+                    <p class="text-[10px] uppercase text-muted-foreground">Default</p>
+                    <div class="space-y-2 rounded border border-border/50 bg-card/70 p-2">
+                      <div class="grid grid-cols-[1fr_1fr_40px] items-center gap-2">
+                        <span class="text-xs text-muted-foreground">
+                          {highest === null ? "Any value" : `> ${highest}`}
+                        </span>
+                        <div class="flex items-center gap-1">
+                          <input
+                            type="color"
+                            class="h-8 w-9 cursor-pointer rounded border border-input bg-transparent p-1"
+                            value={thresholds.default.color}
+                            onchange={(event) =>
+                              updateThresholdDefault(field, {
+                                color: (event.currentTarget as HTMLInputElement).value,
+                              })}
+                          />
+                          <Input
+                            class="h-8 text-xs"
+                            value={thresholds.default.color}
+                            oninput={(event) =>
+                              updateThresholdDefault(field, {
+                                color: (event.currentTarget as HTMLInputElement).value,
+                              })}
+                          />
+                        </div>
+                        <span></span>
+                      </div>
+                      <Input
+                        class="h-8 text-xs"
+                        placeholder="Optional label"
+                        value={thresholds.default.label ?? ""}
+                        oninput={(event) =>
+                          updateThresholdDefault(field, {
+                            label: (event.currentTarget as HTMLInputElement).value,
+                          })}
+                      />
+                    </div>
                   </div>
                 {:else}
                   {#if field.type === "textarea"}

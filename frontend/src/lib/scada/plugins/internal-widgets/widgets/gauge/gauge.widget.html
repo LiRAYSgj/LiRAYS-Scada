@@ -1,4 +1,7 @@
-<div class="panel gauge-panel {{has_value_class}}">
+<div
+  class="panel gauge-panel {{has_value_class}}"
+  style="--gauge-value-color: {{value_color}};"
+>
   <div class="gauge-wrap">
     <svg
       viewBox="0 0 100 100"
@@ -18,6 +21,7 @@
         d="m 26,58 c -5.5,0 -17,14 -17.2,14.3 8.2,13.7 23.8,22.2 41.2,22.2 17.4,0 33,-8.5 41.2,-22.2 -0.2,-0.3 -11.7,-14.3 -17.2,-14.3 z"
       />
       <circle class="gauge-face-border" cx="50" cy="50" r="46" />
+      <g class="gauge-bands">{{{bands_html}}}</g>
       <g class="gauge-ticks">{{{ticks_html}}}</g>
       <line
         class="gauge-needle"
