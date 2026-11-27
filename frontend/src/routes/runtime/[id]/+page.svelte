@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { CANVAS_MAX_ZOOM, CANVAS_MIN_ZOOM } from "$lib/features/graph/canvas-zoom";
   import { beforeNavigate, goto } from "$app/navigation";
   import { page } from "$app/stores";
   import { Button } from "$lib/components/Button";
@@ -788,11 +789,9 @@
         {nodeTypes}
         {edgeTypes}
         initialViewport={graphViewport}
-        minZoom={0.4}
-        maxZoom={1.6}
+        minZoom={CANVAS_MIN_ZOOM}
+        maxZoom={CANVAS_MAX_ZOOM}
         zoomOnDoubleClick={false}
-        zoomOnScroll={false}
-        zoomOnPinch={false}
         panOnDrag={false}
         panOnScroll={false}
         colorMode={$theme ?? "light"}

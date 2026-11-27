@@ -4,16 +4,18 @@ use axum::{Json, response::Response};
 use log::warn;
 use utoipa::OpenApi;
 
-use crate::http::resources::egressors::service as egressors;
-use crate::http::resources::ingestors::service as ingestors;
+use crate::http::resources::inbound::service as inbound;
+use crate::http::resources::outbound::service as outbound;
+use crate::http::resources::plugin_collections;
 use crate::http::resources::plugin_instances;
 use crate::http::resources::views::service as views;
 
 #[derive(OpenApi)]
 #[openapi(
     paths(
-        ingestors::plugins, ingestors::list, ingestors::get, ingestors::create, ingestors::update, ingestors::delete,
-        egressors::plugins, egressors::list, egressors::get, egressors::create, egressors::update, egressors::delete,
+        inbound::plugins, inbound::list, inbound::get, inbound::create, inbound::update, inbound::delete,
+        outbound::plugins, outbound::list, outbound::get, outbound::create, outbound::update, outbound::delete,
+        plugin_collections::list,
         views::get_all_views,
         views::get_view,
         views::create_view,
@@ -31,13 +33,15 @@ use crate::http::resources::views::service as views;
             crate::http::ApiResponseView,
             crate::http::ApiResponseViewPage,
             plugin_instances::InstanceInput, plugin_instances::InstanceUpdate, plugin_instances::InstanceInfo, plugin_instances::InstanceStatus, plugin_instances::InstanceState,
+            plugin_instances::PluginCollection, crate::plugin_form::PluginDescriptor,
             crate::http::ApiResponseEmpty
         )
     ),
     modifiers(&Security),
     tags(
-        (name = "Ingestors", description = "Admin-only ingestion instances and compiled plugins"),
-        (name = "Egressors", description = "Admin-only egress instances and compiled plugins"),
+        (name = "Inbound", description = "Admin-only inbound connections and compiled plugins"),
+        (name = "Outbound", description = "Admin-only outbound connections and compiled plugins"),
+        (name = "Plugin collections", description = "Admin-only instance collections and plugin configuration forms"),
         (name = "Views", description = "Canvas views CRUD")
     )
 )]
@@ -126,8 +130,9 @@ mod tests {
                 assert!(operation_ids.insert(id), "Duplicate operationId: {id}");
             }
         }
-        assert!(document["paths"]["/api/ingestors"]["post"].is_object());
-        assert!(document["paths"]["/api/egressors"]["post"].is_object());
+        assert!(document["paths"]["/api/inbound"]["post"].is_object());
+        assert!(document["paths"]["/api/outbound"]["post"].is_object());
+        assert!(document["paths"]["/api/plugin-collections"]["get"].is_object());
         assert!(document["components"]["securitySchemes"]["bearerAuth"].is_object());
     }
 }

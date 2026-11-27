@@ -84,7 +84,7 @@ When code and docs conflict, code wins and this file should be updated.
 
 ### Designer routes
 
-- `/views` and `/views/[id]` page files are placeholders.
+- `/views`, `/views/[id]` and `/integrations` page files are placeholders.
 - Real stateful logic lives in `src/routes/(app)/+layout.svelte`.
 
 ## 3) Data Channels
@@ -126,17 +126,18 @@ It owns route-driven mode switches and coordinates all feature modules.
 
 ### Primary UI composition
 
-- Toolbar: `PageToolbar`
+- Toolbar: `PageToolbar` (with `Views | Integrations` navigation via `activeSection`)
 - Left pane: `VariableTree`
 - Right pane:
   - `ViewsListPanel` when route is `/views`
   - View editor (`ViewEditorHeader` + `SvelteFlow` + `GraphInspector`) when `/views/:id`
+  - `PluginInstancesPanel` when route is `/integrations` (see section 8b)
 - Dialogs: `WorkspaceConfirmDialogs`
 - Namespace modal: `NamespaceBuilder`
 
 ### Mode/state boundaries
 
-- `rightPaneMode`: `views-list | view-editor` (derived from route param)
+- `rightPaneMode`: `views-list | view-editor | integrations` (derived from route)
 - `canvasMode`: `edit | play`
 - `workspaceMode`: `designer | runtime`
 - `canDropToCanvas`: only true in `view-editor + edit`
@@ -272,6 +273,38 @@ If you add async loaders here, follow the same serial pattern.
 - Submit path:
   - `tagStreamClient.addBulkNamespace(...)`
 
+## 8b) Integrations (plugin instances)
+
+- Feature folder: `src/lib/features/plugin-instances/`
+  - `api/plugin-instances-api.ts`: `GET /api/plugin-collections` plus the
+    generic instance CRUD under each collection's `base_path`
+    (today `/api/inbound` and `/api/outbound`).
+  - `types.ts`: mirrors the backend form descriptor (`src/plugin_form.rs`).
+  - `form-schema.ts`: pure helpers (defaults, `visible_when`, zod-based
+    validation, submitted config, update patch). Covered by `form-schema.spec.ts`.
+  - `tree-path-drag.ts`: drag payload for dropping tree paths into `tag` fields.
+  - `components/PluginInstancesPanel.svelte`: owns all state (collections,
+    instances, editor draft, dialogs). The layout only renders it.
+  - `components/PluginCollectionSection.svelte`: one collapsible section per collection.
+  - `components/PluginInstanceEditor.svelte` + `DynamicFields.svelte` (recursive form renderer).
+- Forms are defined by backend plugins; adding a plugin or a collection needs no
+  frontend change. Without a descriptor the config is edited as raw JSON.
+- Submitted configs contain only declared, visible, non-empty fields (plugins
+  reject unknown keys). Updates send keys removed from the form as `null`,
+  because the backend merges `config` recursively. Empty `secret` fields are
+  omitted on update so the stored value is kept.
+- Status refreshes by polling every 3 s while the panel is mounted, guarded by
+  a request serial.
+- The panel has its own unsaved-changes guard (`beforeNavigate` + discard dialog),
+  independent of the view-editor leave guard.
+- Tree drag in `integrations` mode only sets the `application/x-lirays-path`
+  payload (plus its node kind); the canvas drop menu and preview are not used.
+  Fields declared with `folder_as_pattern` (the outbound `variables` list)
+  turn a dropped folder into `folder/**`, so the selection includes variables
+  created later; other fields receive the plain path.
+- This does not use `sveltekit-superforms`: nested, runtime-defined schemas are
+  validated with zod directly in `form-schema.ts`.
+
 ## 9) Cross-Cutting Invariants (Do Not Break)
 
 1. Do not store runtime functions in persisted `canvas_json`.
@@ -279,7 +312,8 @@ If you add async loaders here, follow the same serial pattern.
 3. Realtime subscription transitions must clear old IDs before switching views.
 4. In async view/list loaders, stale responses must not overwrite current state.
 5. Keep `/runtime/no-entry` as the fallback for missing runtime entry-point.
-6. Keep `/views` and `/views/[id]` page files as placeholders unless layout ownership is intentionally redesigned.
+6. Keep `/views`, `/views/[id]` and `/integrations` page files as placeholders unless layout ownership is intentionally redesigned.
+7. Never submit hidden or undeclared plugin config keys; send removed keys as `null` on update.
 
 ## 10) Open-Source Maintainability Notes
 
@@ -318,6 +352,9 @@ If you add async loaders here, follow the same serial pattern.
 - Runtime interaction behavior:
   - `src/routes/runtime/[id]/+page.svelte`
   - `src/lib/scada/plugins/internal-widgets/runtime/widget-runtime.ts`
+- Integrations forms or instance management:
+  - `src/lib/features/plugin-instances/form-schema.ts`
+  - `src/lib/features/plugin-instances/components/PluginInstancesPanel.svelte`
 - Tree performance/selection:
   - `src/lib/features/tree/components/VariableTree.svelte`
   - `src/lib/features/tree/tree-selection-summary.ts`
@@ -333,5 +370,6 @@ High-value test coverage currently exists for:
 - Workspace helper modules (`layout-graph-*`)
 - Tree store/selection/reconcile/server adapter/flatten
 - Namespace builder parser/Monaco helpers
+- Plugin form schema helpers (`plugin-instances/form-schema`)
 
 When changing behavior in these modules, update existing specs first, then adjust UI integration.

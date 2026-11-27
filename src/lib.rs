@@ -1,9 +1,10 @@
 pub mod app;
 pub mod db;
-pub mod egress;
 pub mod http;
-pub mod ingestion;
+pub mod inbound;
 pub mod liraysctl;
+pub mod outbound;
+pub mod plugin_form;
 pub mod rtdata;
 pub mod settings;
 pub mod tls;

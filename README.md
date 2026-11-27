@@ -23,7 +23,7 @@ Visit https://help.lirays.com for full documentation.
 
 ## Database
 
-Users, access tokens, views, ingestors, and egressors are stored in a relational
+Users, access tokens, views, and inbound and outbound connections are stored in a relational
 database. By default it is the embedded SQLite file `{data_dir}/static.db`, so a
 single binary runs without external services. Larger deployments can point the
 `database` settings section at PostgreSQL, MySQL, or MariaDB instead:
@@ -49,7 +49,7 @@ the namespace, and sessions always stay in `data_dir`, stored with the embedded
 fjall engine. Existing SQLite data is not migrated automatically when switching
 to an external server.
 
-## Ingestion plugins
+## Inbound connection plugins
 
 The backend includes a compile-time `simulator` plugin. Open `/swagger` on the
 running server to create and manage instances; the OpenAPI document is available
@@ -58,7 +58,7 @@ so the browser needs internet access. With authentication enabled, sign in as an
 admin in the same browser, or use Swagger's **Authorize** button with an admin
 personal access token.
 
-Use `POST /api/ingestors` with:
+Use `POST /api/inbound` with:
 
 ```json
 {
@@ -151,14 +151,14 @@ exact integer precision in a float, are rejected. Values remain floats, includin
 when `decimal_places` is zero. Trailing zeros are a display concern, not stored
 numeric precision.
 
-- `GET /api/ingestors/plugins`: compiled-in plugin types.
-- `GET /api/ingestors` and `GET /api/ingestors/{id}`: configuration and status.
-- `PUT /api/ingestors/{id}`: merge only the supplied fields; set `enabled` to
+- `GET /api/inbound/plugins`: compiled-in plugin types.
+- `GET /api/inbound` and `GET /api/inbound/{id}`: configuration and status.
+- `PUT /api/inbound/{id}`: merge only the supplied fields; set `enabled` to
   `false` to stop or `true` to start/restart the instance.
-- `DELETE /api/ingestors/{id}`: stop and delete the instance. Generated namespace
+- `DELETE /api/inbound/{id}`: stop and delete the instance. Generated namespace
   variables and their last values remain available.
 
-Updates are generic across all ingestion plugins. For example,
+Updates are generic across all inbound plugins. For example,
 `{"config":{"interval_ms":500}}` changes only the sampling interval, and
 `{"enabled":false}` stops an instance without resending its configuration.
 Configuration objects merge recursively; arrays such as `variables` are replaced
@@ -168,25 +168,34 @@ update `{}` is a no-op. The selected plugin validates the complete merged
 configuration before anything is saved or its worker is replaced; invalid
 updates leave the stored configuration and running worker unchanged.
 
-All ingestion endpoints require admin access when authentication is enabled.
+All inbound endpoints require admin access when authentication is enabled.
 Instances persist in the configured database and enabled instances resume on startup. A source or
 batch-processing error stops that instance and appears in `status.last_error`;
 a valid update restarts it. Plugins omitted from a subsequent build leave their
 instances persisted with an error status.
 
-The plugin contract is in `src/ingestion/mod.rs`: implement `IngestorPlugin` to
-validate configuration and create an `Ingestor` whose asynchronous `next_batch`
+The plugin contract is in `src/inbound/mod.rs`: implement `InboundPlugin` to
+validate configuration and create an `InboundConnection` whose asynchronous `next_batch`
 returns paths and typed values. Register factories in `builtin_plugins()` (or
-supply a registry to `IngestorManager`). The engine applies one batch before
-requesting the next, without an unbounded queue. Pending reads must support
+supply a registry to `InboundManager`). The engine applies one batch before
+requesting the next, without an unbounded queue.
+
+**Variable limits on creation (special case).** When a batch creates a numeric
+variable, the engine calls `InboundConnection::variable_params(path)` and applies the
+entries named exactly `min` and `max` (numbers) as the variable's limits. Any
+other name, such as `minimum` or `maximo`, is ignored, and text or boolean
+variables get no limits. Limits are applied only on creation: later changes to
+the plugin configuration do not update existing variables, so values outside
+the original limits are rejected (edit the variable metadata instead). The
+simulator returns each variable's configured `min` and `max`. Pending reads must support
 cancellation. Plugins are trusted code compiled into the server, not runtime
 loads. Build with `rtk cargo build --no-default-features` to omit the simulator;
-the ingestion interface and endpoints remain available.
+the inbound interface and endpoints remain available.
 
-## Egress plugins
+## Outbound connection plugins
 
-Egress instances publish namespace values to external destinations. The backend
-includes a compile-time `udp` plugin as an example. Use `POST /api/egressors` with:
+Outbound connections publish namespace values to external destinations. The backend
+includes a compile-time `udp` plugin as an example. Use `POST /api/outbound` with:
 
 ```json
 {
@@ -219,7 +228,7 @@ Values are collected while a publish is in progress and only the latest value of
 each variable is kept, so a slow destination delays values without unbounded
 memory. A failed publish sets `status.state` to `error` with `status.last_error`,
 keeps the instance running, and retries the unsent values with a backoff of up to
-30 seconds. On shutdown, ingestors stop first and egress instances get one last
+30 seconds. On shutdown, inbound connections stop first and outbound connections get one last
 short attempt to publish pending values.
 
 `target` belongs to the plugin. The `udp` plugin sends JSON datagrams of at most
@@ -230,12 +239,45 @@ guarantees. Listen with `nc -ul 9000` to see them:
 {"ts":1764211200000,"values":[{"path":"/plant/temp","value":21.4}]}
 ```
 
-The endpoints mirror the ingestion ones (`/api/egressors`, `/api/egressors/plugins`,
-`/api/egressors/{id}`), including partial updates, admin-only access, persistence
+The endpoints mirror the inbound ones (`/api/outbound`, `/api/outbound/plugins`,
+`/api/outbound/{id}`), including partial updates, admin-only access, persistence
 in the configured database, and restoration on startup.
 
-The plugin contract is in `src/egress/mod.rs`: implement `EgressPlugin` to validate
-`target` and create an `Egressor` whose asynchronous `publish` sends one batch.
+The plugin contract is in `src/outbound/mod.rs`: implement `OutboundPlugin` to validate
+`target` and create an `OutboundConnection` whose asynchronous `publish` sends one batch.
 The engine handles variable selection, read mode, batching, and retries, and runs
 at most one publish per instance at a time. Register factories in
 `builtin_plugins()`. Build with `--no-default-features` to omit the `udp` example.
+
+## Plugin configuration forms
+
+The UI manages instances under **Integrations** without plugin-specific code.
+Each plugin declares its form next to its configuration struct by overriding
+`descriptor()` on `InboundPlugin` or `OutboundPlugin`, built from the types in
+`src/plugin_form.rs`:
+
+- Field types: `text`, `textarea`, `secret`, `number`, `boolean`, `select`,
+  `tag` (a namespace path or pattern), `tag_list`, `json`, `group` (a nested
+  object) and `list` (an array of objects).
+- Per field: `required`, `default`, `description`, `placeholder`,
+  `visible_when` (shown only while a sibling holds one of the listed values;
+  hidden fields are not submitted, so plugins can keep `deny_unknown_fields`),
+  and `folder_as_pattern` (for `tag`/`tag_list`: a folder dragged from the
+  namespace tree is entered as `folder/**`). The engine's `variables` field of
+  every outbound connection uses it; the engine resolves the patterns, so
+  plugins only receive values.
+- Without a descriptor the UI edits the configuration as raw JSON.
+- For outbound plugins the form describes `target`; the engine adds `variables`
+  and `mode`.
+- `secret` values are never returned by the instance endpoints; an update that
+  omits them keeps the stored value. Secrets are supported at the top level and
+  inside groups, not inside lists.
+
+The form only guides input: the plugin's `create` remains the authoritative
+validation. Add a test that the form defaults produce a valid configuration, as
+the simulator and UDP plugins do.
+
+`GET /api/plugin-collections` (admin only) lists every kind of plugin instances
+with its label, the base path of its CRUD routes, and the descriptors of its
+compiled-in plugins. A new kind of plugin instances (`PluginKind`) appears in the
+UI by adding its manager's `collection()` to that endpoint.

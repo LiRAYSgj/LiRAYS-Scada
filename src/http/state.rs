@@ -21,8 +21,8 @@ pub(crate) struct AuthConfig {
 
 #[derive(Clone)]
 pub struct AppState {
-    pub(crate) egressors: Arc<super::resources::egressors::service::EgressorManager>,
-    pub(crate) ingestors: Arc<super::resources::ingestors::service::IngestorManager>,
+    pub(crate) outbound: Arc<super::resources::outbound::service::OutboundManager>,
+    pub(crate) inbound: Arc<super::resources::inbound::service::InboundManager>,
     pub(crate) views: Arc<ViewManager>,
     pub(crate) users: Arc<user::service::UserManager>,
     pub(crate) patoken_manager: Arc<patoken::service::PATokenManager>,

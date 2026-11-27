@@ -3,9 +3,11 @@ use std::{collections::HashSet, future::Future, pin::Pin, time::Duration};
 use lirays_scada_proto::namespace::v1::{Value, VarIdValue, value::Typed};
 use rand::RngExt;
 use serde::Deserialize;
+use serde_json::json;
 use tokio::time::{Instant, Interval, MissedTickBehavior};
 
-use super::{IngestionBatch, Ingestor, IngestorPlugin};
+use super::{InboundBatch, InboundConnection, InboundPlugin, VariableParams};
+use crate::plugin_form::{FieldKind, FormField, PluginDescriptor};
 use crate::rtdata::parser::{clone_name, parse_repeated_name, repeated_name_count};
 
 /// Upper bound for the variables of one instance after expanding path patterns.
@@ -87,20 +89,94 @@ struct SimulatedVariable {
 
 struct Simulator {
     variables: Vec<SimulatedVariable>,
+    /// Indexes of `variables` sorted by path.
+    by_path: Vec<usize>,
     interval: Interval,
     started_at: Option<Instant>,
 }
 
-impl IngestorPlugin for SimulatorPlugin {
+impl InboundPlugin for SimulatorPlugin {
     fn kind(&self) -> &'static str {
         "simulator"
+    }
+
+    fn descriptor(&self) -> PluginDescriptor {
+        let periodic = vec![json!("sine"), json!("square"), json!("ramp")];
+        PluginDescriptor::with_form(
+            self.kind(),
+            "Waveform simulator",
+            "Generates simulated values for variables created on the fly.",
+            vec![
+                FormField::new(
+                    "interval_ms",
+                    "Interval (ms)",
+                    FieldKind::integer(Some(1.0), None),
+                )
+                .required()
+                .default_value(json!(1000)),
+                FormField::new(
+                    "variables",
+                    "Variables",
+                    FieldKind::List {
+                        min_items: Some(1),
+                        fields: vec![
+                            FormField::new("path", "Path", FieldKind::Tag)
+                                .required()
+                                .placeholder("/plant/line[1:10]/value")
+                                .description(
+                                    "Bracket ranges and options create several variables.",
+                                ),
+                            FormField::new(
+                                "waveform",
+                                "Waveform",
+                                FieldKind::select(&[
+                                    ("random", "Random"),
+                                    ("sine", "Sine"),
+                                    ("square", "Square"),
+                                    ("ramp", "Ramp"),
+                                ]),
+                            )
+                            .required()
+                            .default_value(json!("random")),
+                            FormField::new("min", "Min", FieldKind::float(None, None))
+                                .required()
+                                .default_value(json!(0)),
+                            FormField::new("max", "Max", FieldKind::float(None, None))
+                                .required()
+                                .default_value(json!(100)),
+                            FormField::new(
+                                "period_ms",
+                                "Period (ms)",
+                                FieldKind::integer(Some(1.0), None),
+                            )
+                            .required()
+                            .default_value(json!(10000))
+                            .visible_when("waveform", periodic.clone()),
+                            FormField::new(
+                                "phase_degrees",
+                                "Phase (degrees)",
+                                FieldKind::float(None, None),
+                            )
+                            .default_value(json!(0))
+                            .visible_when("waveform", periodic),
+                            FormField::new(
+                                "decimal_places",
+                                "Decimal places",
+                                FieldKind::integer(Some(0.0), Some(15.0)),
+                            ),
+                        ],
+                    },
+                )
+                .required(),
+            ],
+        )
     }
 
     fn create(
         &self,
         _instance_id: &str,
         config: &serde_json::Value,
-    ) -> Result<Box<dyn Ingestor>, String> {
+    ) -> Result<Box<dyn InboundConnection>, String> {
         let config: SimulatorInstanceConfig =
             serde_json::from_value(config.clone()).map_err(|e| e.to_string())?;
         if config.variables.is_empty() {
@@ -191,8 +267,12 @@ impl IngestorPlugin for SimulatorPlugin {
             }
         }
         let interval = config.simulator.create_interval()?;
+        let mut by_path: Vec<usize> = (0..variables.len()).collect();
+        let path_at = |index: usize| variables.get(index).map(|v| v.config.path.as_str());
+        by_path.sort_unstable_by(|&a, &b| path_at(a).cmp(&path_at(b)));
         Ok(Box::new(Simulator {
             variables,
+            by_path,
             interval,
             started_at: None,
         }))
@@ -231,10 +311,23 @@ fn expand_path_pattern(pattern: &str, limit: usize) -> Result<Vec<String>, Strin
     Ok(paths)
 }
 
-impl Ingestor for Simulator {
+impl InboundConnection for Simulator {
+    fn variable_params(&self, path: &str) -> Option<VariableParams> {
+        let path_at = |index: usize| self.variables.get(index).map(|v| v.config.path.as_str());
+        let position = self
+            .by_path
+            .binary_search_by(|&index| path_at(index).cmp(&Some(path)))
+            .ok()?;
+        let config = &self.variables.get(*self.by_path.get(position)?)?.config;
+        let mut params = VariableParams::new();
+        params.insert("min".into(), json!(config.min));
+        params.insert("max".into(), json!(config.max));
+        Some(params)
+    }
+
     fn next_batch(
         &mut self,
-    ) -> Pin<Box<dyn Future<Output = Result<IngestionBatch, String>> + Send + '_>> {
+    ) -> Pin<Box<dyn Future<Output = Result<InboundBatch, String>> + Send + '_>> {
         Box::pin(async move {
             self.interval.tick().await;
             let now = Instant::now();
@@ -290,7 +383,7 @@ impl Ingestor for Simulator {
                     }
                 })
                 .collect();
-            Ok(IngestionBatch { values })
+            Ok(InboundBatch { values })
         })
     }
 }
@@ -534,5 +627,55 @@ mod tests {
                     .is_err()
             );
         }
+    }
+
+    #[tokio::test]
+    async fn form_defaults_create_valid_configurations_for_every_waveform() {
+        let descriptor = SimulatorPlugin.descriptor();
+        let fields = descriptor.fields.unwrap();
+        let Some(FieldKind::List {
+            fields: item_fields,
+            ..
+        }) = fields
+            .iter()
+            .find(|field| field.key == "variables")
+            .map(|field| &field.kind)
+        else {
+            panic!("variables must be a list field");
+        };
+        for waveform in ["random", "sine", "square", "ramp"] {
+            let mut item = crate::plugin_form::default_config(item_fields);
+            item["path"] = json!("/test/value");
+            item["waveform"] = json!(waveform);
+            for field in item_fields {
+                if let Some(rule) = &field.visible_when
+                    && !rule.one_of.contains(&item[rule.field])
+                {
+                    item.as_object_mut().unwrap().remove(field.key);
+                }
+            }
+            let mut config = crate::plugin_form::default_config(&fields);
+            config["variables"] = json!([item]);
+            assert!(
+                SimulatorPlugin.create("test", &config).is_ok(),
+                "Rejected {config}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn variables_expose_min_and_max_as_creation_params() {
+        let source = SimulatorPlugin
+            .create(
+                "test",
+                &json!({"variables":[{"path":"/b[1:2]","min":1,"max":5},{"path":"/a","min":-2.5,"max":0}]}),
+            )
+            .unwrap();
+        for (path, min, max) in [("/a", -2.5, 0.0), ("/b1", 1.0, 5.0), ("/b2", 1.0, 5.0)] {
+            let params = source.variable_params(path).unwrap();
+            assert_eq!(params["min"], json!(min));
+            assert_eq!(params["max"], json!(max));
+        }
+        assert!(source.variable_params("/c").is_none());
     }
 }

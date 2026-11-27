@@ -7,6 +7,7 @@
 
   type ThemeMode = "light" | "dark";
   type WorkspaceMode = "designer" | "runtime";
+  type DesignerSection = "views" | "integrations";
 
   interface Props {
     theme: ThemeMode;
@@ -14,6 +15,8 @@
     username: string;
     authEnabled: boolean;
     showWorkspaceModeSwitch?: boolean;
+    /** Shows the designer section navigation when set. */
+    activeSection?: DesignerSection | null;
     onSelectWorkspaceMode: (mode: WorkspaceMode) => void;
     onToggleTheme: () => void;
   }
@@ -24,6 +27,7 @@
     username,
     authEnabled,
     showWorkspaceModeSwitch = true,
+    activeSection = null,
     onSelectWorkspaceMode,
     onToggleTheme,
   }: Props = $props();
@@ -94,6 +98,27 @@
     </h1>
     <h1 class="sr-only">LiRAYS SCADA</h1>
   </div>
+
+  {#if activeSection}
+    <nav class="ml-6 flex items-center gap-1" aria-label="Designer sections">
+      <Button
+        variant="outline-muted"
+        size="sm"
+        label="Views"
+        selected={activeSection === "views"}
+        aria-current={activeSection === "views" ? "page" : undefined}
+        onclick={() => void goto("/views")}
+      />
+      <Button
+        variant="outline-muted"
+        size="sm"
+        label="Integrations"
+        selected={activeSection === "integrations"}
+        aria-current={activeSection === "integrations" ? "page" : undefined}
+        onclick={() => void goto("/integrations")}
+      />
+    </nav>
+  {/if}
 
   <div class="ml-auto flex items-center gap-3">
     {#if showWorkspaceModeSwitch}

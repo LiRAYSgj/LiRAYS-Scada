@@ -55,7 +55,7 @@ persistence:
   flush_ms: 15000
 
 database:
-  # Relational database for users, tokens, views, ingestors and egressors.
+  # Relational database for users, tokens, views, and inbound and outbound connections.
   # Leave url empty to use the embedded SQLite file {data_dir}/static.db.
   # External servers: postgres://host:5432/lirays or mysql://host:3306/lirays
   # (mysql:// also covers MariaDB). The database must already exist; tables
