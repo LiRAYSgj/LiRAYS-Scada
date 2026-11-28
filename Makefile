@@ -135,7 +135,7 @@ deb-package: prepare-dist
 
 deb-amd64: prepare-dist $(FRONTEND_STAMP)
 	@echo "==> Building .deb (amd64) in Docker"
-	@$(DOCKER) run --rm --platform=linux/amd64 -v $(ROOT):/src -w /src rust:1.94-bullseye bash -lc 'set -e; \
+	@$(DOCKER) run --rm --platform=linux/amd64 -v $(ROOT):/src -w /src rust:1.94-bookworm bash -lc 'set -e; \
 		apt-get update; \
 		apt-get install -y curl ca-certificates gnupg; \
 		curl -fsSL https://deb.nodesource.com/setup_$(NODE_VERSION).x | bash -; \
@@ -151,7 +151,7 @@ deb-amd64: prepare-dist $(FRONTEND_STAMP)
 
 deb-arm64: prepare-dist $(FRONTEND_STAMP)
 	@echo "==> Building .deb (arm64) in Docker"
-	@$(DOCKER) run --rm --platform=linux/arm64 -v $(ROOT):/src -w /src rust:1.94-bullseye bash -lc 'set -e; \
+	@$(DOCKER) run --rm --platform=linux/arm64 -v $(ROOT):/src -w /src rust:1.94-bookworm bash -lc 'set -e; \
 		apt-get update; \
 		apt-get install -y curl ca-certificates gnupg; \
 		curl -fsSL https://deb.nodesource.com/setup_$(NODE_VERSION).x | bash -; \

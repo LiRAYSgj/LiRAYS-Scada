@@ -113,10 +113,11 @@ jobs:
       - name: Build ${{ matrix.format }} package
         run: make ${{ matrix.format }}-${{ matrix.arch }} VERSION="$VERSION"
 
-      # The .deb job builds on Debian bullseye (older glibc), so its binaries are
-      # the most portable ones to ship as a plain tarball.
+      # The .rpm job builds on Rocky Linux 9 (glibc 2.34), older than the Debian
+      # bookworm build (glibc 2.36), so its binaries are the most portable ones to
+      # ship as a plain tarball (RHEL 9, Ubuntu 22.04+, Debian 12+).
       - name: Create binary tarball
-        if: matrix.format == 'deb'
+        if: matrix.format == 'rpm'
         run: |
           set -euo pipefail
           NAME="lirays-scada-${VERSION}-linux-${{ matrix.arch }}"

@@ -9,7 +9,7 @@ Standards-Version: 4.6.2
 Package: lirays-scada
 Architecture: any
 Multi-Arch: foreign
-Depends: systemd
+Depends: ${shlibs:Depends}, ${misc:Depends}, systemd
 Description: LiRAYS Scada Server
  LiRAYS Scada is a server application that provides both TCP and HTTP interfaces
  for managing industrial data. This package installs the lirays-scada binary along with a systemd service
