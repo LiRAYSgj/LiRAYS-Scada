@@ -1,9 +1,13 @@
-name: Docker Release
+name: Release
 
+# Runs only when a version tag (vX.Y.Z) is pushed, or manually for an existing tag.
+# Produces, for amd64 and arm64:
+#   - .deb and .rpm packages
+#   - a tar.gz with the two binaries
+#   - a multi-arch Docker image on GHCR (:X.Y.Z and :latest)
+# and attaches all files to the GitHub Release for the tag.
 on:
   push:
-    branches:
-      - "**"
     tags:
       - "v*"
   workflow_dispatch:
@@ -13,20 +17,54 @@ on:
         required: true
         type: string
 
+permissions:
+  contents: read
+
 env:
   IMAGE_NAME: lirays-scada
   RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
 
 jobs:
+  verify-version:
+    name: Verify Tag Matches Project Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+    steps:
+      - name: Checkout tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Compare tag, Cargo.toml and debian/changelog
+        id: version
+        run: |
+          set -euo pipefail
+          CARGO_VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
+          DEB_VERSION="$(head -1 packaging/debian/debian/changelog | sed -n 's/^[^ ]* (\([^-)]*\).*/\1/p')"
+          echo "tag=${RELEASE_TAG} cargo=${CARGO_VERSION} debian=${DEB_VERSION}"
+          if [ "${RELEASE_TAG}" != "v${CARGO_VERSION}" ]; then
+            echo "::error::Tag ${RELEASE_TAG} does not match Cargo.toml version ${CARGO_VERSION}"
+            exit 1
+          fi
+          if [ "${DEB_VERSION}" != "${CARGO_VERSION}" ]; then
+            echo "::error::packaging/debian/debian/changelog version ${DEB_VERSION} does not match Cargo.toml version ${CARGO_VERSION}"
+            exit 1
+          fi
+          echo "version=${CARGO_VERSION}" >> "$GITHUB_OUTPUT"
+
   test:
     name: Run Frontend And Backend Tests
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
+    needs:
+      - verify-version
 
     steps:
-      - name: Checkout
+      - name: Checkout tag
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -41,15 +79,20 @@ jobs:
       - name: Run tests
         run: make test
 
-  publish-docker:
-    name: Build And Publish Multi-Arch Docker Image
-    runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+  packages:
+    name: Build ${{ matrix.format }} (${{ matrix.arch }})
+    # arm64 builds run on a native arm64 runner: compiling Rust under QEMU is very slow.
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     needs:
+      - verify-version
       - test
-    permissions:
-      contents: read
-      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+        format: [deb, rpm]
+    env:
+      VERSION: ${{ needs.verify-version.outputs.version }}
 
     steps:
       - name: Checkout tag
@@ -57,17 +100,70 @@ jobs:
         with:
           ref: ${{ env.RELEASE_TAG }}
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend
+        run: make frontend
+
+      - name: Build ${{ matrix.format }} package
+        run: make ${{ matrix.format }}-${{ matrix.arch }} VERSION="$VERSION"
+
+      # The .deb job builds on Debian bullseye (older glibc), so its binaries are
+      # the most portable ones to ship as a plain tarball.
+      - name: Create binary tarball
+        if: matrix.format == 'deb'
+        run: |
+          set -euo pipefail
+          NAME="lirays-scada-${VERSION}-linux-${{ matrix.arch }}"
+          mkdir -p "stage/${NAME}"
+          cp target/release/lirays-scada target/release/lirays LICENSE README.md "stage/${NAME}/"
+          cp packaging/debian/deb-files/etc/lirays-scada/settings.default.yaml "stage/${NAME}/"
+          tar -czf "distributions/${NAME}.tar.gz" -C stage "${NAME}"
+
+      - name: List built files
+        run: ls -la distributions
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg-${{ matrix.format }}-${{ matrix.arch }}
+          path: |
+            distributions/*.deb
+            distributions/*.rpm
+            distributions/*.tar.gz
+          if-no-files-found: error
+
+  docker:
+    name: Build Docker Image (${{ matrix.arch }})
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    needs:
+      - verify-version
+      - test
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    permissions:
+      contents: read
+      packages: write
+    env:
+      VERSION: ${{ needs.verify-version.outputs.version }}
+
+    steps:
+      - name: Checkout tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Resolve image repository
-        run: |
-          set -euo pipefail
-          echo "DOCKER_REPOSITORY=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${IMAGE_NAME}" >> "$GITHUB_ENV"
-          echo "Using DOCKER_REPOSITORY=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${IMAGE_NAME}"
+        run: echo "DOCKER_REPOSITORY=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${IMAGE_NAME}" >> "$GITHUB_ENV"
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -76,18 +172,55 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build amd64 and arm64 images
-        run: make docker DOCKER_REPOSITORY="$DOCKER_REPOSITORY"
+      - name: Build ${{ matrix.arch }} image
+        run: make docker-${{ matrix.arch }} DOCKER_REPOSITORY="$DOCKER_REPOSITORY" VERSION="$VERSION"
 
-      - name: Publish version and latest multi-arch images
-        run: make publish DOCKER_REPOSITORY="$DOCKER_REPOSITORY"
+      - name: Push ${{ matrix.arch }} tags
+        run: |
+          set -euo pipefail
+          docker push "${DOCKER_REPOSITORY}:${VERSION}-${{ matrix.arch }}"
+          docker push "${DOCKER_REPOSITORY}:latest-${{ matrix.arch }}"
+
+  docker-manifest:
+    name: Publish Multi-Arch Docker Manifest
+    runs-on: ubuntu-latest
+    needs:
+      - verify-version
+      - docker
+    permissions:
+      contents: read
+      packages: write
+    env:
+      VERSION: ${{ needs.verify-version.outputs.version }}
+
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Resolve image repository
+        run: echo "DOCKER_REPOSITORY=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${IMAGE_NAME}" >> "$GITHUB_ENV"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create :version and :latest manifests
+        run: |
+          set -euo pipefail
+          docker buildx imagetools create -t "${DOCKER_REPOSITORY}:${VERSION}" \
+            "${DOCKER_REPOSITORY}:${VERSION}-amd64" "${DOCKER_REPOSITORY}:${VERSION}-arm64"
+          docker buildx imagetools create -t "${DOCKER_REPOSITORY}:latest" \
+            "${DOCKER_REPOSITORY}:latest-amd64" "${DOCKER_REPOSITORY}:latest-arm64"
 
   release:
-    name: Generate Notes And Publish GitHub Release
+    name: Publish GitHub Release With Packages
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
     needs:
-      - publish-docker
+      - packages
+      - docker-manifest
     permissions:
       contents: write
 
@@ -104,6 +237,21 @@ jobs:
       - name: Show generated release notes
         run: cat release-notes.md
 
+      - name: Download packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: pkg-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Generate checksums
+        run: |
+          set -euo pipefail
+          cd release-assets
+          sha256sum * > SHA256SUMS
+          ls -la
+          cat SHA256SUMS
+
       - name: Create or update GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -111,6 +259,7 @@ jobs:
           set -euo pipefail
           if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
             gh release edit "${RELEASE_TAG}" --title "${RELEASE_TAG}" --notes-file release-notes.md
+            gh release upload "${RELEASE_TAG}" release-assets/* --clobber
           else
-            gh release create "${RELEASE_TAG}" --title "${RELEASE_TAG}" --notes-file release-notes.md
+            gh release create "${RELEASE_TAG}" --title "${RELEASE_TAG}" --notes-file release-notes.md release-assets/*
           fi
